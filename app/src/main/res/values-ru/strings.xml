@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="layout_sidebar">Боковое Меню</string>
+    <string name="layout_top_bar">Верхнее Меню</string>
+    <string name="layout_bottom_bar">Нижнее Меню</string>
+</resources>
