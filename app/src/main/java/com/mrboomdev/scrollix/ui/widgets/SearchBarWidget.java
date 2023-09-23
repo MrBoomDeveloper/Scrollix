@@ -1,83 +1,112 @@
 package com.mrboomdev.scrollix.ui.widgets;
 
 import android.content.Context;
-import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputMethodManager;
-import android.widget.EditText;
+import android.graphics.Color;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.ViewGroup;
+import android.webkit.WebView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import androidx.annotation.Nullable;
+import androidx.core.content.res.ResourcesCompat;
+import androidx.core.graphics.drawable.DrawableCompat;
+
+import com.mrboomdev.scrollix.R;
+
+import java.util.Objects;
 
 public class SearchBarWidget extends LinearLayout {
-	private OnEnterListener enterListener;
-	private final EditText editText;
-	private boolean isEditorOpened;
-	private String url, title;
+	private OnClickListener clickListener;
+	private ImageView refreshButton;
+	private boolean isLoading;
+	private WebView webview;
+	private int primaryColor;
+	private Runnable refreshListener;
+	private final TextView titleView;
 
-	public SearchBarWidget(Context context) {
+	public SearchBarWidget(Context context, WebView webview) {
 		super(context);
-		setClickable(true);
+		this.webview = webview;
 
 		var params = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT);
 		params.weight = 1;
 		setLayoutParams(params);
 
-		editText = new EditText(context);
-		editText.setSingleLine();
-		editText.setImeOptions(EditorInfo.IME_ACTION_SEARCH | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-		editText.setSelectAllOnFocus(true);
-		editText.setBackgroundResource(android.R.color.transparent);
+		primaryColor = Color.parseColor("#ccccdd");
 
-		var textParams = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT);
-		textParams.weight = 1;
-		editText.setLayoutParams(textParams);
+		var circleRipple = ResourcesCompat.getDrawable(
+				getResources(),
+				R.drawable.ripple_circle,
+				context.getTheme());
 
-		editText.setOnEditorActionListener((view, action, event) -> {
-			if(action != EditorInfo.IME_ACTION_SEARCH) return false;
+		var styledHolder = new LinearLayout(context);
+		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
+		styledHolder.setGravity(Gravity.CENTER_VERTICAL);
+		styledHolder.setBackgroundResource(R.drawable.search_input_background);
+		styledHolder.setPadding(20, 0, 15, 0);
+		addView(styledHolder, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(8, 8, 8, 8);
 
-			if(enterListener != null) enterListener.entered(editText.getText().toString());
+		styledHolder.setClickable(true);
+		styledHolder.setFocusable(true);
 
-			toggleEditorVisibility(false);
-			return true;
+		styledHolder.setForeground(ResourcesCompat.getDrawable(
+				getResources(),
+				R.drawable.ripple_search,
+				context.getTheme()));
+
+		styledHolder.setOnClickListener(view -> {
+			if(clickListener != null) {
+				clickListener.onClick(this);
+			}
 		});
 
-		editText.setOnFocusChangeListener((view, isFocused) -> {
-			toggleEditorVisibility(isFocused);
+		titleView = new TextView(context);
+		titleView.setTextSize(14);
+		titleView.setTextColor(primaryColor);
+		titleView.setSingleLine(true);
+		titleView.setText("Search anything...");
+		styledHolder.addView(titleView);
+		((LayoutParams)titleView.getLayoutParams()).weight = 1;
 
-			var inputManager = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-			inputManager.hideSoftInputFromWindow(view.getWindowToken(), 0);
+		refreshButton = new ImageView(context);
+		refreshButton.setBackground(circleRipple);
+		refreshButton.setClickable(true);
+		refreshButton.setFocusable(true);
+		refreshButton.setPadding(10, 10, 10, 10);
+
+		int size = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 34, getResources().getDisplayMetrics());
+		styledHolder.addView(refreshButton, size, size);
+		((LayoutParams)refreshButton.getLayoutParams()).setMargins(20, 0, 0, 0);
+
+		refreshButton.setOnClickListener(view -> {
+			if(isLoading)
+				webview.stopLoading();
+			else
+				webview.reload();
 		});
-
-		addView(editText);
-
-		toggleEditorVisibility(false);
-	}
-
-	public void setOnEnterListener(OnEnterListener listener) {
-		this.enterListener = listener;
-	}
-
-	public void toggleEditorVisibility(boolean isVisible) {
-		isEditorOpened = isVisible;
-
-		if(isVisible) {
-			editText.setText(url);
-			editText.selectAll();
-			editText.requestFocus();
-		} else {
-			editText.setText(title);
-		}
+		setIsLoading(false);
 	}
 
 	public void setTitle(String title) {
-		this.title = title;
-
-		if(!isEditorOpened) editText.setText(title);
+		titleView.setText(title);
 	}
 
-	public void setUrl(String url) {
-		this.url = url;
+	public void setIsLoading(boolean isLoading) {
+		this.isLoading = isLoading;
+
+		int icon = isLoading ? R.drawable.ic_close_black : R.drawable.ic_refresh_black;
+		var currentRefreshIcon = ResourcesCompat.getDrawable(getResources(), icon, getContext().getTheme());
+		DrawableCompat.setTint(Objects.requireNonNull(currentRefreshIcon), primaryColor);
+
+		refreshButton.setImageDrawable(currentRefreshIcon);
 	}
 
-	public interface OnEnterListener {
-		void entered(String request);
+	@Override
+	public void setOnClickListener(@Nullable OnClickListener listener) {
+		this.clickListener = listener;
 	}
 }

@@ -20,7 +20,7 @@ public class MyWebViewClient extends WebViewClient {
 	private SwipeRefreshLayout swipeRefresher;
 	private LinearProgressIndicator progressIndicator;
 	private SearchBarWidget searchBar;
-	private final FormatUtil.UrlFormatRules formatRules;
+	public final FormatUtil.UrlFormatRules formatRules;
 
 	public MyWebViewClient() {
 		formatRules = new FormatUtil.UrlFormatRules();
@@ -58,6 +58,8 @@ public class MyWebViewClient extends WebViewClient {
 
 	@Override
 	public void onPageFinished(WebView view, String url) {
+		searchBar.setIsLoading(false);
+
 		if(progressIndicator != null) {
 			progressIndicator.setVisibility(View.GONE);
 		}
@@ -69,13 +71,14 @@ public class MyWebViewClient extends WebViewClient {
 
 	@Override
 	public void onPageStarted(WebView view, String url, Bitmap favicon) {
+		searchBar.setIsLoading(true);
+
 		if(progressIndicator != null) {
 			progressIndicator.setVisibility(View.VISIBLE);
 		}
 
 		if(searchBar != null) {
 			searchBar.setTitle(FormatUtil.formatUrl(url, formatRules));
-			searchBar.setUrl(url);
 		}
 	}
 

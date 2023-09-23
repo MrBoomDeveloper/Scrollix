@@ -1,20 +1,85 @@
+<!DOCTYPE html>
 <html>
     <head>
-        <title>Homepage</title>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+        <title>Home</title>
+        
+        <style>
+            html {
+                background-color: #222;
+            }
+            
+            .widgets-center {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .widget-title {
+                color: white;
+                font-weight: 800;
+                font-size: 6em;
+                font-family: sans-serif;
+            }
+            
+            #search {
+                background-color: #444;
+                padding: .8em 1em;
+                border-radius: 5px;
+                width: 17.5rem;
+                border-color: transparent;
+                color: white;
+                font-size: 1.1em;
+            }
+            
+            #search:focus {
+                outline-color: #aaa;
+                outline-width: 2px;
+            }
+        </style>
     </head>
     <body>
-        <h1>Home</h1>
-
-        <a href="https://www.google.com">
-            <button>Go to Google</button>
-        </a>
-
-        <a href="https://startpage.com">
-            <button>Go to StartPage</button>
-        </a>
-
-        <a href="settings.html">
-            <button>Open settings</button>
-        </a>
+        <div class="widgets-center">
+            <h1 class="widget-title" id="widget-timer"></h1>
+            <input type="text" placeholder="Searching in Google..." id="search" />
+        </div>
+        
+        <script>
+            const search = document.querySelector("#search");
+            if(search != null) {
+                search.addEventListener("keypress", event => {
+                    if(event.key == "Enter") {
+                        location.href = `https://www.google.com/search?q=${search.value}`;
+                    }
+                });
+            }
+        
+            const timer = document.querySelector("#widget-timer");
+            
+            if(timer != null) {
+                updateTimer();
+                
+                setInterval(() => {
+                    updateTimer();
+                }, 1000);
+            }
+            
+            function updateTimer() {
+                if(timer != null) {
+                    const date = new Date();
+                    
+                    timer.textContent = 
+                        formatNumber(date.getHours()) + ":" +
+                        formatNumber(date.getMinutes()) + ":" +
+                        formatNumber(date.getSeconds());
+                }
+            }
+            
+            function formatNumber(number) {
+                if(number <= 9) return "0" + number;
+                return number;
+            }
+        </script>
     </body>
 </html>

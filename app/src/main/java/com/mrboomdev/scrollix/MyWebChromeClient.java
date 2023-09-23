@@ -1,16 +1,12 @@
 package com.mrboomdev.scrollix;
 
 import android.graphics.Bitmap;
-import android.net.Uri;
+import android.os.Message;
 import android.webkit.ConsoleMessage;
 import android.webkit.JsPromptResult;
 import android.webkit.JsResult;
-import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
-
-import androidx.annotation.Nullable;
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
@@ -37,25 +33,19 @@ public class MyWebChromeClient extends WebChromeClient {
 		return super.onJsAlert(view, url, message, result);
 	}
 
-	@Nullable
-	@Override
-	public Bitmap getDefaultVideoPoster() {
-		return super.getDefaultVideoPoster();
-	}
-
 	@Override
 	public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
 		return super.onConsoleMessage(consoleMessage);
 	}
 
 	@Override
-	public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
-		return super.onShowFileChooser(webView, filePathCallback, fileChooserParams);
+	public boolean onJsConfirm(WebView view, String url, String message, JsResult result) {
+		return super.onJsConfirm(view, url, message, result);
 	}
 
 	@Override
-	public boolean onJsConfirm(WebView view, String url, String message, JsResult result) {
-		return super.onJsConfirm(view, url, message, result);
+	public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+		return super.onCreateWindow(view, isDialog, isUserGesture, resultMsg);
 	}
 
 	@Override
