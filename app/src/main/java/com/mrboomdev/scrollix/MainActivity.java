@@ -31,13 +31,15 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.data.AppSettings;
+import com.mrboomdev.scrollix.data.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 
 import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
-	private SearchLayout searchLayout;
+	public SearchLayout searchLayout;
+	private TextView tabsCounter;
 	private AppSettings appSettings;
 	private LinearProgressIndicator progressIndicator;
 	private WebView webView;
@@ -98,7 +100,7 @@ public class MainActivity extends AppCompatActivity {
 		chromeClient = new MyWebChromeClient();
 		chromeClient.setProgressIndicator(progressIndicator);
 
-		webViewClient = new MyWebViewClient();
+		webViewClient = new MyWebViewClient(this);
 		webViewClient.setProgressIndicator(progressIndicator);
 		webViewClient.setRefreshLayout(swipeRefresher);
 
@@ -114,6 +116,7 @@ public class MainActivity extends AppCompatActivity {
 
 		searchLayout = new SearchLayout(this, appSettings);
 		searchLayout.setVisibility(View.GONE, false);
+		searchLayout.setLaunchLinkListener(webView::loadUrl);
 
 		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
 		searchLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
@@ -173,7 +176,7 @@ public class MainActivity extends AppCompatActivity {
 
 				int size = getSizeForButton(true);
 				var params = new LinearLayout.LayoutParams(size, size);
-				params.setMargins(0, 12, 0, 10);
+				params.setMargins(0, 12, 0, 12);
 
 				sidebar.addView(view, params);
 			}
@@ -219,6 +222,7 @@ public class MainActivity extends AppCompatActivity {
 
 			case "settings" -> {
 				icon = R.drawable.ic_settings_black;
+				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/settings.html"));
 			}
 
 			case "downloads" -> {
@@ -277,11 +281,11 @@ public class MainActivity extends AppCompatActivity {
 			button.setScaleY(1.1f);
 			parent.addView(button);
 
-			var counter = new TextView(this);
-			counter.setText("1");
-			counter.setTextSize(13);
-			counter.setGravity(Gravity.CENTER);
-			parent.addView(counter, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+			tabsCounter = new TextView(this);
+			tabsCounter.setText(String.valueOf(TabsManager.getCount()));
+			tabsCounter.setTextSize(13);
+			tabsCounter.setGravity(Gravity.CENTER);
+			parent.addView(tabsCounter, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 
 			return parent;
 		}
@@ -313,10 +317,14 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	private class ScrollListener implements View.OnTouchListener {
-		private final float height = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 50, getResources().getDisplayMetrics());
-		private Animation animation;
+		private final BarAnimation topBarAnimation, bottomBarAnimation;
 		private boolean isExpanded = true;
-		private float startY, currentTranslation;
+		private float startY;
+
+		public ScrollListener() {
+			topBarAnimation = new BarAnimation(topbar, Gravity.TOP);
+			bottomBarAnimation = new BarAnimation(bottombar, Gravity.BOTTOM);
+		}
 
 		@Override
 		public boolean onTouch(View view, @NonNull MotionEvent event) {
@@ -326,24 +334,12 @@ public class MainActivity extends AppCompatActivity {
 
 					if(shouldExpand != isExpanded && Math.abs(startY - event.getY()) > 50) {
 						isExpanded = shouldExpand;
-						if(animation != null) animation.cancel();
 
-						animation = new Animation() {
-							@Override
-							protected void applyTransformation(float interpolatedTime, Transformation t) {
-								currentTranslation = isExpanded
-										? (-height + interpolatedTime * height)
-										: height * interpolatedTime * -1;
+						topBarAnimation.cancel();
+						bottomBarAnimation.cancel();
 
-								var params = (ConstraintLayout.LayoutParams)topbar.getLayoutParams();
-								params.topMargin = Math.round(currentTranslation);
-								topbar.setLayoutParams(params);
-							}
-						};
-
-						animation.setDuration(150);
-						animation.setInterpolator(new AccelerateDecelerateInterpolator());
-						topbar.startAnimation(animation);
+						topBarAnimation.startAnimation(isExpanded);
+						bottomBarAnimation.startAnimation(isExpanded);
 					}
 				}
 
@@ -353,6 +349,44 @@ public class MainActivity extends AppCompatActivity {
 			}
 
 			return false;
+		}
+	}
+
+	private static class BarAnimation extends Animation {
+		private final View view;
+		private final int gravity;
+		private boolean show;
+
+		public BarAnimation(View view, int gravity) {
+			this.view = view;
+			this.gravity = gravity;
+
+			setDuration(150);
+			setInterpolator(new AccelerateDecelerateInterpolator());
+		}
+
+		@Override
+		protected void applyTransformation(float interpolatedTime, Transformation t) {
+			float hideOffset = -view.getHeight();
+
+			var currentTranslation = show
+					? (hideOffset + interpolatedTime * -hideOffset)
+					: -hideOffset * interpolatedTime * -1;
+
+			var params = (ConstraintLayout.LayoutParams)view.getLayoutParams();
+
+			if(gravity == Gravity.TOP) {
+				params.topMargin = Math.round(currentTranslation);
+			} else {
+				params.bottomMargin = Math.round(currentTranslation);
+			}
+
+			view.setLayoutParams(params);
+		}
+
+		public void startAnimation(boolean show) {
+			this.show = show;
+			view.startAnimation(this);
 		}
 	}
 }

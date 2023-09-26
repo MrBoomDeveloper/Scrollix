@@ -17,12 +17,15 @@ import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.FormatUtil;
 
 public class MyWebViewClient extends WebViewClient {
+	private MainActivity activity;
 	private SwipeRefreshLayout swipeRefresher;
 	private LinearProgressIndicator progressIndicator;
 	private SearchBarWidget searchBar;
 	public final FormatUtil.UrlFormatRules formatRules;
 
-	public MyWebViewClient() {
+	public MyWebViewClient(MainActivity activity) {
+		this.activity = activity;
+
 		formatRules = new FormatUtil.UrlFormatRules();
 		formatRules.removeHash = true;
 		formatRules.removeWww = true;
@@ -72,6 +75,7 @@ public class MyWebViewClient extends WebViewClient {
 	@Override
 	public void onPageStarted(WebView view, String url, Bitmap favicon) {
 		searchBar.setIsLoading(true);
+		activity.searchLayout.setUrl(url);
 
 		if(progressIndicator != null) {
 			progressIndicator.setVisibility(View.VISIBLE);
