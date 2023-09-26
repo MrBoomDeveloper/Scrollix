@@ -16,7 +16,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.data.tabs.Tab;
-import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.util.LinkUtil;
 
 import org.jetbrains.annotations.Contract;
 
@@ -26,12 +26,12 @@ import java.util.Objects;
 
 public class MyWebViewClient extends WebViewClient {
 	private Tab tab;
-	public final FormatUtil.UrlFormatRules formatRules;
+	public final LinkUtil.UrlFormatRules formatRules;
 
 	public MyWebViewClient(Tab tab) {
 		this.tab = tab;
 
-		formatRules = new FormatUtil.UrlFormatRules();
+		formatRules = new LinkUtil.UrlFormatRules();
 		formatRules.removeHash = true;
 		formatRules.removeWww = true;
 		formatRules.removeProtocol = true;
@@ -54,13 +54,11 @@ public class MyWebViewClient extends WebViewClient {
 
 	@Override
 	public void onPageStarted(WebView view, String url, Bitmap favicon) {
-		tab.favicon = favicon;
+		tab.favicon = null;
 		tab.setUrl(url);
-		tab.runCallbacks(tab.onStartedCallbacks);
 
-		if(favicon != null) {
-			tab.runCallbacks(tab.onFaviconCallbacks);
-		}
+		tab.runCallbacks(tab.onStartedCallbacks);
+		tab.runCallbacks(tab.onFaviconCallbacks);
 	}
 
 	@Override

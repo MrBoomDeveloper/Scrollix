@@ -35,7 +35,7 @@ import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
-import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.util.Objects;
 
@@ -79,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
 
 		appSettings = new AppSettings();
 
-		var formatRules = new FormatUtil.UrlFormatRules();
+		var formatRules = new LinkUtil.UrlFormatRules();
 		formatRules.removeHash = true;
 		formatRules.removeWww = true;
 		formatRules.removeProtocol = true;
@@ -146,6 +146,10 @@ public class MainActivity extends AppCompatActivity {
 
 			progressIndicator.setProgress(tab.progress, true);
 			if(tab.progress == 100) finishedLoading();
+		});
+
+		currentTab.onFaviconCallbacks.add(tab -> {
+			searchBar.setFavicon(tab.favicon);
 		});
 	}
 

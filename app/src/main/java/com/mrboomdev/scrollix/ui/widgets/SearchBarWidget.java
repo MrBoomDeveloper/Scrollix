@@ -1,7 +1,9 @@
 package com.mrboomdev.scrollix.ui.widgets;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.webkit.WebView;
@@ -21,17 +23,15 @@ import com.mrboomdev.scrollix.util.FormatUtil;
 import java.util.Objects;
 
 public class SearchBarWidget extends LinearLayout {
+	private final Drawable securityIconImage;
+	private final ImageView refreshButton, securityIcon;
 	private OnClickListener clickListener;
-	private final ImageView refreshButton;
 	private boolean isLoading;
-	private WebView webview;
 	private final int primaryColor;
-	private Runnable refreshListener;
 	private final TextView titleView;
 
 	public SearchBarWidget(Context context, WebView webview) {
 		super(context);
-		this.webview = webview;
 
 		var params = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT);
 		params.weight = 1;
@@ -68,10 +68,10 @@ public class SearchBarWidget extends LinearLayout {
 
 		int size = (int)FormatUtil.getResponsiveValue(34, FormatUtil.Dimension.DIP, context);
 
-		var securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black, context);
+		securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black, context);
 		FileUtil.setDrawableColor(securityIconImage, primaryColor);
 
-		var securityIcon = new ImageView(context);
+		securityIcon = new ImageView(context);
 		securityIcon.setImageDrawable(securityIconImage);
 		securityIcon.setPadding(11, 11, 11, 11);
 		securityIcon.setBackground(circleRipple);
@@ -109,6 +109,15 @@ public class SearchBarWidget extends LinearLayout {
 				webview.reload();
 		});
 		setIsLoading(false);
+	}
+
+	public void setFavicon(Bitmap favicon) {
+		if(favicon == null) {
+			securityIcon.setImageDrawable(securityIconImage);
+			return;
+		}
+
+		securityIcon.setImageBitmap(favicon);
 	}
 
 	public void setTitle(String title) {

@@ -20,6 +20,7 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.AppSettings;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.util.LinkUtil;
 
 public class SearchLayout extends LinearLayout {
 	private ImageView engineIcon;
@@ -72,7 +73,7 @@ public class SearchLayout extends LinearLayout {
 				var engine = settings.searchEngine.getEngine();
 				var query = editText.getText().toString();
 
-				listener.launch(FormatUtil.isUrlValid(query) ? query : engine.getSearchUrl(query));
+				listener.launch(LinkUtil.isUrlValid(query) ? query : engine.getSearchUrl(query));
 			}
 
 			hide();

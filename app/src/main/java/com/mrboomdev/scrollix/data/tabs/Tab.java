@@ -10,7 +10,7 @@ import androidx.annotation.NonNull;
 import com.mrboomdev.scrollix.MyWebChromeClient;
 import com.mrboomdev.scrollix.MyWebViewClient;
 import com.mrboomdev.scrollix.data.AppSettings;
-import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -58,8 +58,8 @@ public class Tab {
 	public void setUrl(String url) {
 		this.url = url;
 
-		if(!FormatUtil.isSameLink(previousUrl, url)) {
-			setTitle(FormatUtil.formatUrl(url, AppSettings.globalSettings.urlFormatRules));
+		if(!LinkUtil.isSameLink(previousUrl, url)) {
+			setTitle(LinkUtil.formatUrl(url, AppSettings.globalSettings.urlFormatRules));
 			previousUrl = url;
 		}
 	}
