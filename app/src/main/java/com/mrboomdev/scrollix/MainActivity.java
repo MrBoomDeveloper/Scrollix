@@ -31,15 +31,21 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.data.AppSettings;
-import com.mrboomdev.scrollix.data.TabsManager;
+import com.mrboomdev.scrollix.data.tabs.Tab;
+import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
+import com.mrboomdev.scrollix.util.FormatUtil;
 
 import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
 	public SearchLayout searchLayout;
+	private SwipeRefreshLayout swipeRefreshLayout;
+	private ScrollListener scrollListener;
 	private TextView tabsCounter;
+	private ConstraintLayout parent;
+	private Tab currentTab;
 	private AppSettings appSettings;
 	private LinearProgressIndicator progressIndicator;
 	private WebView webView;
@@ -54,37 +60,35 @@ public class MainActivity extends AppCompatActivity {
 		reloadLayout();
 	}
 
-	@SuppressLint({"SetJavaScriptEnabled", "ClickableViewAccessibility"})
+	@SuppressLint({"ClickableViewAccessibility"})
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main_layout);
 
-		appSettings = new AppSettings();
-		applyAppSettings(appSettings);
-
-		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
+		parent = findViewById(R.id.main_screen_parent);
 		topbar = findViewById(R.id.top_bar);
 		bottombar = findViewById(R.id.bottom_bar);
 		sidebar = findViewById(R.id.sidebar);
 
-		webView = findViewById(R.id.webview);
-		webView.loadUrl("file:///android_asset/pages/home.html");
+		progressIndicator = findViewById(R.id.progressIndicator);
+		swipeRefreshLayout = findViewById(R.id.swipeRefresher);
 
-		var settings = webView.getSettings();
-		settings.setJavaScriptEnabled(true);
-		settings.setDatabaseEnabled(true);
-		settings.setDomStorageEnabled(true);
-		//settings.setSupportMultipleWindows(true);
-		settings.setMediaPlaybackRequiresUserGesture(false);
-		settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.5845.114 Mobile Safari/537.36");
-		settings.setSupportZoom(true);
-		settings.setBuiltInZoomControls(true);
-		settings.setDisplayZoomControls(false);
-		settings.setAllowFileAccess(true);
+		scrollListener = new ScrollListener();
+		swipeRefreshLayout.setOnTouchListener(scrollListener);
 
-		SwipeRefreshLayout swipeRefresher = findViewById(R.id.swipeRefresher);
-		swipeRefresher.setOnRefreshListener(() -> {
+		appSettings = new AppSettings();
+
+		var formatRules = new FormatUtil.UrlFormatRules();
+		formatRules.removeHash = true;
+		formatRules.removeWww = true;
+		formatRules.removeProtocol = true;
+
+		appSettings.urlFormatRules = formatRules;
+		applyAppSettings(appSettings);
+		createTab();
+
+		swipeRefreshLayout.setOnRefreshListener(() -> {
 			var url = Objects.requireNonNull(webView.getUrl());
 
 			if(url.startsWith("file://")) {
@@ -95,24 +99,8 @@ public class MainActivity extends AppCompatActivity {
 			webView.reload();
 		});
 
-		progressIndicator = findViewById(R.id.progressIndicator);
-
-		chromeClient = new MyWebChromeClient();
-		chromeClient.setProgressIndicator(progressIndicator);
-
-		webViewClient = new MyWebViewClient(this);
-		webViewClient.setProgressIndicator(progressIndicator);
-		webViewClient.setRefreshLayout(swipeRefresher);
-
-		webView.setWebViewClient(webViewClient);
-		webView.setWebChromeClient(chromeClient);
-
 		reloadLayout();
 		applyTheme();
-
-		ScrollListener scrollListener = new ScrollListener();
-		swipeRefresher.setOnTouchListener(scrollListener);
-		webView.setOnTouchListener(scrollListener);
 
 		searchLayout = new SearchLayout(this, appSettings);
 		searchLayout.setVisibility(View.GONE, false);
@@ -125,6 +113,46 @@ public class MainActivity extends AppCompatActivity {
 		searchLayoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
 
 		parent.addView(searchLayout, searchLayoutParams);
+	}
+
+	public void createTab() {
+		currentTab = TabsManager.create(this);
+		setCurrentWebView(currentTab.webView);
+
+		currentTab.onStartedCallbacks.add(tab -> {
+			if(tab != currentTab) return;
+
+			searchBar.setIsLoading(true);
+			searchLayout.setUrl(tab.url);
+
+			progressIndicator.setVisibility(View.VISIBLE);
+
+		});
+
+		currentTab.onTitleCallbacks.add(tab -> {
+			if(tab != currentTab) return;
+
+			searchBar.setTitle(tab.title);
+		});
+
+		currentTab.onFinishedCallbacks.add(tab -> {
+			if(tab != currentTab) return;
+
+			finishedLoading();
+		});
+
+		currentTab.onProgressCallbacks.add(tab -> {
+			if(tab != currentTab) return;
+
+			progressIndicator.setProgress(tab.progress, true);
+			if(tab.progress == 100) finishedLoading();
+		});
+	}
+
+	private void finishedLoading() {
+		progressIndicator.setVisibility(View.GONE);
+		swipeRefreshLayout.setRefreshing(false);
+		searchBar.setIsLoading(false);
 	}
 
 	public void applyTheme() {
@@ -202,8 +230,8 @@ public class MainActivity extends AppCompatActivity {
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
 
-		webViewClient.setSearchBar(searchBar);
-		chromeClient.setSearchBar(searchBar);
+		//webViewClient.setSearchBar(searchBar);
+		//chromeClient.setSearchBar(searchBar);
 
 		bottombar.setVisibility(!isLandscape ? View.VISIBLE : View.GONE);
 	}
@@ -235,6 +263,10 @@ public class MainActivity extends AppCompatActivity {
 
 			case "bookmarks" -> {
 				icon = R.drawable.ic_star_black;
+
+				button.setOnClickListener(view -> {
+
+				});
 			}
 
 			case "menu" -> {
@@ -294,7 +326,23 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	public void applyAppSettings(AppSettings settings) {
+		AppSettings.globalSettings = settings;
+	}
 
+	@SuppressLint("ClickableViewAccessibility")
+	public void setCurrentWebView(@NonNull WebView webView) {
+		SwipeRefreshLayout swipeRefreshLayout = findViewById(R.id.swipeRefresher);
+
+		if(this.webView != null) {
+			var params = this.webView.getLayoutParams();
+			swipeRefreshLayout.removeView(this.webView);
+			swipeRefreshLayout.addView(webView, params);
+		} else {
+			swipeRefreshLayout.addView(webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+		}
+
+		this.webView = webView;
+		webView.setOnTouchListener(scrollListener);
 	}
 
 	private void restartLoadingIndicator() {

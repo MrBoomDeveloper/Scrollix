@@ -1,7 +1,6 @@
-package com.mrboomdev.scrollix.data;
+package com.mrboomdev.scrollix.data.tabs;
 
 import android.content.Context;
-import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
 
@@ -14,8 +13,11 @@ public class TabsManager {
 
 	@NonNull
 	public static Tab create(Context context) {
-		var tab = new Tab();
-		tab.webView = new WebView(context);
+		var tab = new Tab(context);
+
+		tab.webView.loadUrl("file:///android_asset/pages/home.html");
+		tab.reloadSettings();
+
 		tabs.add(tab);
 
 		return tab;
@@ -31,10 +33,5 @@ public class TabsManager {
 
 	public static int getCount() {
 		return tabs.size();
-	}
-
-	public static class Tab {
-		public String url, title;
-		public WebView webView;
 	}
 }

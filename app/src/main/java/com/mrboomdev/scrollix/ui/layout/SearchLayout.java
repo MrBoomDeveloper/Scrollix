@@ -71,6 +71,7 @@ public class SearchLayout extends LinearLayout {
 			if(listener != null) {
 				var engine = settings.searchEngine.getEngine();
 				var query = editText.getText().toString();
+
 				listener.launch(FormatUtil.isUrlValid(query) ? query : engine.getSearchUrl(query));
 			}
 

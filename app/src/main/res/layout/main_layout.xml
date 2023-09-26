@@ -15,11 +15,6 @@
         app:layout_constraintBottom_toTopOf="@id/bottom_bar"
         app:layout_constraintRight_toRightOf="parent">
 
-        <WebView
-            android:id="@+id/webview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
     <LinearLayout

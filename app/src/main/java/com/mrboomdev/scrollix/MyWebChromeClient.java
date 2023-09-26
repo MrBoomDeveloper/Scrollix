@@ -8,19 +8,13 @@ import android.webkit.JsResult;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 
-import com.google.android.material.progressindicator.LinearProgressIndicator;
-import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
+import com.mrboomdev.scrollix.data.tabs.Tab;
 
 public class MyWebChromeClient extends WebChromeClient {
-	private LinearProgressIndicator progressIndicator;
-	private SearchBarWidget searchBar;
+	private final Tab tab;
 
-	public void setProgressIndicator(LinearProgressIndicator indicator) {
-		this.progressIndicator = indicator;
-	}
-
-	public void setSearchBar(SearchBarWidget searchBar) {
-		this.searchBar = searchBar;
+	public MyWebChromeClient(Tab tab) {
+		this.tab = tab;
 	}
 
 	@Override
@@ -50,20 +44,18 @@ public class MyWebChromeClient extends WebChromeClient {
 
 	@Override
 	public void onReceivedTitle(WebView view, String title) {
-		if(searchBar != null) {
-			searchBar.setTitle(title);
-		}
+		tab.setTitle(title);
 	}
 
 	@Override
 	public void onReceivedIcon(WebView view, Bitmap icon) {
-		super.onReceivedIcon(view, icon);
+		tab.favicon = icon;
+		tab.runCallbacks(tab.onFaviconCallbacks);
 	}
 
 	@Override
 	public void onProgressChanged(WebView view, int newProgress) {
-		if(progressIndicator != null) {
-			progressIndicator.setProgress(newProgress, true);
-		}
+		tab.progress = newProgress;
+		tab.runCallbacks(tab.onProgressCallbacks);
 	}
 }

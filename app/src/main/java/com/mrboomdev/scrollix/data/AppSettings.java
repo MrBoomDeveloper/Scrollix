@@ -2,17 +2,20 @@ package com.mrboomdev.scrollix.data;
 
 import com.mrboomdev.scrollix.data.search.GoogleSearch;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
+import com.mrboomdev.scrollix.util.FormatUtil;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 public class AppSettings {
+	public static AppSettings globalSettings;
 	public List<String> leftActions, rightActions, menuActions;
 	public BottomBarMode sideBar;
 	public DarkMode darkPages, darkUi;
 	public SearchEnginePreset searchEngine, autocompletion;
 	public boolean useLayoutColorFromPage;
+	public FormatUtil.UrlFormatRules urlFormatRules;
 
 	public AppSettings() {
 		leftActions = new ArrayList<>();

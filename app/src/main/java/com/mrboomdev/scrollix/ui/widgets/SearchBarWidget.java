@@ -2,28 +2,30 @@ package com.mrboomdev.scrollix.ui.widgets;
 
 import android.content.Context;
 import android.graphics.Color;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 
 import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.util.FileUtil;
+import com.mrboomdev.scrollix.util.FormatUtil;
 
 import java.util.Objects;
 
 public class SearchBarWidget extends LinearLayout {
 	private OnClickListener clickListener;
-	private ImageView refreshButton;
+	private final ImageView refreshButton;
 	private boolean isLoading;
 	private WebView webview;
-	private int primaryColor;
+	private final int primaryColor;
 	private Runnable refreshListener;
 	private final TextView titleView;
 
@@ -46,7 +48,7 @@ public class SearchBarWidget extends LinearLayout {
 		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
 		styledHolder.setGravity(Gravity.CENTER_VERTICAL);
 		styledHolder.setBackgroundResource(R.drawable.search_input_background);
-		styledHolder.setPadding(20, 0, 15, 0);
+		styledHolder.setPadding(10, 0, 10, 0);
 		addView(styledHolder, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(8, 8, 8, 8);
 
@@ -64,6 +66,24 @@ public class SearchBarWidget extends LinearLayout {
 			}
 		});
 
+		int size = (int)FormatUtil.getResponsiveValue(34, FormatUtil.Dimension.DIP, context);
+
+		var securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black, context);
+		FileUtil.setDrawableColor(securityIconImage, primaryColor);
+
+		var securityIcon = new ImageView(context);
+		securityIcon.setImageDrawable(securityIconImage);
+		securityIcon.setPadding(11, 11, 11, 11);
+		securityIcon.setBackground(circleRipple);
+		securityIcon.setClickable(true);
+		securityIcon.setFocusable(true);
+		styledHolder.addView(securityIcon, size, size);
+		((LayoutParams)securityIcon.getLayoutParams()).rightMargin = 10;
+
+		securityIcon.setOnClickListener(view -> {
+			Toast.makeText(context, "Not available currently!", Toast.LENGTH_SHORT).show();
+		});
+
 		titleView = new TextView(context);
 		titleView.setTextSize(14);
 		titleView.setTextColor(primaryColor);
@@ -73,12 +93,12 @@ public class SearchBarWidget extends LinearLayout {
 		((LayoutParams)titleView.getLayoutParams()).weight = 1;
 
 		refreshButton = new ImageView(context);
-		refreshButton.setBackground(circleRipple);
+		refreshButton.setBackground(Objects.requireNonNull(Objects.requireNonNull(circleRipple)
+						.getConstantState()).newDrawable().mutate());
+
 		refreshButton.setClickable(true);
 		refreshButton.setFocusable(true);
 		refreshButton.setPadding(10, 10, 10, 10);
-
-		int size = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 34, getResources().getDisplayMetrics());
 		styledHolder.addView(refreshButton, size, size);
 		((LayoutParams)refreshButton.getLayoutParams()).setMargins(20, 0, 0, 0);
 

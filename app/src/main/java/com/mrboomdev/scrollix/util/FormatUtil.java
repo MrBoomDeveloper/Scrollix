@@ -7,6 +7,8 @@ import androidx.annotation.NonNull;
 
 import org.jetbrains.annotations.Contract;
 
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 
 public class FormatUtil {
@@ -15,7 +17,21 @@ public class FormatUtil {
 		try {
 			new URL(url).toURI();
 			return true;
-		} catch(Exception e) {
+		} catch(MalformedURLException | URISyntaxException e) {
+			return false;
+		}
+	}
+
+	public static boolean isSameLink(String link1, String link2) {
+		if(!(isUrlValid(link1) && isUrlValid(link2))) return false;
+
+		try {
+			var url1 = new URL(link1);
+			var url2 = new URL(link2);
+
+			return url1.sameFile(url2);
+		} catch(MalformedURLException e) {
+			e.printStackTrace();
 			return false;
 		}
 	}
