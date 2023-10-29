@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.util;
 import androidx.annotation.NonNull;
 
 import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.Nullable;
 
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
@@ -15,6 +16,22 @@ public class LinkUtil {
 			return true;
 		} catch(MalformedURLException | URISyntaxException e) {
 			return false;
+		}
+	}
+
+	@Nullable
+	public static String tryToFixUrl(String url) {
+		try {
+			String newUrl = "http://" + url;
+			new URL(newUrl).toURI();
+
+			var split = newUrl.split("\\.");
+			if(split.length <= 1) return null;
+
+			return newUrl;
+		} catch(Exception e) {
+			e.printStackTrace();
+			return null;
 		}
 	}
 

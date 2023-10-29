@@ -1,4 +1,4 @@
-package com.mrboomdev.scrollix;
+package com.mrboomdev.scrollix.webview;
 
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -76,27 +76,29 @@ public class MyWebViewClient extends WebViewClient {
 					var context = view.getContext();
 					Intent intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
 
-					if(intent != null) {
-						var packageManager = context.getPackageManager();
-						var info = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
-
-						if(info != null) {
-							context.startActivity(intent);
-							return true;
-						}
-
-						String fallbackUrl = intent.getStringExtra("browser_fallback_url");
-
-						if(fallbackUrl != null) {
-							view.loadUrl(fallbackUrl);
-						} else {
-							Toast.makeText(view.getContext(), "Required app was not found", Toast.LENGTH_LONG).show();
-						}
-					} else {
+					if(intent == null) {
 						Toast.makeText(view.getContext(), "Invalid app link", Toast.LENGTH_LONG).show();
+						return true;
+					}
+
+					var packageManager = context.getPackageManager();
+					var info = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+
+					if(info != null) {
+						context.startActivity(intent);
+						return true;
+					}
+
+					String fallbackUrl = intent.getStringExtra("browser_fallback_url");
+
+					if(fallbackUrl != null) {
+						view.loadUrl(fallbackUrl);
+					} else {
+						Toast.makeText(view.getContext(), "Required app was not found", Toast.LENGTH_LONG).show();
 					}
 				} catch(URISyntaxException e) {
-					Toast.makeText(view.getContext(), "Required app was not found", Toast.LENGTH_LONG).show();
+					e.printStackTrace();
+					Toast.makeText(view.getContext(), "Invalid app link", Toast.LENGTH_LONG).show();
 				}
 
 				return true;

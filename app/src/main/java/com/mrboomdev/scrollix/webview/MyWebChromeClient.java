@@ -1,4 +1,4 @@
-package com.mrboomdev.scrollix;
+package com.mrboomdev.scrollix.webview;
 
 import android.graphics.Bitmap;
 import android.os.Message;

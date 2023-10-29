@@ -17,6 +17,7 @@ import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 
 import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 
@@ -32,12 +33,13 @@ public class SearchBarWidget extends LinearLayout {
 
 	public SearchBarWidget(Context context, WebView webview) {
 		super(context);
+		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
 
 		var params = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT);
 		params.weight = 1;
 		setLayoutParams(params);
 
-		primaryColor = Color.parseColor("#ccccdd");
+		primaryColor = Color.parseColor(theme.barsOverlay);
 
 		var circleRipple = ResourcesCompat.getDrawable(
 				getResources(),
@@ -47,7 +49,11 @@ public class SearchBarWidget extends LinearLayout {
 		var styledHolder = new LinearLayout(context);
 		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
 		styledHolder.setGravity(Gravity.CENTER_VERTICAL);
-		styledHolder.setBackgroundResource(R.drawable.search_input_background);
+
+		var background = FileUtil.getDrawable(R.drawable.search_input_background, context);
+		FileUtil.setDrawableColor(background, Color.parseColor(theme.barsInner));
+		styledHolder.setBackground(background);
+
 		styledHolder.setPadding(10, 0, 10, 0);
 		addView(styledHolder, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(8, 8, 8, 8);
@@ -103,11 +109,9 @@ public class SearchBarWidget extends LinearLayout {
 		((LayoutParams)refreshButton.getLayoutParams()).setMargins(20, 0, 0, 0);
 
 		refreshButton.setOnClickListener(view -> {
-			if(isLoading)
-				webview.stopLoading();
-			else
-				webview.reload();
+			if(isLoading) webview.stopLoading(); else webview.reload();
 		});
+
 		setIsLoading(false);
 	}
 

@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TabsManager {
-	private static List<Tab> tabs = new ArrayList<>();
+	public static List<Tab> tabs = new ArrayList<>();
 
 	@NonNull
 	public static Tab create(Context context) {

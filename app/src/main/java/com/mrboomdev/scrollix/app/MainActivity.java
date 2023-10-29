@@ -1,4 +1,4 @@
-package com.mrboomdev.scrollix;
+package com.mrboomdev.scrollix.app;
 
 import android.annotation.SuppressLint;
 import android.content.res.Configuration;
@@ -30,12 +30,16 @@ import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.progressindicator.LinearProgressIndicator;
-import com.mrboomdev.scrollix.data.AppSettings;
+import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.data.settings.AppSettings;
+import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.webview.MyWebChromeClient;
+import com.mrboomdev.scrollix.webview.MyWebViewClient;
 
 import java.util.Objects;
 
@@ -65,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main_layout);
+		ThemeSettings.ThemeManager.setContext(getApplicationContext());
 
 		parent = findViewById(R.id.main_screen_parent);
 		topbar = findViewById(R.id.top_bar);
@@ -100,7 +105,6 @@ public class MainActivity extends AppCompatActivity {
 		});
 
 		reloadLayout();
-		applyTheme();
 
 		searchLayout = new SearchLayout(this, appSettings);
 		searchLayout.setVisibility(View.GONE, false);
@@ -159,13 +163,21 @@ public class MainActivity extends AppCompatActivity {
 		searchBar.setIsLoading(false);
 	}
 
+	@Override
+	protected void onDestroy() {
+		super.onDestroy();
+		ThemeSettings.ThemeManager.setContext(null);
+		TabsManager.tabs.clear();
+	}
+
 	public void applyTheme() {
 		var window = getWindow();
+		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
 
-		window.setStatusBarColor(Color.parseColor("#222222"));
-		window.setNavigationBarColor(Color.parseColor("#222222"));
+		window.setStatusBarColor(Color.parseColor(theme.bars));
+		window.setNavigationBarColor(Color.parseColor(theme.bars));
 
-		window.setBackgroundDrawable(new ColorDrawable(Color.parseColor("#222222")));
+		window.setBackgroundDrawable(new ColorDrawable(Color.parseColor(theme.bars)));
 
 		if(Build.VERSION.SDK_INT >= 28) {
 			var attrs = window.getAttributes();
@@ -182,9 +194,16 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	public void reloadLayout() {
+		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
+		var barsColor = Color.parseColor(theme.bars);
+
 		topbar.removeAllViews();
 		bottombar.removeAllViews();
 		sidebar.removeAllViews();
+
+		topbar.setBackgroundColor(barsColor);
+		bottombar.setBackgroundColor(barsColor);
+		sidebar.setBackgroundColor(barsColor);
 
 		var config = getResources().getConfiguration();
 		boolean isLandscape = (config.orientation == Configuration.ORIENTATION_LANDSCAPE);
@@ -238,11 +257,14 @@ public class MainActivity extends AppCompatActivity {
 		//chromeClient.setSearchBar(searchBar);
 
 		bottombar.setVisibility(!isLandscape ? View.VISIBLE : View.GONE);
+
+		applyTheme();
 	}
 
 	@NonNull
 	private View createActionButton(@NonNull String name) {
-		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor("#ccccdd");
+		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
+		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor(theme.barsOverlay);
 		var button = new ImageView(this);
 		var circleRipple = ResourcesCompat.getDrawable(getResources(), R.drawable.ripple_circle, getTheme());
 

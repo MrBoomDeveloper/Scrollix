@@ -46,6 +46,9 @@
         </div>
         
         <script>
+            const currentTheme = JSON.parse(scrollix.getCurrentTheme());
+            document.querySelector("html").style.backgroundColor = currentTheme.background;
+
             const search = document.querySelector("#search");
             if(search != null) {
                 search.addEventListener("keypress", event => {

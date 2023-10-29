@@ -2,8 +2,23 @@
     <head>
         <title>Settings</title>
     </head>
+
     <body>
         <h1>Settings</h1>
         <input type="checkbox" title="Test">
+
+        <textarea placeholder="Theme json" id="theme" style="height: 5rem; width: 15rem"></textarea>
+        <p>You'll need to reopen an app to see any changes</p>
+
+        <script>
+            let currentThemeName = scrollix.getCurrentThemeName();
+            let currentTheme = JSON.parse(scrollix.getTheme(currentThemeName));
+
+            const theme = document.querySelector("#theme");
+            theme.value = JSON.stringify(currentTheme);
+            theme.addEventListener("input", () => {
+                scrollix.setThemeData(currentThemeName, theme.value);
+            });
+        </script>
     </body>
 </html>

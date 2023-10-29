@@ -7,10 +7,11 @@ import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
 
-import com.mrboomdev.scrollix.MyWebChromeClient;
-import com.mrboomdev.scrollix.MyWebViewClient;
-import com.mrboomdev.scrollix.data.AppSettings;
+import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.webview.MyWebChromeClient;
+import com.mrboomdev.scrollix.webview.MyWebViewClient;
+import com.mrboomdev.scrollix.webview.ScrollixJsBridge;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,9 @@ public class Tab {
 
 		var webChromeClient = new MyWebChromeClient(this);
 		webView.setWebChromeClient(webChromeClient);
+
+		var scrollixJsBridge = new ScrollixJsBridge(this);
+		webView.addJavascriptInterface(scrollixJsBridge, "scrollix");
 
 		onStartedCallbacks = new ArrayList<>();
 		onProgressCallbacks = new ArrayList<>();

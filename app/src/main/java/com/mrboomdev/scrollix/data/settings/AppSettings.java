@@ -1,4 +1,4 @@
-package com.mrboomdev.scrollix.data;
+package com.mrboomdev.scrollix.data.settings;
 
 import com.mrboomdev.scrollix.data.search.GoogleSearch;
 import com.mrboomdev.scrollix.data.search.SearchEngine;

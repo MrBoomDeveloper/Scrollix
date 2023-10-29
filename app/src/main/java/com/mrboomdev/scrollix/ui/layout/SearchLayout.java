@@ -17,10 +17,12 @@ import android.widget.LinearLayout;
 import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.data.AppSettings;
+import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
+
+import java.util.Objects;
 
 public class SearchLayout extends LinearLayout {
 	private ImageView engineIcon;
@@ -73,7 +75,13 @@ public class SearchLayout extends LinearLayout {
 				var engine = settings.searchEngine.getEngine();
 				var query = editText.getText().toString();
 
-				listener.launch(LinkUtil.isUrlValid(query) ? query : engine.getSearchUrl(query));
+				if(LinkUtil.isUrlValid(query)) {
+					listener.launch(query);
+				} else {
+					var fixed = LinkUtil.tryToFixUrl(query);
+					System.out.println(fixed);
+					listener.launch(Objects.requireNonNullElse(fixed, engine.getSearchUrl(query)));
+				}
 			}
 
 			hide();
