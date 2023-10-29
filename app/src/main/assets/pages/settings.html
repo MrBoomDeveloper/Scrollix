@@ -1,14 +1,14 @@
 <html>
     <head>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+        <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
         <title>Settings</title>
     </head>
 
     <body>
         <h1>Settings</h1>
-        <input type="checkbox" title="Test">
 
-        <textarea placeholder="Theme json" id="theme" style="height: 5rem; width: 15rem"></textarea>
-        <p>You'll need to reopen an app to see any changes</p>
+        <textarea placeholder="Theme json" id="theme" style="height: 5rem; width: 25rem"></textarea>
 
         <script>
             let currentThemeName = scrollix.getCurrentThemeName();
@@ -17,7 +17,12 @@
             const theme = document.querySelector("#theme");
             theme.value = JSON.stringify(currentTheme);
             theme.addEventListener("input", () => {
-                scrollix.setThemeData(currentThemeName, theme.value);
+                try {
+                    const json = JSON.parse(theme.value);
+                    scrollix.setThemeData(currentThemeName, theme.value);
+                } catch(e) {
+                    console.error("invalid theme json! " + e.message);
+                }
             });
         </script>
     </body>

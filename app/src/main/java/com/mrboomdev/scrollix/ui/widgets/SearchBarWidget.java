@@ -31,9 +31,8 @@ public class SearchBarWidget extends LinearLayout {
 	private final int primaryColor;
 	private final TextView titleView;
 
-	public SearchBarWidget(Context context, WebView webview) {
+	public SearchBarWidget(Context context, WebView webview, ThemeSettings theme) {
 		super(context);
-		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
 
 		var params = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT);
 		params.weight = 1;

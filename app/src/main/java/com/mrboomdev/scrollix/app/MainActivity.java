@@ -69,7 +69,9 @@ public class MainActivity extends AppCompatActivity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main_layout);
+
 		ThemeSettings.ThemeManager.setContext(getApplicationContext());
+		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
 
 		parent = findViewById(R.id.main_screen_parent);
 		topbar = findViewById(R.id.top_bar);
@@ -170,9 +172,8 @@ public class MainActivity extends AppCompatActivity {
 		TabsManager.tabs.clear();
 	}
 
-	public void applyTheme() {
+	public void applyTheme(@NonNull ThemeSettings theme) {
 		var window = getWindow();
-		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
 
 		window.setStatusBarColor(Color.parseColor(theme.bars));
 		window.setNavigationBarColor(Color.parseColor(theme.bars));
@@ -195,6 +196,8 @@ public class MainActivity extends AppCompatActivity {
 
 	public void reloadLayout() {
 		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
+		if(theme.isInvalid()) theme = new ThemeSettings();
+
 		var barsColor = Color.parseColor(theme.bars);
 
 		topbar.removeAllViews();
@@ -235,7 +238,7 @@ public class MainActivity extends AppCompatActivity {
 			sidebar.setVisibility(View.GONE);
 		}
 
-		searchBar = new SearchBarWidget(this, webView);
+		searchBar = new SearchBarWidget(this, webView, theme);
 		searchBar.setTitle(webView.getTitle());
 		topbar.addView(searchBar);
 
@@ -258,7 +261,7 @@ public class MainActivity extends AppCompatActivity {
 
 		bottombar.setVisibility(!isLandscape ? View.VISIBLE : View.GONE);
 
-		applyTheme();
+		applyTheme(theme);
 	}
 
 	@NonNull

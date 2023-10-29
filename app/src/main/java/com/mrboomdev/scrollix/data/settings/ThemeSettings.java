@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.data.settings;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -10,6 +11,8 @@ import androidx.annotation.Nullable;
 import com.squareup.moshi.Moshi;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ThemeSettings {
 	public String bars, barsOverlay, barsInner;
@@ -20,11 +23,28 @@ public class ThemeSettings {
 	}
 
 	public void reset() {
-		this.bars = "#000000";
+		this.bars = "#110000";
 		this.barsOverlay = "#ccccdd";
-		this.barsInner = "#55ffffff";
+		this.barsInner = "#11ffffff";
 
 		this.primary = "#ff0000";
+		this.background = "#000000";
+	}
+
+	public boolean isInvalid() {
+		try {
+			Color.parseColor(bars);
+			Color.parseColor(barsOverlay);
+			Color.parseColor(barsInner);
+
+			Color.parseColor(primary);
+			Color.parseColor(background);
+		} catch(IllegalArgumentException e) {
+			e.printStackTrace();
+			return true;
+		}
+
+		return false;
 	}
 
 	@SuppressLint("StaticFieldLeak")
@@ -32,6 +52,11 @@ public class ThemeSettings {
 		private static String currentName;
 		private static SharedPreferences prefs;
 		private static ThemeSettings currentData;
+		private static final List<Runnable> updateCallbacks = new ArrayList<>();
+
+		public static void addUpdateListener(Runnable listener) {
+			updateCallbacks.add(listener);
+		}
 
 		public static void setContext(@Nullable Context _context) {
 			if(_context == null) return;
@@ -96,6 +121,21 @@ public class ThemeSettings {
 			}
 
 			prefs.edit().putString("current", name).apply();
+		}
+
+		public static void setThemeJson(@NonNull String name, String json) {
+			try {
+				var moshi = new Moshi.Builder().build();
+				var adapter = moshi.adapter(ThemeSettings.class);
+				prefs.edit().putString("data_" + name, json).apply();
+
+				if(name.equals(currentName)) {
+					currentData = adapter.fromJson(json);
+					updateCallbacks.forEach(Runnable::run);
+				}
+			} catch(IOException e) {
+				e.printStackTrace();
+			}
 		}
 
 		public static String getCurrentThemeName() {
