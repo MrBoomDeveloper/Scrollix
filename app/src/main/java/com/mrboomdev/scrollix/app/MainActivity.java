@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.app;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -30,6 +31,7 @@ import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
@@ -39,6 +41,7 @@ import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.Objects;
 
@@ -52,6 +55,32 @@ public class MainActivity extends AppCompatActivity {
 	private WebView webView;
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
+
+	@Override
+	protected void onNewIntent(Intent intent) {
+		super.onNewIntent(intent);
+
+		var type = intent.getStringExtra("type");
+		if(type == null) return;
+
+		switch(type) {
+			case "update_theme" -> reloadLayout();
+
+			case "cancel_download" -> MyDownloadListener.ProgressListener.cancel(
+					intent.getIntExtra("id", 0));
+
+			case "error" -> {
+				var title = intent.getStringExtra("title");
+				var message = intent.getStringExtra("message");
+
+				new MaterialAlertDialogBuilder(this)
+					.setTitle(title)
+					.setMessage(message)
+					.setPositiveButton("Ok", (_dialog, _button) -> _dialog.cancel())
+					.show();
+			}
+		}
+	}
 
 	@Override
 	public void onConfigurationChanged(@NonNull Configuration newConfig) {
@@ -103,8 +132,6 @@ public class MainActivity extends AppCompatActivity {
 			webView.reload();
 		});
 
-		reloadLayout();
-
 		searchLayout = new SearchLayout(this, appSettings);
 		searchLayout.setVisibility(View.GONE, false);
 		searchLayout.setLaunchLinkListener(webView::loadUrl);
@@ -116,6 +143,8 @@ public class MainActivity extends AppCompatActivity {
 		searchLayoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
 
 		parent.addView(searchLayout, searchLayoutParams);
+
+		reloadLayout();
 	}
 
 	public void createTab() {
@@ -129,7 +158,6 @@ public class MainActivity extends AppCompatActivity {
 			searchLayout.setUrl(tab.url);
 
 			progressIndicator.setVisibility(View.VISIBLE);
-
 		});
 
 		currentTab.onTitleCallbacks.add(tab -> {
@@ -186,6 +214,8 @@ public class MainActivity extends AppCompatActivity {
 
 		swipeRefreshLayout.setColorSchemeColors(Color.parseColor(theme.barsOverlay));
 		swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.parseColor(theme.bars));
+
+		searchLayout.setTheme(theme);
 	}
 
 	private int getSizeForButton(boolean isSmall) {
@@ -358,6 +388,7 @@ public class MainActivity extends AppCompatActivity {
 
 			TextView tabsCounter = new TextView(this);
 			tabsCounter.setText(String.valueOf(TabsManager.getCount()));
+			tabsCounter.setTextColor(primaryColor);
 			tabsCounter.setTextSize(13);
 			tabsCounter.setGravity(Gravity.CENTER);
 			parent.addView(tabsCounter, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -388,6 +419,7 @@ public class MainActivity extends AppCompatActivity {
 		webView.setOnTouchListener(scrollListener);
 	}
 
+	@SuppressLint({"MissingSuperCall"})
 	@Override
 	public void onBackPressed() {
 		if(searchLayout.isOpened()) {

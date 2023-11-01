@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.ui.layout;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
 import android.text.InputType;
@@ -18,25 +19,29 @@ import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
+import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.util.Objects;
 
+@SuppressLint("ViewConstructor")
 public class SearchLayout extends LinearLayout {
-	private ImageView engineIcon;
-	private EditText editText;
+	private final EditText editText;
 	private LaunchLinkListener listener;
 	private String url;
 	private Animation animation;
 	private boolean isOpened;
 
+	public void setTheme(@NonNull ThemeSettings theme) {
+		setBackgroundColor(Color.parseColor(theme.bars));
+		editText.setTextColor(Color.parseColor(theme.barsOverlay));
+	}
+
 	public SearchLayout(Context context, @NonNull AppSettings settings) {
 		super(context);
-
 		setOrientation(VERTICAL);
-		setBackgroundColor(Color.parseColor("#222222"));
 
 		var inputBar = new LinearLayout(context);
 		inputBar.setOrientation(HORIZONTAL);
@@ -46,7 +51,7 @@ public class SearchLayout extends LinearLayout {
 
 		int iconSize = (int)FormatUtil.getResponsiveValue(34, FormatUtil.Dimension.DIP, context);
 
-		engineIcon = new ImageView(context);
+		ImageView engineIcon = new ImageView(context);
 		engineIcon.setImageDrawable(settings.searchEngine.getEngine().getIcon(context));
 		engineIcon.setClickable(true);
 		engineIcon.setPadding(10, 10, 10, 10);
@@ -79,7 +84,6 @@ public class SearchLayout extends LinearLayout {
 					listener.launch(query);
 				} else {
 					var fixed = LinkUtil.tryToFixUrl(query);
-					System.out.println(fixed);
 					listener.launch(Objects.requireNonNullElse(fixed, engine.getSearchUrl(query)));
 				}
 			}

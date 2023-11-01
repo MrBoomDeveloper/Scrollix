@@ -49,6 +49,37 @@ public class LinkUtil {
 		}
 	}
 
+	@NonNull
+	public static String generateFileName(String url, @NonNull String contentDisposition) {
+		var fileNameHeader = "filename=";
+		var nameIndex = contentDisposition.indexOf(fileNameHeader);
+
+		if(nameIndex == -1) return generateFileName(url);
+
+		var name = contentDisposition.substring(nameIndex + fileNameHeader.length());
+
+		if(name.contains(" ")) {
+			return name.substring(0, name.indexOf(" "));
+		}
+
+		return name;
+	}
+
+	@NonNull
+	public static String generateFileName(@NonNull String url) {
+		var name = url.substring(url.lastIndexOf("/") + 1);
+
+		if(name.contains("#")) {
+			name = name.substring(0, name.indexOf("#"));
+		}
+
+		if(name.contains("?")) {
+			name = name.substring(0, name.indexOf("?"));
+		}
+
+		return name;
+	}
+
 	@Contract(value = "_, _ -> param1", pure = true)
 	public static String formatUrl(String url, @NonNull UrlFormatRules rules) {
 		if(rules.removeProtocol) {

@@ -18,7 +18,9 @@ import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.color.DynamicColors;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -56,33 +58,26 @@ public class AppManager {
 		}
 	}
 
-	public static void checkAndRequestPermission(@NonNull Context context, @NonNull Permission permission, Runnable success, Runnable failure) {
-		checkAndRequestPermission(context, permission, success, failure, true);
+	public static void checkAndRequestPermission(@NonNull Context context, @NonNull Permission permission, ResultCallback callback) {
+		checkAndRequestPermission(context, permission, callback, true);
 	}
 
-	private static void checkAndRequestPermission(@NonNull Context context, @NonNull Permission permission, Runnable success, Runnable failure, boolean retry) {
-		var activity = ((AppCompatActivity)context);
-
+	private static void checkAndRequestPermission(@NonNull Context context, @NonNull Permission permission, ResultCallback callback, boolean retry) {
 		switch(permission) {
 			case NOTIFICATION -> {
 				if(Build.VERSION.SDK_INT < 33) {
-					success.run();
+					callback.run(true);
 					return;
 				}
 
 				var status = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS);
 
 				if(status == PackageManager.PERMISSION_GRANTED) {
-					success.run();
+					callback.run(true);
 					return;
 				}
 
-				activityCallbackLauncher.launchPermission(Manifest.permission.POST_NOTIFICATIONS, isSuccess -> {
-					if(isSuccess)
-						success.run();
-					else
-						failure.run();
-				});
+				activityCallbackLauncher.launchPermission(Manifest.permission.POST_NOTIFICATIONS, callback);
 			}
 
 			case STORAGE -> {
@@ -93,12 +88,12 @@ public class AppManager {
 				var status = ContextCompat.checkSelfPermission(context, requiredPermission);
 
 				if(status == PackageManager.PERMISSION_GRANTED) {
-					success.run();
+					callback.run(true);
 					return;
 				}
 
 				if(!retry) {
-					failure.run();
+					callback.run(false);
 					return;
 				}
 
@@ -107,17 +102,12 @@ public class AppManager {
 					var intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION, uri);
 
 					activityCallbackLauncher.launchIntent(intent,
-							() -> checkAndRequestPermission(context, permission, success, failure, false));
+							() -> checkAndRequestPermission(context, permission, callback, false));
 
 					return;
 				}
 
-				activityCallbackLauncher.launchPermission(requiredPermission, isSuccess -> {
-					if(isSuccess)
-						success.run();
-					else
-						failure.run();
-				});
+				activityCallbackLauncher.launchPermission(requiredPermission, callback);
 			}
 		}
 	}
@@ -128,6 +118,10 @@ public class AppManager {
 	}
 
 	public static void startup(AppCompatActivity context) {
+		if(DynamicColors.isDynamicColorAvailable()) {
+			DynamicColors.applyToActivitiesIfAvailable(context.getApplication());
+		}
+
 		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 			registerNotificationChannels(context);
 		} else {
@@ -140,6 +134,10 @@ public class AppManager {
 	public static void dispose() {
 		activityCallbackLauncher = null;
 		TabsManager.tabs.clear();
+
+		for(var download : MyDownloadListener.ProgressListener.activeDownloads.values()) {
+			download.cancel();
+		}
 	}
 
 	public enum NotificationChannelGroup {
@@ -185,16 +183,8 @@ public class AppManager {
 			this.group = group;
 		}
 
-		NotificationChannel(String id, String name, String description, int importance) {
-			this(id, name, description, importance, null);
-		}
-
 		NotificationChannel(String id, String name, int importance, NotificationChannelGroup group) {
 			this(id, name, null, importance, group);
-		}
-
-		NotificationChannel(String id, String name, int importance) {
-			this(id, name, null, importance, null);
 		}
 
 		public String getAndroidId() {
@@ -251,9 +241,9 @@ public class AppManager {
 			this.intentCallback = callback;
 			intentLauncher.launch(input);
 		}
+	}
 
-		public interface ResultCallback {
-			void run(boolean isSuccess);
-		}
+	public interface ResultCallback {
+		void run(boolean isSuccess);
 	}
 }

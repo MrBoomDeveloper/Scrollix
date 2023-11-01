@@ -26,6 +26,7 @@
             android:name=".app.MainActivity"
             android:windowSoftInputMode="stateAlwaysVisible"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:launchMode="singleInstance"
             android:exported="true">
 
             <intent-filter>
