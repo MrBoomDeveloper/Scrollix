@@ -71,7 +71,7 @@ public class SearchBarWidget extends LinearLayout {
 			}
 		});
 
-		int size = (int)FormatUtil.getResponsiveValue(34, FormatUtil.Dimension.DIP, context);
+		int size = (int)FormatUtil.getDip(34);
 
 		securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black, context);
 		FileUtil.setDrawableColor(securityIconImage, primaryColor);

@@ -35,6 +35,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".app.IncognitoActivity"
+            android:process=":incognito"
+            android:windowSoftInputMode="stateAlwaysVisible"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:launchMode="singleInstance"
+            android:exported="true" />
     </application>
 
 </manifest>

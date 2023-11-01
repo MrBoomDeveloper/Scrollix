@@ -1,14 +1,26 @@
 package com.mrboomdev.scrollix.util;
 
-import android.content.Context;
 import android.util.TypedValue;
 
 import androidx.annotation.NonNull;
 
+import com.mrboomdev.scrollix.app.AppManager;
+
 public class FormatUtil {
 
-	public static float getResponsiveValue(int value, @NonNull Dimension dimension, @NonNull Context context) {
-		return TypedValue.applyDimension(dimension.getType(), value, context.getResources().getDisplayMetrics());
+	public static float getDip(int value) {
+		return getResponsiveValue(value, Dimension.DIP);
+	}
+
+	public static float getSp(int value) {
+		return getResponsiveValue(value, Dimension.SP);
+	}
+
+	public static float getResponsiveValue(int value, @NonNull Dimension dimension) {
+		var context = AppManager.getAppContext();
+		var metrics = context.getResources().getDisplayMetrics();
+
+		return TypedValue.applyDimension(dimension.getType(), value, metrics);
 	}
 
 	public enum Dimension {

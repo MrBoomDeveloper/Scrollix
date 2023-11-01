@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.app;
 
+import static android.webkit.WebView.HitTestResult;
+
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.res.Configuration;
@@ -7,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -39,7 +42,9 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
+import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
+import com.mrboomdev.scrollix.util.AndroidUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
@@ -196,6 +201,12 @@ public class MainActivity extends AppCompatActivity {
 
 		ThemeSettings.ThemeManager.setContext(null);
 		AppManager.dispose();
+
+		//TODO: SAVE STATE TO STORAGE AND RESTORE IT ON NEXT SESSION
+		//var bundle = new Bundle();
+		//var state = webView.saveState(bundle);
+
+		//var history = webView.copyBackForwardList();
 	}
 
 	public void applyTheme(@NonNull ThemeSettings theme) {
@@ -335,6 +346,10 @@ public class MainActivity extends AppCompatActivity {
 				button.setOnClickListener(view -> {
 					var a = new ImageView(this);
 					a.setImageResource(R.drawable.ic_google_colorful);
+					a.setOnClickListener(_view -> {
+						var intent = new Intent(this, IncognitoActivity.class);
+						startActivity(intent);
+					});
 
 					var popup = new PopupWindow(a, 100, 100);
 					popup.setFocusable(true);
@@ -417,6 +432,58 @@ public class MainActivity extends AppCompatActivity {
 
 		this.webView = webView;
 		webView.setOnTouchListener(scrollListener);
+
+		webView.setOnLongClickListener(view -> {
+			var test = webView.getHitTestResult();
+			int type = test.getType();
+
+			if(type != HitTestResult.SRC_ANCHOR_TYPE
+					&& type != HitTestResult.IMAGE_TYPE
+					&& type != HitTestResult.SRC_IMAGE_ANCHOR_TYPE) return false;
+
+			var handler = new Handler();
+			var linkMessage = handler.obtainMessage();
+			var imageMessage = handler.obtainMessage();
+
+			var menu = new ContextMenu.Builder(this)
+					.setDismissOnSelect(true);
+
+			switch(type) {
+				case HitTestResult.IMAGE_TYPE -> {
+					webView.requestImageRef(imageMessage);
+				}
+
+				case HitTestResult.SRC_ANCHOR_TYPE -> {
+					webView.requestFocusNodeHref(linkMessage);
+				}
+
+				case HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+					webView.requestFocusNodeHref(linkMessage);
+					webView.requestImageRef(imageMessage);
+				}
+			}
+
+			var link = linkMessage.getData().getString("url");
+			if(link != null) {
+				menu.addAction("Open link in new tab", () -> webView.loadUrl(link));
+				menu.addAction("Open link in new incognito tab", () -> {});
+				menu.addAction("Share link", () -> AndroidUtil.share("Share link", link));
+				menu.addAction("Copy link to clipboard", () -> AndroidUtil.copyToClipboard(link));
+			}
+
+			var image = imageMessage.getData().getString("url");
+			if(image != null) {
+				menu.addAction("Open image in new tab", () -> webView.loadUrl(image));
+				menu.addAction("Open image in new incognito tab", () -> {});
+				menu.addAction("Download image", () -> {});
+				menu.addAction("Share image", () -> AndroidUtil.share("Share image link", image));
+				menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(image));
+			}
+
+			menu.build();
+
+			return false;
+		});
 	}
 
 	@SuppressLint({"MissingSuperCall"})

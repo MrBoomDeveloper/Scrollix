@@ -10,6 +10,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Log;
+import android.webkit.WebView;
+import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -22,12 +24,15 @@ import com.google.android.material.color.DynamicColors;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
 public class AppManager {
 	private static final String TAG = "AppManager";
 	private static ActivityCallbackLauncher activityCallbackLauncher;
+	private static Method getContextMethod;
 
 	@RequiresApi(api = Build.VERSION_CODES.O)
 	@SuppressLint("WrongConstant")
@@ -117,6 +122,26 @@ public class AppManager {
 		STORAGE
 	}
 
+	@SuppressLint("PrivateApi")
+	public static Context getAppContext() {
+		try {
+			if(getContextMethod == null) {
+				var globals = Class.forName("android.app.AppGlobals");
+				getContextMethod = globals.getMethod("getInitialApplication");
+			}
+
+			return (Context)getContextMethod.invoke(null);
+		} catch(ClassNotFoundException e) {
+			throw new RuntimeException("Cannot find a AppGlobals class!", e);
+		} catch(NoSuchMethodException e) {
+			throw new RuntimeException("Cannot find a getInitialApplication method!", e);
+		} catch(InvocationTargetException e) {
+			throw new RuntimeException("Failed to invoke a system api!", e);
+		} catch(IllegalAccessException e) {
+			throw new RuntimeException("Forbidden access for system api!", e);
+		}
+	}
+
 	public static void startup(AppCompatActivity context) {
 		if(DynamicColors.isDynamicColorAvailable()) {
 			DynamicColors.applyToActivitiesIfAvailable(context.getApplication());
@@ -126,6 +151,14 @@ public class AppManager {
 			registerNotificationChannels(context);
 		} else {
 			Log.i(TAG, "Skipping notification channels registration, because device sdk version is lower than required.");
+		}
+
+		if(context instanceof IncognitoActivity) {
+			if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+				WebView.setDataDirectorySuffix("incognito");
+			} else {
+				Toast.makeText(context, "Incognito mode isn't supported on your device", Toast.LENGTH_LONG).show();
+			}
 		}
 
 		activityCallbackLauncher = new ActivityCallbackLauncher(context);
