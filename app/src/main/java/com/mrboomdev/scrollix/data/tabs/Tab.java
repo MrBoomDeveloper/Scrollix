@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.webview.MyDownloadListener;
 import com.mrboomdev.scrollix.webview.MyWebChromeClient;
 import com.mrboomdev.scrollix.webview.MyWebViewClient;
 import com.mrboomdev.scrollix.webview.ScrollixJsBridge;
@@ -26,6 +27,9 @@ public class Tab {
 
 	public Tab(Context context) {
 		webView = new WebView(context);
+
+		var downloadListener = new MyDownloadListener(context);
+		webView.setDownloadListener(downloadListener);
 
 		var webViewClient = new MyWebViewClient(this);
 		webView.setWebViewClient(webViewClient);

@@ -19,6 +19,7 @@ import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -38,8 +39,6 @@ import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.LinkUtil;
-import com.mrboomdev.scrollix.webview.MyWebChromeClient;
-import com.mrboomdev.scrollix.webview.MyWebViewClient;
 
 import java.util.Objects;
 
@@ -47,14 +46,10 @@ public class MainActivity extends AppCompatActivity {
 	public SearchLayout searchLayout;
 	private SwipeRefreshLayout swipeRefreshLayout;
 	private ScrollListener scrollListener;
-	private TextView tabsCounter;
-	private ConstraintLayout parent;
 	private Tab currentTab;
 	private AppSettings appSettings;
 	private LinearProgressIndicator progressIndicator;
 	private WebView webView;
-	private MyWebChromeClient chromeClient;
-	private MyWebViewClient webViewClient;
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
 
@@ -70,15 +65,17 @@ public class MainActivity extends AppCompatActivity {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main_layout);
 
-		ThemeSettings.ThemeManager.setContext(getApplicationContext());
+		AppManager.startup(this);
+		ThemeSettings.ThemeManager.setContext(this);
 		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
 
-		parent = findViewById(R.id.main_screen_parent);
+		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
 		topbar = findViewById(R.id.top_bar);
 		bottombar = findViewById(R.id.bottom_bar);
 		sidebar = findViewById(R.id.sidebar);
 
 		progressIndicator = findViewById(R.id.progressIndicator);
+
 		swipeRefreshLayout = findViewById(R.id.swipeRefresher);
 
 		scrollListener = new ScrollListener();
@@ -168,8 +165,9 @@ public class MainActivity extends AppCompatActivity {
 	@Override
 	protected void onDestroy() {
 		super.onDestroy();
+
 		ThemeSettings.ThemeManager.setContext(null);
-		TabsManager.tabs.clear();
+		AppManager.dispose();
 	}
 
 	public void applyTheme(@NonNull ThemeSettings theme) {
@@ -185,6 +183,9 @@ public class MainActivity extends AppCompatActivity {
 			attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
 			window.setAttributes(attrs);
 		}
+
+		swipeRefreshLayout.setColorSchemeColors(Color.parseColor(theme.barsOverlay));
+		swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.parseColor(theme.bars));
 	}
 
 	private int getSizeForButton(boolean isSmall) {
@@ -212,7 +213,7 @@ public class MainActivity extends AppCompatActivity {
 		boolean isLandscape = (config.orientation == Configuration.ORIENTATION_LANDSCAPE);
 
 		for(var item : appSettings.leftActions) {
-			var view = createActionButton(item);
+			var view = createActionButton(item, theme);
 
 			int size = getSizeForButton(isLandscape);
 			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, size);
@@ -226,7 +227,7 @@ public class MainActivity extends AppCompatActivity {
 			sidebar.setVisibility(View.VISIBLE);
 
 			for(var item : appSettings.menuActions) {
-				var view = createActionButton(item);
+				var view = createActionButton(item, theme);
 
 				int size = getSizeForButton(true);
 				var params = new LinearLayout.LayoutParams(size, size);
@@ -246,7 +247,7 @@ public class MainActivity extends AppCompatActivity {
 		if(!isLandscape) searchBar.setPadding(16, 0, 16, 0);
 
 		for(var item : appSettings.rightActions) {
-			var view = createActionButton(item);
+			var view = createActionButton(item, theme);
 
 			int size = getSizeForButton(isLandscape);
 			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, size);
@@ -265,11 +266,15 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	@NonNull
-	private View createActionButton(@NonNull String name) {
-		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
+	private View createActionButton(@NonNull String name, ThemeSettings theme) {
 		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor(theme.barsOverlay);
 		var button = new ImageView(this);
 		var circleRipple = ResourcesCompat.getDrawable(getResources(), R.drawable.ripple_circle, getTheme());
+
+		button.setOnClickListener(view -> {
+			String message = "Unknown action, please check your settings!";
+			Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
+		});
 
 		switch(name) {
 			case "home" -> {
@@ -292,14 +297,19 @@ public class MainActivity extends AppCompatActivity {
 
 			case "bookmarks" -> {
 				icon = R.drawable.ic_star_black;
-
-				button.setOnClickListener(view -> {
-
-				});
 			}
 
 			case "menu" -> {
 				icon = R.drawable.ic_menu_black;
+
+				button.setOnClickListener(view -> {
+					var a = new ImageView(this);
+					a.setImageResource(R.drawable.ic_google_colorful);
+
+					var popup = new PopupWindow(a, 100, 100);
+					popup.setFocusable(true);
+					popup.showAsDropDown(button);
+				});
 			}
 
 			case "back" -> {
@@ -318,12 +328,16 @@ public class MainActivity extends AppCompatActivity {
 
 			case "tabs" -> {
 				icon = R.drawable.ic_tabs_black;
-			}
 
-			default -> button.setOnClickListener(view -> {
-				String message = "Unknown action, please check your settings!";
-				Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
-			});
+				button.setOnClickListener(view -> {
+					var a = new ImageView(this);
+					a.setImageResource(R.drawable.ic_google_colorful);
+
+					var popup = new PopupWindow(a, 100, 100);
+					popup.setFocusable(true);
+					popup.showAsDropDown(button);
+				});
+			}
 		}
 
 		button.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -342,7 +356,7 @@ public class MainActivity extends AppCompatActivity {
 			button.setScaleY(1.1f);
 			parent.addView(button);
 
-			tabsCounter = new TextView(this);
+			TextView tabsCounter = new TextView(this);
 			tabsCounter.setText(String.valueOf(TabsManager.getCount()));
 			tabsCounter.setTextSize(13);
 			tabsCounter.setGravity(Gravity.CENTER);
@@ -367,16 +381,11 @@ public class MainActivity extends AppCompatActivity {
 			swipeRefreshLayout.removeView(this.webView);
 			swipeRefreshLayout.addView(webView, params);
 		} else {
-			swipeRefreshLayout.addView(webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+			swipeRefreshLayout.addView(webView, 0, 0);
 		}
 
 		this.webView = webView;
 		webView.setOnTouchListener(scrollListener);
-	}
-
-	private void restartLoadingIndicator() {
-		progressIndicator.setVisibility(View.VISIBLE);
-		progressIndicator.setProgress(0);
 	}
 
 	@Override
