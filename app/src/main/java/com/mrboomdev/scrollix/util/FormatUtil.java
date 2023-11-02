@@ -8,15 +8,54 @@ import com.mrboomdev.scrollix.app.AppManager;
 
 public class FormatUtil {
 
-	public static float getDip(int value) {
-		return getResponsiveValue(value, Dimension.DIP);
+	public static int getDip(int value) {
+		return (int)getResponsiveValue(value, Dimension.DIP);
 	}
 
-	public static float getSp(int value) {
-		return getResponsiveValue(value, Dimension.SP);
+	@NonNull
+	public static int[] getDip(@NonNull int ...values) {
+		var newArray = new int[values.length];
+
+		System.arraycopy(values, 0, newArray, 0, values.length);
+
+		for(int i = 0; i < values.length; i++) {
+			newArray[i] = (int)getResponsiveValue(values[i], Dimension.DIP);
+		}
+
+		return newArray;
 	}
 
-	public static float getResponsiveValue(int value, @NonNull Dimension dimension) {
+	@NonNull
+	public static int[] getSp(@NonNull int ...values) {
+		var newArray = new int[values.length];
+
+		System.arraycopy(values, 0, newArray, 0, values.length);
+
+		for(int i = 0; i < values.length; i++) {
+			newArray[i] = (int)getResponsiveValue(values[i], Dimension.SP);
+		}
+
+		return newArray;
+	}
+
+	public static int getSp(int value) {
+		return (int)getResponsiveValue(value, Dimension.SP);
+	}
+
+	@NonNull
+	public static float[] getResponsiveValues(@NonNull Dimension dimension, @NonNull float ...values) {
+		var newArray = new float[values.length];
+
+		System.arraycopy(values, 0, newArray, 0, values.length);
+
+		for(int i = 0; i < values.length; i++) {
+			newArray[i] = getResponsiveValue(values[i], dimension);
+		}
+
+		return newArray;
+	}
+
+	public static float getResponsiveValue(float value, @NonNull Dimension dimension) {
 		var context = AppManager.getAppContext();
 		var metrics = context.getResources().getDisplayMetrics();
 

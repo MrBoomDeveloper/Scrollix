@@ -32,6 +32,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
+import androidx.core.splashscreen.SplashScreen;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -43,6 +44,7 @@ import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
+import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AndroidUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
@@ -96,6 +98,7 @@ public class MainActivity extends AppCompatActivity {
 	@SuppressLint({"ClickableViewAccessibility"})
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
+		SplashScreen.installSplashScreen(this);
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main_layout);
 
@@ -375,12 +378,7 @@ public class MainActivity extends AppCompatActivity {
 				icon = R.drawable.ic_tabs_black;
 
 				button.setOnClickListener(view -> {
-					var a = new ImageView(this);
-					a.setImageResource(R.drawable.ic_google_colorful);
-
-					var popup = new PopupWindow(a, 100, 100);
-					popup.setFocusable(true);
-					popup.showAsDropDown(button);
+					new TabsMenu(this).showAt(button);
 				});
 			}
 		}
@@ -466,7 +464,7 @@ public class MainActivity extends AppCompatActivity {
 			var link = linkMessage.getData().getString("url");
 			if(link != null) {
 				menu.addAction("Open link in new tab", () -> webView.loadUrl(link));
-				menu.addAction("Open link in new incognito tab", () -> {});
+				//menu.addAction("Open link in new incognito tab", () -> {});
 				menu.addAction("Share link", () -> AndroidUtil.share("Share link", link));
 				menu.addAction("Copy link to clipboard", () -> AndroidUtil.copyToClipboard(link));
 			}
@@ -474,8 +472,8 @@ public class MainActivity extends AppCompatActivity {
 			var image = imageMessage.getData().getString("url");
 			if(image != null) {
 				menu.addAction("Open image in new tab", () -> webView.loadUrl(image));
-				menu.addAction("Open image in new incognito tab", () -> {});
-				menu.addAction("Download image", () -> {});
+				//menu.addAction("Open image in new incognito tab", () -> {});
+				//menu.addAction("Download image", () -> {});
 				menu.addAction("Share image", () -> AndroidUtil.share("Share image link", image));
 				menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(image));
 			}

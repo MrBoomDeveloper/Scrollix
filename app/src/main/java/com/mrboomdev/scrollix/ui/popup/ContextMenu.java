@@ -26,7 +26,7 @@ public class ContextMenu extends LinearLayout {
 		setOrientation(VERTICAL);
 
 		for(var action : builder.actions) {
-			var padding = (int)FormatUtil.getDip(8);
+			var padding = FormatUtil.getDip(10);
 
 			var linear = new LinearLayout(context);
 			linear.setPadding(padding, padding, padding, padding);
@@ -40,11 +40,11 @@ public class ContextMenu extends LinearLayout {
 					context.getTheme()));
 
 			var title = new TextView(context);
-			title.setText(action.getTitle());
+			title.setText(action.title());
 			title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
 
 			linear.setOnClickListener(view -> {
-				action.getCallback().run();
+				action.callback().run();
 
 				if(builder.dismissOnSelect) {
 					builder.dialog.dismiss();
@@ -55,23 +55,7 @@ public class ContextMenu extends LinearLayout {
 		}
 	}
 
-	public static class Action {
-		private final String title;
-		private final Runnable callback;
-
-		public Action(String title, Runnable callback) {
-			this.title = title;
-			this.callback = callback;
-		}
-
-		public String getTitle() {
-			return title;
-		}
-
-		public Runnable getCallback() {
-			return callback;
-		}
-	}
+	public record Action(String title, Runnable callback) {}
 
 	public static class Builder {
 		private final List<Action> actions = new ArrayList<>();
