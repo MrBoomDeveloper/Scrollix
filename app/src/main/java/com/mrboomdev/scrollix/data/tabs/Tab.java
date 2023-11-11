@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.view.View;
 import android.webkit.WebView;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 
@@ -23,7 +24,7 @@ public class Tab {
 	public Bitmap favicon;
 	public int progress;
 	public WebView webView;
-	public final List<TabCallback> onStartedCallbacks, onProgressCallbacks, onFinishedCallbacks;
+	public final List<TabCallback> onStartedCallbacks, onProgressCallbacks, onFinishedCallbacks, onDisposeCallbacks;
 	public final List<TabCallback> onFaviconCallbacks, onTitleCallbacks;
 
 	public Tab(Context context) {
@@ -46,9 +47,27 @@ public class Tab {
 		onStartedCallbacks = new ArrayList<>();
 		onProgressCallbacks = new ArrayList<>();
 		onFinishedCallbacks = new ArrayList<>();
+		onDisposeCallbacks = new ArrayList<>();
 
 		onFaviconCallbacks = new ArrayList<>();
 		onTitleCallbacks = new ArrayList<>();
+	}
+
+	public void dispose() {
+		runCallbacks(onDisposeCallbacks);
+
+		var parent = (LinearLayout)webView.getParent();
+		parent.removeView(webView);
+
+		onStartedCallbacks.clear();
+		onProgressCallbacks.clear();
+		onFinishedCallbacks.clear();
+
+		onFaviconCallbacks.clear();
+		onTitleCallbacks.clear();
+
+		webView = null;
+		favicon = null;
 	}
 
 	@SuppressLint("SetJavaScriptEnabled")

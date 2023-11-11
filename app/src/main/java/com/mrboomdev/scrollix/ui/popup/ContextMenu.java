@@ -81,7 +81,7 @@ public class ContextMenu extends LinearLayout {
 			return this;
 		}
 
-		public Builder setImage() {
+		public Builder setImage(String url) {
 			//TODO: Stub
 			return this;
 		}

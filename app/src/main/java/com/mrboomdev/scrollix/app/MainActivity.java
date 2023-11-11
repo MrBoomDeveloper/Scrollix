@@ -55,7 +55,7 @@ import java.util.List;
 import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
-	private final List<Tab> webViews = new ArrayList<>();
+	private final List<Tab> tabs = new ArrayList<>();
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
 	private SwipeRefreshLayout swipeRefreshLayout;
@@ -144,7 +144,10 @@ public class MainActivity extends AppCompatActivity {
 
 		searchLayout = new SearchLayout(this, appSettings);
 		searchLayout.setVisibility(View.GONE, false);
-		searchLayout.setLaunchLinkListener(url -> webView.loadUrl(url));
+		searchLayout.setLaunchLinkListener(url -> {
+			webView.loadUrl(url);
+			currentTab.runCallbacks(currentTab.onStartedCallbacks);
+		});
 
 		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
 		searchLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
@@ -158,21 +161,29 @@ public class MainActivity extends AppCompatActivity {
 
 		TabsManager.selectTabCallbacks.add(this::setCurrentTab);
 
-		TabsManager.createTabCallbacks.add(tab -> {
-			if(tabsCounter != null) {
-				tabsCounter.setText(String.valueOf(TabsManager.getCount()));
+		TabsManager.createTabCallbacks.add(tab -> updateTabCounter());
+
+		TabsManager.removeTabCallbacks.add((tab, wasIndex) -> {
+			updateTabCounter();
+
+			if(tab == currentTab) {
+				var nearestTab = TabsManager.getNearestTab(wasIndex);
+				if(nearestTab != null) setCurrentTab(nearestTab);
 			}
 		});
 
 		TabsManager.create();
 	}
 
-	@Deprecated
-	public void createTab() {
-		currentTab = TabsManager.create();
-		setCurrentTab(currentTab);
+	private void updateTabCounter() {
+		if(tabsCounter != null) {
+			var count = String.valueOf(TabsManager.getCount());
+			tabsCounter.setText(count);
+		}
+	}
 
-		currentTab.onStartedCallbacks.add(tab -> {
+	private void initTabCallbacks(@NonNull Tab tab) {
+		tab.onStartedCallbacks.add(_tab -> {
 			if(tab != currentTab) return;
 
 			searchBar.setIsLoading(true);
@@ -181,28 +192,32 @@ public class MainActivity extends AppCompatActivity {
 			progressIndicator.setVisibility(View.VISIBLE);
 		});
 
-		currentTab.onTitleCallbacks.add(tab -> {
+		tab.onTitleCallbacks.add(_tab -> {
 			if(tab != currentTab) return;
 
 			searchBar.setTitle(tab.title);
 		});
 
-		currentTab.onFinishedCallbacks.add(tab -> {
+		tab.onFinishedCallbacks.add(_tab -> {
 			if(tab != currentTab) return;
 
 			finishedLoading();
 		});
 
-		currentTab.onProgressCallbacks.add(tab -> {
+		tab.onProgressCallbacks.add(_tab -> {
 			if(tab != currentTab) return;
 
 			progressIndicator.setProgress(tab.progress, true);
 			if(tab.progress == 100) finishedLoading();
 		});
 
-		currentTab.onFaviconCallbacks.add(tab -> {
+		tab.onFaviconCallbacks.add(_tab -> {
+			if(tab != currentTab) return;
+
 			searchBar.setFavicon(tab.favicon);
 		});
+
+		tab.onDisposeCallbacks.add(tabs::remove);
 	}
 
 	private void finishedLoading() {
@@ -323,7 +338,7 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	@NonNull
-	private View createActionButton(@NonNull String name, ThemeSettings theme) {
+	private View createActionButton(@NonNull String name, @NonNull ThemeSettings theme) {
 		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor(theme.barsOverlay);
 		var button = new ImageView(this);
 		var circleRipple = ResourcesCompat.getDrawable(getResources(), R.drawable.ripple_circle, getTheme());
@@ -335,8 +350,8 @@ public class MainActivity extends AppCompatActivity {
 
 		switch(name) {
 			case "home" -> {
-				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/home.html"));
 				icon = R.drawable.ic_home_black;
+				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/home.html"));
 			}
 
 			case "settings" -> {
@@ -346,14 +361,17 @@ public class MainActivity extends AppCompatActivity {
 
 			case "downloads" -> {
 				icon = R.drawable.ic_download_black;
+				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/list.html?show=downloads"));
 			}
 
 			case "history" -> {
 				icon = R.drawable.ic_history_black;
+				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/list.html?show=history"));
 			}
 
 			case "bookmarks" -> {
 				icon = R.drawable.ic_star_black;
+				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/list.html?show=bookmarks"));
 			}
 
 			case "menu" -> {
@@ -391,7 +409,8 @@ public class MainActivity extends AppCompatActivity {
 				icon = R.drawable.ic_tabs_black;
 
 				button.setOnClickListener(view -> {
-					new TabsMenu(this).showAt(button);
+					var menu = new TabsMenu(this, theme);
+					menu.showAt(button);
 				});
 			}
 		}
@@ -431,18 +450,19 @@ public class MainActivity extends AppCompatActivity {
 
 	@SuppressLint("ClickableViewAccessibility")
 	public void setCurrentTab(@NonNull Tab tab) {
-		//SwipeRefreshLayout swipeRefreshLayout = findViewById(R.id.swipeRefresher);
 		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
 
+		TabsManager.setCurrent(tab, false);
 		this.webView = tab.webView;
 		this.currentTab = tab;
 
-		if(!webViews.contains(tab)) {
-			webViews.add(tab);
+		if(!tabs.contains(tab)) {
+			initTabCallbacks(tab);
+			tabs.add(tab);
 			webViewHolder.addView(tab.webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 		}
 
-		for(var _tab : webViews) {
+		for(var _tab : tabs) {
 			_tab.webView.setVisibility(View.GONE);
 		}
 
@@ -477,7 +497,8 @@ public class MainActivity extends AppCompatActivity {
 
 			var link = linkMessage.getData().getString("url");
 			if(link != null) {
-				menu.addAction("Open link in new tab", () -> webView.loadUrl(link));
+				menu.addAction("Open link in new tab", () -> TabsManager.create(link, true));
+				menu.addAction("Open link in background", () -> TabsManager.create(link, false));
 				//menu.addAction("Open link in new incognito tab", () -> {});
 				menu.addAction("Share link", () -> AndroidUtil.share("Share link", link));
 				menu.addAction("Copy link to clipboard", () -> AndroidUtil.copyToClipboard(link));
@@ -485,13 +506,16 @@ public class MainActivity extends AppCompatActivity {
 
 			var image = imageMessage.getData().getString("url");
 			if(image != null) {
-				menu.addAction("Open image in new tab", () -> webView.loadUrl(image));
+				menu.addAction("Open image in new tab", () -> TabsManager.create(image, true));
+				menu.addAction("Open image in background", () -> TabsManager.create(image, false));
 				//menu.addAction("Open image in new incognito tab", () -> {});
 				//menu.addAction("Download image", () -> {});
 				menu.addAction("Share image", () -> AndroidUtil.share("Share image link", image));
 				menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(image));
 			}
 
+			menu.setUrl(link);
+			menu.setImage(image);
 			menu.build();
 
 			return false;
