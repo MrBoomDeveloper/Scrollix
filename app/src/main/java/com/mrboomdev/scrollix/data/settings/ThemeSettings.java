@@ -23,25 +23,22 @@ public class ThemeSettings {
 	}
 
 	public void reset() {
-		this.bars = "#110000";
+		this.bars = "#111111";
 		this.barsOverlay = "#ccccdd";
 		this.barsInner = "#11ffffff";
 
 		this.primary = "#ff0000";
-		this.background = "#000000";
+		this.background = "#111111";
 	}
 
 	public boolean isInvalid() {
-		try {
-			Color.parseColor(bars);
-			Color.parseColor(barsOverlay);
-			Color.parseColor(barsInner);
-
-			Color.parseColor(primary);
-			Color.parseColor(background);
-		} catch(IllegalArgumentException e) {
-			e.printStackTrace();
-			return true;
+		for(var item : List.of(bars, barsOverlay, barsInner, primary, background)) {
+			try {
+				Color.parseColor(item);;
+			} catch(Exception e) {
+				e.printStackTrace();
+				return true;
+			}
 		}
 
 		return false;
@@ -59,7 +56,12 @@ public class ThemeSettings {
 		}
 
 		public static void setContext(@Nullable Context _context) {
-			if(_context == null) return;
+			if(_context == null) {
+				currentData = null;
+				updateCallbacks.clear();
+				prefs = null;
+				return;
+			}
 
 			prefs = _context.getSharedPreferences("Themes", 0);
 			setCurrentTheme(prefs.getString("current", "default"));

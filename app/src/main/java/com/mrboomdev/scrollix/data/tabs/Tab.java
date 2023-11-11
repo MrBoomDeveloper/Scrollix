@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.data.tabs;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.view.View;
 import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
@@ -27,6 +28,8 @@ public class Tab {
 
 	public Tab(Context context) {
 		webView = new WebView(context);
+		webView.setTag(webView.hashCode());
+		webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
 		var downloadListener = new MyDownloadListener(context);
 		webView.setDownloadListener(downloadListener);

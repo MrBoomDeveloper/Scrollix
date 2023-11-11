@@ -15,6 +15,12 @@
         app:layout_constraintBottom_toTopOf="@id/bottom_bar"
         app:layout_constraintRight_toRightOf="parent">
 
+        <LinearLayout
+            android:id="@+id/webViewHolder"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal" />
+
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
     <LinearLayout

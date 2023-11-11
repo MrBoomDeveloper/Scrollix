@@ -92,7 +92,7 @@ public class SearchLayout extends LinearLayout {
 			return true;
 		});
 
-		var removeIcon = FileUtil.getDrawable(R.drawable.ic_close_black, context);
+		var removeIcon = FileUtil.getDrawable(R.drawable.ic_close_black);
 		FileUtil.setDrawableColor(removeIcon, Color.parseColor("#ccccdd"));
 
 		var removeButton = new ImageView(context);

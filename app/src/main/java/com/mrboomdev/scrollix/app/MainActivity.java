@@ -50,9 +50,13 @@ import com.mrboomdev.scrollix.util.AndroidUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
+	private final List<Tab> webViews = new ArrayList<>();
+	private TextView tabsCounter;
 	public SearchLayout searchLayout;
 	private SwipeRefreshLayout swipeRefreshLayout;
 	private ScrollListener scrollListener;
@@ -103,7 +107,6 @@ public class MainActivity extends AppCompatActivity {
 		setContentView(R.layout.main_layout);
 
 		AppManager.startup(this);
-		ThemeSettings.ThemeManager.setContext(this);
 		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
 
 		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
@@ -127,7 +130,6 @@ public class MainActivity extends AppCompatActivity {
 
 		appSettings.urlFormatRules = formatRules;
 		applyAppSettings(appSettings);
-		createTab();
 
 		swipeRefreshLayout.setOnRefreshListener(() -> {
 			var url = Objects.requireNonNull(webView.getUrl());
@@ -142,7 +144,7 @@ public class MainActivity extends AppCompatActivity {
 
 		searchLayout = new SearchLayout(this, appSettings);
 		searchLayout.setVisibility(View.GONE, false);
-		searchLayout.setLaunchLinkListener(webView::loadUrl);
+		searchLayout.setLaunchLinkListener(url -> webView.loadUrl(url));
 
 		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
 		searchLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
@@ -153,11 +155,22 @@ public class MainActivity extends AppCompatActivity {
 		parent.addView(searchLayout, searchLayoutParams);
 
 		reloadLayout();
+
+		TabsManager.selectTabCallbacks.add(this::setCurrentTab);
+
+		TabsManager.createTabCallbacks.add(tab -> {
+			if(tabsCounter != null) {
+				tabsCounter.setText(String.valueOf(TabsManager.getCount()));
+			}
+		});
+
+		TabsManager.create();
 	}
 
+	@Deprecated
 	public void createTab() {
-		currentTab = TabsManager.create(this);
-		setCurrentWebView(currentTab.webView);
+		currentTab = TabsManager.create();
+		setCurrentTab(currentTab);
 
 		currentTab.onStartedCallbacks.add(tab -> {
 			if(tab != currentTab) return;
@@ -202,7 +215,6 @@ public class MainActivity extends AppCompatActivity {
 	protected void onDestroy() {
 		super.onDestroy();
 
-		ThemeSettings.ThemeManager.setContext(null);
 		AppManager.dispose();
 
 		//TODO: SAVE STATE TO STORAGE AND RESTORE IT ON NEXT SESSION
@@ -230,6 +242,7 @@ public class MainActivity extends AppCompatActivity {
 		swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.parseColor(theme.bars));
 
 		searchLayout.setTheme(theme);
+		progressIndicator.setIndicatorColor(Color.parseColor(theme.primary), Color.parseColor(theme.primary), Color.parseColor(theme.primary));
 	}
 
 	private int getSizeForButton(boolean isSmall) {
@@ -284,7 +297,7 @@ public class MainActivity extends AppCompatActivity {
 		}
 
 		searchBar = new SearchBarWidget(this, webView, theme);
-		searchBar.setTitle(webView.getTitle());
+		if(webView != null) searchBar.setTitle(webView.getTitle());
 		topbar.addView(searchBar);
 
 		searchBar.setOnClickListener(view -> searchLayout.show());
@@ -399,7 +412,7 @@ public class MainActivity extends AppCompatActivity {
 			button.setScaleY(1.1f);
 			parent.addView(button);
 
-			TextView tabsCounter = new TextView(this);
+			tabsCounter = new TextView(this);
 			tabsCounter.setText(String.valueOf(TabsManager.getCount()));
 			tabsCounter.setTextColor(primaryColor);
 			tabsCounter.setTextSize(13);
@@ -417,18 +430,23 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	@SuppressLint("ClickableViewAccessibility")
-	public void setCurrentWebView(@NonNull WebView webView) {
-		SwipeRefreshLayout swipeRefreshLayout = findViewById(R.id.swipeRefresher);
+	public void setCurrentTab(@NonNull Tab tab) {
+		//SwipeRefreshLayout swipeRefreshLayout = findViewById(R.id.swipeRefresher);
+		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
 
-		if(this.webView != null) {
-			var params = this.webView.getLayoutParams();
-			swipeRefreshLayout.removeView(this.webView);
-			swipeRefreshLayout.addView(webView, params);
-		} else {
-			swipeRefreshLayout.addView(webView, 0, 0);
+		this.webView = tab.webView;
+		this.currentTab = tab;
+
+		if(!webViews.contains(tab)) {
+			webViews.add(tab);
+			webViewHolder.addView(tab.webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 		}
 
-		this.webView = webView;
+		for(var _tab : webViews) {
+			_tab.webView.setVisibility(View.GONE);
+		}
+
+		webView.setVisibility(View.VISIBLE);
 		webView.setOnTouchListener(scrollListener);
 
 		webView.setOnLongClickListener(view -> {
@@ -447,13 +465,9 @@ public class MainActivity extends AppCompatActivity {
 					.setDismissOnSelect(true);
 
 			switch(type) {
-				case HitTestResult.IMAGE_TYPE -> {
-					webView.requestImageRef(imageMessage);
-				}
+				case HitTestResult.IMAGE_TYPE -> webView.requestImageRef(imageMessage);
 
-				case HitTestResult.SRC_ANCHOR_TYPE -> {
-					webView.requestFocusNodeHref(linkMessage);
-				}
+				case HitTestResult.SRC_ANCHOR_TYPE -> webView.requestFocusNodeHref(linkMessage);
 
 				case HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
 					webView.requestFocusNodeHref(linkMessage);

@@ -18,12 +18,15 @@ import java.util.List;
 
 @SuppressLint("ViewConstructor")
 public class ContextMenu extends LinearLayout {
+	private final String url;
 
 	public ContextMenu(Context context, @NonNull Builder builder) {
 		super(context);
 
 		setBackgroundResource(R.color.black);
 		setOrientation(VERTICAL);
+
+		url = builder.url;
 
 		for(var action : builder.actions) {
 			var padding = FormatUtil.getDip(10);
@@ -59,6 +62,7 @@ public class ContextMenu extends LinearLayout {
 
 	public static class Builder {
 		private final List<Action> actions = new ArrayList<>();
+		private String url;
 		private final Context context;
 		private boolean dismissOnSelect;
 		private AlertDialog dialog;
@@ -74,6 +78,16 @@ public class ContextMenu extends LinearLayout {
 
 		public Builder addAction(String title, Runnable callback) {
 			actions.add(new Action(title, callback));
+			return this;
+		}
+
+		public Builder setImage() {
+			//TODO: Stub
+			return this;
+		}
+
+		public Builder setUrl(String url) {
+			this.url = url;
 			return this;
 		}
 

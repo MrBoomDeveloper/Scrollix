@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -21,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.color.DynamicColors;
+import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
@@ -162,15 +164,21 @@ public class AppManager {
 		}
 
 		activityCallbackLauncher = new ActivityCallbackLauncher(context);
+		ThemeSettings.ThemeManager.setContext(getAppContext());
 	}
 
 	public static void dispose() {
 		activityCallbackLauncher = null;
 		TabsManager.tabs.clear();
+		ThemeSettings.ThemeManager.setContext(null);
 
 		for(var download : MyDownloadListener.ProgressListener.activeDownloads.values()) {
 			download.cancel();
 		}
+	}
+
+	public static Configuration getConfiguration() {
+		return getAppContext().getResources().getConfiguration();
 	}
 
 	public enum NotificationChannelGroup {

@@ -49,7 +49,7 @@ public class SearchBarWidget extends LinearLayout {
 		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
 		styledHolder.setGravity(Gravity.CENTER_VERTICAL);
 
-		var background = FileUtil.getDrawable(R.drawable.search_input_background, context);
+		var background = FileUtil.getDrawable(R.drawable.search_input_background);
 		FileUtil.setDrawableColor(background, Color.parseColor(theme.barsInner));
 		styledHolder.setBackground(background);
 
@@ -73,7 +73,7 @@ public class SearchBarWidget extends LinearLayout {
 
 		int size = (int)FormatUtil.getDip(34);
 
-		securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black, context);
+		securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black);
 		FileUtil.setDrawableColor(securityIconImage, primaryColor);
 
 		securityIcon = new ImageView(context);
@@ -98,8 +98,7 @@ public class SearchBarWidget extends LinearLayout {
 		((LayoutParams)titleView.getLayoutParams()).weight = 1;
 
 		refreshButton = new ImageView(context);
-		refreshButton.setBackground(Objects.requireNonNull(Objects.requireNonNull(circleRipple)
-						.getConstantState()).newDrawable().mutate());
+		refreshButton.setBackground(FileUtil.copyDrawable(circleRipple));
 
 		refreshButton.setClickable(true);
 		refreshButton.setFocusable(true);

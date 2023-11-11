@@ -25,7 +25,7 @@ import java.net.URISyntaxException;
 import java.util.Objects;
 
 public class MyWebViewClient extends WebViewClient {
-	private Tab tab;
+	private final Tab tab;
 	public final LinkUtil.UrlFormatRules formatRules;
 
 	public MyWebViewClient(Tab tab) {
