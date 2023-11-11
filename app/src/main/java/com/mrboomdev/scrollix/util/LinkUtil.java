@@ -117,8 +117,10 @@ public class LinkUtil {
 			var shortenUrl = url.substring(SCROLLIX_PROTOCOL.length());
 
 			for(var link : ScrollixUrls.values()) {
-				if(shortenUrl.startsWith(link.getScrollixUrl())) {
-					return SCROLLIX_PAGES + link.getRealUrl();
+				var fullUrl = link.getFullUrl();
+
+				if(shortenUrl.startsWith(fullUrl)) {
+					return fullUrl;
 				}
 			}
 		}
@@ -142,6 +144,10 @@ public class LinkUtil {
 
 		public String getScrollixUrl() {
 			return scrollixUrl;
+		}
+
+		public String getFullUrl() {
+			return SCROLLIX_PAGES + getRealUrl();
 		}
 
 		public String getRealUrl() {

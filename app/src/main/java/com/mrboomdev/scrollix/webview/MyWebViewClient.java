@@ -17,9 +17,8 @@ import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.data.tabs.Tab;
 
-import org.jetbrains.annotations.Contract;
-
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.Objects;
 
@@ -106,17 +105,20 @@ public class MyWebViewClient extends WebViewClient {
 
 	@Nullable
 	@Override
-	public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+	public WebResourceResponse shouldInterceptRequest(@NonNull WebView view, @NonNull WebResourceRequest request) {
 		//return getEmptyResponse();
 
 		return super.shouldInterceptRequest(view, request);
 	}
 
-	@NonNull
-	@Contract(" -> new")
+	@Nullable
 	private WebResourceResponse getEmptyResponse() {
-		var stream = new ByteArrayInputStream("".getBytes());
-		return new WebResourceResponse("text/plain", "utf-8", stream);
+		try(var stream = new ByteArrayInputStream("".getBytes())) {
+			return new WebResourceResponse("text/plain", "utf-8", stream);
+		} catch(IOException e) {
+			e.printStackTrace();
+			return null;
+		}
 	}
 
 	@Override

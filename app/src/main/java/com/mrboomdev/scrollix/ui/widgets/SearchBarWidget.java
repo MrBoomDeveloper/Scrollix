@@ -58,7 +58,7 @@ public class SearchBarWidget extends LinearLayout {
 		styledHolder.setBackground(background);
 
 		boolean isLandscape = AppManager.isLandscape();
-		var styledHolderPadding = FormatUtil.getDip(isLandscape ? 10 : 16, isLandscape ? 2 : 4);
+		var styledHolderPadding = FormatUtil.getDip(isLandscape ? 10 : 8, isLandscape ? 2 : 4);
 		var styledHolderMargin = FormatUtil.getDip(isLandscape ? 8 : 10, isLandscape ? 6 : 8);
 
 		styledHolder.setPadding(styledHolderPadding[0], styledHolderPadding[1], styledHolderPadding[0], styledHolderPadding[1]);

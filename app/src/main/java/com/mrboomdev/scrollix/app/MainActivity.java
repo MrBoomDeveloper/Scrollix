@@ -46,6 +46,8 @@ import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AndroidUtil;
 import com.mrboomdev.scrollix.util.FileUtil;
+import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.ArrayList;
@@ -255,9 +257,9 @@ public class MainActivity extends AppCompatActivity {
 			var view = createActionButton(item, theme);
 
 			int size = getSizeForButton(isLandscape);
-			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, size);
+			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, isLandscape ? size : ViewGroup.LayoutParams.MATCH_PARENT);
 			if(!isLandscape) params.weight = 1;
-			params.setMargins(12, 0, 10, 0);
+			params.setMargins(isLandscape ? 12 : 0, 0, isLandscape ? 10 : 0, 0);
 
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
@@ -288,9 +290,9 @@ public class MainActivity extends AppCompatActivity {
 			var view = createActionButton(item, theme);
 
 			int size = getSizeForButton(isLandscape);
-			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, size);
+			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, isLandscape ? size : ViewGroup.LayoutParams.MATCH_PARENT);
 			if(!isLandscape) params.weight = 1;
-			params.setMargins(10, 0, 12, 0);
+			params.setMargins(isLandscape ? 10 : 0, 0, isLandscape ? 12 : 0, 0);
 
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
@@ -308,7 +310,7 @@ public class MainActivity extends AppCompatActivity {
 		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor(theme.barsOverlay);
 		var button = new ImageView(this);
 
-		var buttonRipple = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE
+		var buttonRipple = AppManager.isLandscape()
 				? FileUtil.getDrawable(R.drawable.ripple_circle)
 				: FileUtil.getDrawable(R.drawable.ripple_square);
 
@@ -317,30 +319,33 @@ public class MainActivity extends AppCompatActivity {
 			Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
 		});
 
+		int buttonPadding = FormatUtil.getDip(AppManager.isLandscape() ? 6 : 12);
+		button.setPadding(buttonPadding, buttonPadding, buttonPadding, buttonPadding);
+
 		switch(name) {
 			case "home" -> {
 				icon = R.drawable.ic_home_black;
-				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/home.html"));
+				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.HOME.getFullUrl()));
 			}
 
 			case "settings" -> {
 				icon = R.drawable.ic_settings_black;
-				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/settings.html"));
+				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.SETTINGS.getFullUrl()));
 			}
 
 			case "downloads" -> {
 				icon = R.drawable.ic_download_black;
-				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/list.html?show=downloads"));
+				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.DOWNLOADS.getFullUrl()));
 			}
 
 			case "history" -> {
 				icon = R.drawable.ic_history_black;
-				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/list.html?show=history"));
+				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.HISTORY.getFullUrl()));
 			}
 
 			case "bookmarks" -> {
 				icon = R.drawable.ic_star_black;
-				button.setOnClickListener(view -> webView.loadUrl("file:///android_asset/pages/list.html?show=bookmarks"));
+				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.BOOKMARKS.getFullUrl()));
 			}
 
 			case "menu" -> {
@@ -362,15 +367,12 @@ public class MainActivity extends AppCompatActivity {
 
 			case "back" -> {
 				icon = R.drawable.ic_back_black;
-				button.setScaleX(.8f);
-				button.setScaleY(.8f);
 				button.setOnClickListener(view -> webView.goBack());
 			}
 
 			case "next" -> {
 				icon = R.drawable.ic_back_black;
-				button.setScaleY(.8f);
-				button.setScaleX(-.8f);
+				button.setScaleX(-1);
 				button.setOnClickListener(view -> webView.goForward());
 			}
 
@@ -384,11 +386,15 @@ public class MainActivity extends AppCompatActivity {
 			}
 		}
 
+		if(name.equals("next") || name.equals("back")) {
+			int padding = Math.round(button.getPaddingTop() * 1.2f);
+			button.setPadding(padding, padding, padding, padding);
+		}
+
 		button.setScaleType(ImageView.ScaleType.FIT_CENTER);
 		button.setBackground(buttonRipple);
 		button.setClickable(true);
 		button.setFocusable(true);
-		button.setPadding(8, 8, 8, 8);
 		
 		var buttonIcon = ResourcesCompat.getDrawable(getResources(), icon, getTheme());
 		DrawableCompat.setTint(Objects.requireNonNull(buttonIcon), primaryColor);
