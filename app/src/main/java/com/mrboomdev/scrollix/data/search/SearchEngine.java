@@ -4,6 +4,8 @@ import android.graphics.drawable.Drawable;
 
 import androidx.annotation.NonNull;
 
+import com.mrboomdev.scrollix.util.LinkUtil;
+
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.List;
@@ -13,6 +15,11 @@ public interface SearchEngine {
 
 	String getSearchPrefix();
 
+	default boolean isSearchUrl(String url) {
+		var shortenUrl = LinkUtil.removeProtocol(url);
+		return shortenUrl.startsWith(getHome() + getSearchPrefix());
+	}
+
 	default String getSearchUrl(String query) {
 		return "https://" + getHome() + getSearchPrefix() + query;
 	}
@@ -20,15 +27,9 @@ public interface SearchEngine {
 	Drawable getIcon();
 
 	default String parseQuery(@NonNull String url) {
-		var shortenUrl = url + "";
+		if(!isSearchUrl(url)) return url;
 
-		for(var beginChar : List.of("http", "ftp", "s", "://", "www.")) {
-			if(!shortenUrl.startsWith(beginChar)) continue;
-			shortenUrl = shortenUrl.substring(shortenUrl.indexOf(beginChar) + beginChar.length());
-		}
-
-		if(!shortenUrl.startsWith(getHome())) return url;
-
+		var shortenUrl = LinkUtil.removeProtocol(url);
 		var prefix = getSearchPrefix();
 		int prefixIndex = shortenUrl.indexOf(prefix);
 		if(prefixIndex == -1) return url;

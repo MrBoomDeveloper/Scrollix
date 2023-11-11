@@ -18,7 +18,8 @@ import android.widget.LinearLayout;
 import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.data.settings.AppSettings;
+import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
@@ -39,7 +40,7 @@ public class SearchLayout extends LinearLayout {
 		editText.setTextColor(Color.parseColor(theme.barsOverlay));
 	}
 
-	public SearchLayout(Context context, @NonNull AppSettings settings) {
+	public SearchLayout(Context context) {
 		super(context);
 		setOrientation(VERTICAL);
 
@@ -52,7 +53,7 @@ public class SearchLayout extends LinearLayout {
 		int iconSize = FormatUtil.getDip(34);
 
 		ImageView engineIcon = new ImageView(context);
-		engineIcon.setImageDrawable(settings.searchEngine.getEngine().getIcon());
+		engineIcon.setImageDrawable(AppManager.settings.searchEngine.getEngine().getIcon());
 		engineIcon.setClickable(true);
 		engineIcon.setPadding(10, 10, 10, 10);
 		engineIcon.setBackgroundResource(R.drawable.ripple_circle);
@@ -77,11 +78,11 @@ public class SearchLayout extends LinearLayout {
 			if(action != EditorInfo.IME_ACTION_SEARCH) return false;
 
 			if(listener != null) {
-				var engine = settings.searchEngine.getEngine();
+				var engine = AppManager.settings.searchEngine.getEngine();
 				var query = editText.getText().toString();
 
 				if(LinkUtil.isUrlValid(query)) {
-					listener.launch(query);
+					listener.launch(LinkUtil.resolveInputUrl(query));
 				} else {
 					var fixed = LinkUtil.tryToFixUrl(query);
 					listener.launch(Objects.requireNonNullElse(fixed, engine.getSearchUrl(query)));
@@ -130,7 +131,12 @@ public class SearchLayout extends LinearLayout {
 
 	public void show() {
 		setVisibility(VISIBLE, false);
-		editText.setText(url);
+
+		var url = AppManager.settings.urlFormatRules.parseSearchQuery ?
+				SearchEngine.parseQueryAll(this.url)
+				: this.url;
+
+		editText.setText(this.url.equals(url) ? LinkUtil.formatInputUrl(url) : url);
 
 		isOpened = true;
 		startAnimation();
@@ -160,8 +166,6 @@ public class SearchLayout extends LinearLayout {
 
 	public void setUrl(String url) {
 		this.url = url;
-
-		if(!isOpened) editText.setText(url);
 	}
 
 	@Override

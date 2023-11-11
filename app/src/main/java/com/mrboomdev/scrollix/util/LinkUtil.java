@@ -2,17 +2,26 @@ package com.mrboomdev.scrollix.util;
 
 import androidx.annotation.NonNull;
 
+import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.data.settings.AppSettings;
+
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
 
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.List;
 public class LinkUtil {
+	public static final String ANDROID_ASSET = "file:///android_asset";
+	public static final String SCROLLIX_PROTOCOL = "scrollix://";
+	public static final String SCROLLIX_PAGES = ANDROID_ASSET + "/pages/";
 
 	public static boolean isUrlValid(String url) {
+		if(url == null) return false;
+
 		try {
-			new URL(url).toURI();
+			new URL(url.replace("scrollix://", "https://")).toURI();
 			return true;
 		} catch(MalformedURLException | URISyntaxException e) {
 			return false;
@@ -28,7 +37,7 @@ public class LinkUtil {
 			var split = newUrl.split("\\.");
 			if(split.length <= 1) return null;
 
-			return newUrl;
+			return LinkUtil.resolveInputUrl(newUrl);
 		} catch(Exception e) {
 			e.printStackTrace();
 			return null;
@@ -65,6 +74,15 @@ public class LinkUtil {
 		return name;
 	}
 
+	public static String removeProtocol(String url) {
+		for(var beginChar : List.of("http", "ftp", "s", "://", "www.")) {
+			if(!url.startsWith(beginChar)) continue;
+			url = url.substring(url.indexOf(beginChar) + beginChar.length());
+		}
+
+		return url;
+	}
+
 	@NonNull
 	public static String generateFileName(@NonNull String url) {
 		var name = url.substring(url.lastIndexOf("/") + 1);
@@ -80,8 +98,59 @@ public class LinkUtil {
 		return name;
 	}
 
+	public static String formatInputUrl(String url) {
+		if(AppManager.settings.urlFormatRules.replaceScrollix && url.startsWith(SCROLLIX_PAGES)) {
+			var shortenUrl = url.substring(SCROLLIX_PAGES.length());
+
+			for(var link : ScrollixUrls.values()) {
+				if(shortenUrl.startsWith(link.getRealUrl())) {
+					return SCROLLIX_PROTOCOL + link.getScrollixUrl();
+				}
+			}
+		}
+
+		return url;
+	}
+
+	public static String resolveInputUrl(String url) {
+		if(AppManager.settings.urlFormatRules.replaceScrollix && url.startsWith(SCROLLIX_PROTOCOL)) {
+			var shortenUrl = url.substring(SCROLLIX_PROTOCOL.length());
+
+			for(var link : ScrollixUrls.values()) {
+				if(shortenUrl.startsWith(link.getScrollixUrl())) {
+					return SCROLLIX_PAGES + link.getRealUrl();
+				}
+			}
+		}
+
+		return url;
+	}
+
+	public enum ScrollixUrls {
+		HOME("home", "home.html"),
+		SETTINGS("settings", "settings.html"),
+		DOWNLOADS("downloads", "list.html?show=downloads"),
+		HISTORY("history", "list.html?show=history"),
+		BOOKMARKS("bookmarks", "list.html?show=bookmarks");
+
+		private final String scrollixUrl, realUrl;
+
+		ScrollixUrls(String scrollixStyle, String realStyle) {
+			this.scrollixUrl = scrollixStyle;
+			this.realUrl = realStyle;
+		}
+
+		public String getScrollixUrl() {
+			return scrollixUrl;
+		}
+
+		public String getRealUrl() {
+			return realUrl;
+		}
+	}
+
 	@Contract(value = "_, _ -> param1", pure = true)
-	public static String formatUrl(String url, @NonNull UrlFormatRules rules) {
+	public static String formatUrl(String url, @NonNull AppSettings.UrlFormatRules rules) {
 		if(rules.removeProtocol) {
 			url = url.substring(url.indexOf("://") + 3);
 		}
@@ -107,11 +176,5 @@ public class LinkUtil {
 		}
 
 		return url;
-	}
-
-	public static class UrlFormatRules {
-		public boolean removeProtocol, removeWww, replaceScrollix;
-		public boolean removeHash, removeParameters, removeTracking;
-		public boolean removeExtension;
 	}
 }

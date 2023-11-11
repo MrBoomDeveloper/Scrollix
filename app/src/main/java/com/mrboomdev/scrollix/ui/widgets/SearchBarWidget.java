@@ -17,6 +17,8 @@ import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 
 import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
@@ -120,6 +122,12 @@ public class SearchBarWidget extends LinearLayout {
 		}
 
 		securityIcon.setImageBitmap(favicon);
+	}
+
+	public void setUrl(String url) {
+		titleView.setText(AppManager.settings.urlFormatRules.parseSearchQuery ?
+				SearchEngine.parseQueryAll(url)
+				: url);
 	}
 
 	public void setTitle(String title) {

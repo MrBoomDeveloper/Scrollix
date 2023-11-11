@@ -9,7 +9,7 @@ import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 
-import com.mrboomdev.scrollix.data.settings.AppSettings;
+import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 import com.mrboomdev.scrollix.webview.MyWebChromeClient;
@@ -89,7 +89,7 @@ public class Tab {
 		this.url = url;
 
 		if(!LinkUtil.isSameLink(previousUrl, url)) {
-			setTitle(LinkUtil.formatUrl(url, AppSettings.globalSettings.urlFormatRules));
+			setTitle(LinkUtil.formatUrl(url, AppManager.settings.urlFormatRules));
 			previousUrl = url;
 		}
 	}

@@ -22,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.color.DynamicColors;
+import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
@@ -32,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class AppManager {
+	public static AppSettings settings;
 	private static final String TAG = "AppManager";
 	private static ActivityCallbackLauncher activityCallbackLauncher;
 	private static Method getContextMethod;
@@ -144,10 +146,16 @@ public class AppManager {
 		}
 	}
 
+	public static void loadSettings() {
+		settings = new AppSettings();
+	}
+
 	public static void startup(AppCompatActivity context) {
 		if(DynamicColors.isDynamicColorAvailable()) {
 			DynamicColors.applyToActivitiesIfAvailable(context.getApplication());
 		}
+
+		loadSettings();
 
 		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 			registerNotificationChannels(context);

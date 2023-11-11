@@ -1,25 +1,26 @@
 package com.mrboomdev.scrollix.data.settings;
 
 import com.mrboomdev.scrollix.data.search.SearchEngine;
-import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 public class AppSettings {
-	public static AppSettings globalSettings;
 	public List<String> leftActions, rightActions, menuActions;
 	public BottomBarMode sideBar;
-	public DarkMode darkPages, darkUi;
 	public SearchEngine.SearchEnginePreset searchEngine, autocompletion;
 	public boolean useLayoutColorFromPage;
-	public LinkUtil.UrlFormatRules urlFormatRules;
+	public UrlFormatRules urlFormatRules;
+	public UrlCleanRules urlCleanRules;
 
 	public AppSettings() {
 		leftActions = new ArrayList<>();
 		rightActions = new ArrayList<>();
 		menuActions = new ArrayList<>();
+
+		urlFormatRules = new UrlFormatRules();
+		urlCleanRules = new UrlCleanRules();
 
 		applyDefaults();
 	}
@@ -39,8 +40,9 @@ public class AppSettings {
 
 		searchEngine = SearchEngine.SearchEnginePreset.GOOGLE;
 
-		darkUi = DarkMode.INACTIVE;
-		darkPages = DarkMode.INACTIVE;
+		urlFormatRules.replaceScrollix = true;
+		urlFormatRules.parseSearchQuery = true;
+		urlFormatRules.removeWww = true;
 	}
 
 	public enum BottomBarMode {
@@ -50,8 +52,12 @@ public class AppSettings {
 		SIDE
 	}
 
-	public enum DarkMode {
-		ACTIVE,
-		INACTIVE
+	public static class UrlCleanRules {
+		public boolean removeTracking;
+	}
+
+	public static class UrlFormatRules {
+		public boolean replaceScrollix, parseSearchQuery;
+		public boolean removeProtocol, removeWww, removeHash, removeParameters;
 	}
 }

@@ -33,13 +33,10 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.splashscreen.SplashScreen;
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.data.search.SearchEngine;
-import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
@@ -48,7 +45,6 @@ import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AndroidUtil;
-import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.ArrayList;
@@ -59,10 +55,8 @@ public class MainActivity extends AppCompatActivity {
 	private final List<Tab> tabs = new ArrayList<>();
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
-	private SwipeRefreshLayout swipeRefreshLayout;
 	private ScrollListener scrollListener;
 	private Tab currentTab;
-	private AppSettings appSettings;
 	private LinearProgressIndicator progressIndicator;
 	private WebView webView;
 	private SearchBarWidget searchBar;
@@ -117,33 +111,9 @@ public class MainActivity extends AppCompatActivity {
 
 		progressIndicator = findViewById(R.id.progressIndicator);
 
-		swipeRefreshLayout = findViewById(R.id.swipeRefresher);
-
 		scrollListener = new ScrollListener();
-		swipeRefreshLayout.setOnTouchListener(scrollListener);
 
-		appSettings = new AppSettings();
-
-		var formatRules = new LinkUtil.UrlFormatRules();
-		formatRules.removeHash = true;
-		formatRules.removeWww = true;
-		formatRules.removeProtocol = true;
-
-		appSettings.urlFormatRules = formatRules;
-		applyAppSettings(appSettings);
-
-		swipeRefreshLayout.setOnRefreshListener(() -> {
-			var url = Objects.requireNonNull(webView.getUrl());
-
-			if(url.startsWith("file://")) {
-				webView.loadUrl(url);
-				return;
-			}
-
-			webView.reload();
-		});
-
-		searchLayout = new SearchLayout(this, appSettings);
+		searchLayout = new SearchLayout(this);
 		searchLayout.setVisibility(View.GONE, false);
 		searchLayout.setLaunchLinkListener(url -> {
 			webView.loadUrl(url);
@@ -187,11 +157,9 @@ public class MainActivity extends AppCompatActivity {
 		tab.onStartedCallbacks.add(_tab -> {
 			if(tab != currentTab) return;
 
-			var parsedQuery = SearchEngine.parseQueryAll(tab.url);
-
 			searchBar.setIsLoading(true);
-			searchBar.setTitle(parsedQuery);
-			searchLayout.setUrl(parsedQuery);
+			searchBar.setTitle(tab.url);
+			searchLayout.setUrl(tab.url);
 
 			progressIndicator.setVisibility(View.VISIBLE);
 		});
@@ -226,7 +194,6 @@ public class MainActivity extends AppCompatActivity {
 
 	private void finishedLoading() {
 		progressIndicator.setVisibility(View.GONE);
-		swipeRefreshLayout.setRefreshing(false);
 		searchBar.setIsLoading(false);
 	}
 
@@ -257,9 +224,6 @@ public class MainActivity extends AppCompatActivity {
 			window.setAttributes(attrs);
 		}
 
-		swipeRefreshLayout.setColorSchemeColors(Color.parseColor(theme.barsOverlay));
-		swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.parseColor(theme.bars));
-
 		searchLayout.setTheme(theme);
 		progressIndicator.setIndicatorColor(Color.parseColor(theme.primary), Color.parseColor(theme.primary), Color.parseColor(theme.primary));
 	}
@@ -288,7 +252,7 @@ public class MainActivity extends AppCompatActivity {
 		var config = getResources().getConfiguration();
 		boolean isLandscape = (config.orientation == Configuration.ORIENTATION_LANDSCAPE);
 
-		for(var item : appSettings.leftActions) {
+		for(var item : AppManager.settings.leftActions) {
 			var view = createActionButton(item, theme);
 
 			int size = getSizeForButton(isLandscape);
@@ -299,10 +263,10 @@ public class MainActivity extends AppCompatActivity {
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
 
-		if(isLandscape && !appSettings.menuActions.isEmpty()) {
+		if(isLandscape && !AppManager.settings.menuActions.isEmpty()) {
 			sidebar.setVisibility(View.VISIBLE);
 
-			for(var item : appSettings.menuActions) {
+			for(var item : AppManager.settings.menuActions) {
 				var view = createActionButton(item, theme);
 
 				int size = getSizeForButton(true);
@@ -322,7 +286,7 @@ public class MainActivity extends AppCompatActivity {
 		searchBar.setOnClickListener(view -> searchLayout.show());
 		if(!isLandscape) searchBar.setPadding(16, 0, 16, 0);
 
-		for(var item : appSettings.rightActions) {
+		for(var item : AppManager.settings.rightActions) {
 			var view = createActionButton(item, theme);
 
 			int size = getSizeForButton(isLandscape);
@@ -446,10 +410,6 @@ public class MainActivity extends AppCompatActivity {
 		}
 
 		return button;
-	}
-
-	public void applyAppSettings(AppSettings settings) {
-		AppSettings.globalSettings = settings;
 	}
 
 	@SuppressLint("ClickableViewAccessibility")

@@ -16,7 +16,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.data.tabs.Tab;
-import com.mrboomdev.scrollix.util.LinkUtil;
 
 import org.jetbrains.annotations.Contract;
 
@@ -26,15 +25,9 @@ import java.util.Objects;
 
 public class MyWebViewClient extends WebViewClient {
 	private final Tab tab;
-	public final LinkUtil.UrlFormatRules formatRules;
 
 	public MyWebViewClient(Tab tab) {
 		this.tab = tab;
-
-		formatRules = new LinkUtil.UrlFormatRules();
-		formatRules.removeHash = true;
-		formatRules.removeWww = true;
-		formatRules.removeProtocol = true;
 	}
 
 	@Override
