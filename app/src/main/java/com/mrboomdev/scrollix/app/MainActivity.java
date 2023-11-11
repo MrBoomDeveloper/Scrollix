@@ -38,6 +38,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
@@ -186,8 +187,11 @@ public class MainActivity extends AppCompatActivity {
 		tab.onStartedCallbacks.add(_tab -> {
 			if(tab != currentTab) return;
 
+			var parsedQuery = SearchEngine.parseQueryAll(tab.url);
+
 			searchBar.setIsLoading(true);
-			searchLayout.setUrl(tab.url);
+			searchBar.setTitle(parsedQuery);
+			searchLayout.setUrl(parsedQuery);
 
 			progressIndicator.setVisibility(View.VISIBLE);
 		});

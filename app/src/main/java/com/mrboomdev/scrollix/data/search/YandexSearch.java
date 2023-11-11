@@ -5,16 +5,16 @@ import android.graphics.drawable.Drawable;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.util.FileUtil;
 
-public class GoogleSearch implements SearchEngine {
+public class YandexSearch implements SearchEngine {
 
 	@Override
 	public String getHome() {
-		return "google.com";
+		return "yandex.com";
 	}
 
 	@Override
 	public String getSearchPrefix() {
-		return "/search?q=";
+		return "/search/touch/?text=";
 	}
 
 	@Override

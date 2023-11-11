@@ -47,12 +47,12 @@ public class SearchLayout extends LinearLayout {
 		inputBar.setOrientation(HORIZONTAL);
 		inputBar.setGravity(Gravity.CENTER_VERTICAL);
 		inputBar.setPadding(12, 0, 12, 0);
-		addView(inputBar, ViewGroup.LayoutParams.MATCH_PARENT, (int)FormatUtil.getDip(50));
+		addView(inputBar, ViewGroup.LayoutParams.MATCH_PARENT, FormatUtil.getDip(50));
 
-		int iconSize = (int)FormatUtil.getDip(34);
+		int iconSize = FormatUtil.getDip(34);
 
 		ImageView engineIcon = new ImageView(context);
-		engineIcon.setImageDrawable(settings.searchEngine.getEngine().getIcon(context));
+		engineIcon.setImageDrawable(settings.searchEngine.getEngine().getIcon());
 		engineIcon.setClickable(true);
 		engineIcon.setPadding(10, 10, 10, 10);
 		engineIcon.setBackgroundResource(R.drawable.ripple_circle);

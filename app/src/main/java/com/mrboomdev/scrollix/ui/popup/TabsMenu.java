@@ -110,6 +110,8 @@ public class TabsMenu {
 
 			int newIndex = TabsManager.getIndex(TabsManager.getCurrent());
 			notifyItemChanged(newIndex);
+
+			if(TabsManager.getCount() == 0) close();
 		}
 
 		public void move(int fromIndex, int toIndex) {

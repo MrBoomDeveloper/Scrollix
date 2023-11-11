@@ -110,7 +110,7 @@ public class LinkUtil {
 	}
 
 	public static class UrlFormatRules {
-		public boolean removeProtocol, removeWww;
+		public boolean removeProtocol, removeWww, replaceScrollix;
 		public boolean removeHash, removeParameters, removeTracking;
 		public boolean removeExtension;
 	}
