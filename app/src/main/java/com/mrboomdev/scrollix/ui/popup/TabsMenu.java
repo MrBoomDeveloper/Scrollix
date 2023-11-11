@@ -105,13 +105,16 @@ public class TabsMenu {
 		}
 
 		public void remove(int index) {
+			int wasCount = TabsManager.getCount();
+
 			TabsManager.remove(index);
 			notifyItemRemoved(index);
 
-			int newIndex = TabsManager.getIndex(TabsManager.getCurrent());
+			int newIndex = TabsManager.getCurrentIndex();
 			notifyItemChanged(newIndex);
 
-			if(TabsManager.getCount() == 0) close();
+			//A NEW TAB IS BEING AUTOMATICALLY CREATED IF THERE IS 0 TABS
+			if(TabsManager.getCount() == 1 && wasCount == 1) close();
 		}
 
 		public void move(int fromIndex, int toIndex) {

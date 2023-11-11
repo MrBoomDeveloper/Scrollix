@@ -45,6 +45,7 @@ import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AndroidUtil;
+import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.ArrayList;
@@ -143,7 +144,7 @@ public class MainActivity extends AppCompatActivity {
 			}
 		});
 
-		TabsManager.create();
+		AppManager.postCreate();
 	}
 
 	private void updateTabCounter() {
@@ -198,16 +199,15 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	@Override
+	protected void onPause() {
+		AppManager.saveState();
+		super.onPause();
+	}
+
+	@Override
 	protected void onDestroy() {
-		super.onDestroy();
-
 		AppManager.dispose();
-
-		//TODO: SAVE STATE TO STORAGE AND RESTORE IT ON NEXT SESSION
-		//var bundle = new Bundle();
-		//var state = webView.saveState(bundle);
-
-		//var history = webView.copyBackForwardList();
+		super.onDestroy();
 	}
 
 	public void applyTheme(@NonNull ThemeSettings theme) {
@@ -249,8 +249,7 @@ public class MainActivity extends AppCompatActivity {
 		bottombar.setBackgroundColor(barsColor);
 		sidebar.setBackgroundColor(barsColor);
 
-		var config = getResources().getConfiguration();
-		boolean isLandscape = (config.orientation == Configuration.ORIENTATION_LANDSCAPE);
+		boolean isLandscape = AppManager.isLandscape();
 
 		for(var item : AppManager.settings.leftActions) {
 			var view = createActionButton(item, theme);
@@ -279,12 +278,11 @@ public class MainActivity extends AppCompatActivity {
 			sidebar.setVisibility(View.GONE);
 		}
 
-		searchBar = new SearchBarWidget(this, webView, theme);
+		searchBar = new SearchBarWidget(this, theme);
 		if(webView != null) searchBar.setTitle(webView.getTitle());
 		topbar.addView(searchBar);
 
 		searchBar.setOnClickListener(view -> searchLayout.show());
-		if(!isLandscape) searchBar.setPadding(16, 0, 16, 0);
 
 		for(var item : AppManager.settings.rightActions) {
 			var view = createActionButton(item, theme);
@@ -309,7 +307,10 @@ public class MainActivity extends AppCompatActivity {
 	private View createActionButton(@NonNull String name, @NonNull ThemeSettings theme) {
 		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor(theme.barsOverlay);
 		var button = new ImageView(this);
-		var circleRipple = ResourcesCompat.getDrawable(getResources(), R.drawable.ripple_circle, getTheme());
+
+		var buttonRipple = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE
+				? FileUtil.getDrawable(R.drawable.ripple_circle)
+				: FileUtil.getDrawable(R.drawable.ripple_square);
 
 		button.setOnClickListener(view -> {
 			String message = "Unknown action, please check your settings!";
@@ -384,7 +385,7 @@ public class MainActivity extends AppCompatActivity {
 		}
 
 		button.setScaleType(ImageView.ScaleType.FIT_CENTER);
-		button.setBackground(circleRipple);
+		button.setBackground(buttonRipple);
 		button.setClickable(true);
 		button.setFocusable(true);
 		button.setPadding(8, 8, 8, 8);
@@ -423,6 +424,12 @@ public class MainActivity extends AppCompatActivity {
 		if(!tabs.contains(tab)) {
 			initTabCallbacks(tab);
 			tabs.add(tab);
+
+			var parent = tab.webView.getParent();
+			if(parent instanceof LinearLayout linear) {
+				linear.removeView(tab.webView);
+			}
+
 			webViewHolder.addView(tab.webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 		}
 

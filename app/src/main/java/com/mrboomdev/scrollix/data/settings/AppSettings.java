@@ -25,10 +25,6 @@ public class AppSettings {
 		applyDefaults();
 	}
 
-	public AppSettings(String json) {
-		this();
-	}
-
 	public void applyDefaults() {
 		leftActions.clear();
 		rightActions.clear();

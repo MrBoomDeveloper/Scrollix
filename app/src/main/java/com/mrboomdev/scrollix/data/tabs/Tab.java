@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Tab {
+	public static final String SCROLLIX_HOME = "file:///android_asset/pages/home.html";
 	public String url, title, previousUrl;
 	public Bitmap favicon;
 	public int progress;

@@ -1,25 +1,23 @@
 package com.mrboomdev.scrollix.data.tabs;
 
+import android.annotation.SuppressLint;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.app.AppManager;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class TabsManager {
 	public static List<Tab> tabs = new ArrayList<>();
 	public static List<RemoveCallback> removeTabCallbacks = new ArrayList<>();
 	public static List<Callback> selectTabCallbacks = new ArrayList<>(),
 			createTabCallbacks = new ArrayList<>();
+	@SuppressLint("StaticFieldLeak")
 	private static Tab currentTab;
-
-	@NonNull
-	public static Tab create() {
-		return create(true);
-	}
 
 	public static void setCurrent(Tab tab) {
 		setCurrent(tab, true);
@@ -32,6 +30,10 @@ public class TabsManager {
 		}
 
 		return -1;
+	}
+
+	public static int getCurrentIndex() {
+		return getIndex(getCurrent());
 	}
 
 	public static void setCurrent(Tab tab, boolean runCallbacks) {
@@ -62,23 +64,35 @@ public class TabsManager {
 	}
 
 	@NonNull
+	public static Tab create() {
+		return create(true);
+	}
+
+	@NonNull
 	public static Tab create(boolean focus) {
-		return create("file:///android_asset/pages/home.html", focus);
+		return create(Tab.SCROLLIX_HOME, focus);
 	}
 
 	@NonNull
 	public static Tab create(String url, boolean focus) {
+		return create(url, focus, true);
+	}
+
+	@NonNull
+	public static Tab create(String url, boolean focus, boolean sideEffects) {
 		var tab = new Tab(AppManager.getAppContext());
 
-		tab.webView.loadUrl(url);
 		tab.reloadSettings();
+		tab.webView.loadUrl(Objects.requireNonNullElse(url, Tab.SCROLLIX_HOME));
 
-		tabs.add(tab);
+		if(sideEffects) tabs.add(tab);
 
 		if(focus) setCurrent(tab);
 
-		for(var callback : createTabCallbacks) {
-			callback.run(tab);
+		if(sideEffects) {
+			for(var callback : createTabCallbacks) {
+				callback.run(tab);
+			}
 		}
 
 		return tab;
@@ -123,10 +137,6 @@ public class TabsManager {
 		}
 
 		setCurrent(get(0));
-	}
-
-	public static void restoreFromFile(File file) {
-		tabs = new ArrayList<>();
 	}
 
 	public static int getCount() {

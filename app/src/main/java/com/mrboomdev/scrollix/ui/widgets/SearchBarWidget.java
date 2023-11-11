@@ -1,17 +1,18 @@
 package com.mrboomdev.scrollix.ui.widgets;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.view.Gravity;
 import android.view.ViewGroup;
-import android.webkit.WebView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
@@ -20,11 +21,13 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
+import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 
 import java.util.Objects;
 
+@SuppressLint("ViewConstructor")
 public class SearchBarWidget extends LinearLayout {
 	private final Drawable securityIconImage;
 	private final ImageView refreshButton, securityIcon;
@@ -33,10 +36,10 @@ public class SearchBarWidget extends LinearLayout {
 	private final int primaryColor;
 	private final TextView titleView;
 
-	public SearchBarWidget(Context context, WebView webview, ThemeSettings theme) {
+	public SearchBarWidget(Context context, @NonNull ThemeSettings theme) {
 		super(context);
 
-		var params = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT);
+		var params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT);
 		params.weight = 1;
 		setLayoutParams(params);
 
@@ -51,13 +54,16 @@ public class SearchBarWidget extends LinearLayout {
 		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
 		styledHolder.setGravity(Gravity.CENTER_VERTICAL);
 
-		var background = FileUtil.getDrawable(R.drawable.search_input_background);
-		FileUtil.setDrawableColor(background, Color.parseColor(theme.barsInner));
+		var background = FileUtil.getDrawable(R.drawable.search_input_background, theme.barsInner);
 		styledHolder.setBackground(background);
 
-		styledHolder.setPadding(10, 0, 10, 0);
-		addView(styledHolder, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(8, 8, 8, 8);
+		boolean isLandscape = AppManager.isLandscape();
+		var styledHolderPadding = FormatUtil.getDip(isLandscape ? 10 : 16, isLandscape ? 2 : 4);
+		var styledHolderMargin = FormatUtil.getDip(isLandscape ? 8 : 10, isLandscape ? 6 : 8);
+
+		styledHolder.setPadding(styledHolderPadding[0], styledHolderPadding[1], styledHolderPadding[0], styledHolderPadding[1]);
+		addView(styledHolder, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(styledHolderMargin[0], styledHolderMargin[1], styledHolderMargin[0], styledHolderMargin[1]);
 
 		styledHolder.setClickable(true);
 		styledHolder.setFocusable(true);
@@ -73,7 +79,7 @@ public class SearchBarWidget extends LinearLayout {
 			}
 		});
 
-		int size = (int)FormatUtil.getDip(34);
+		int size = FormatUtil.getDip(34);
 
 		securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black);
 		FileUtil.setDrawableColor(securityIconImage, primaryColor);
@@ -109,7 +115,8 @@ public class SearchBarWidget extends LinearLayout {
 		((LayoutParams)refreshButton.getLayoutParams()).setMargins(20, 0, 0, 0);
 
 		refreshButton.setOnClickListener(view -> {
-			if(isLoading) webview.stopLoading(); else webview.reload();
+			var webView = TabsManager.getCurrent().webView;
+			if(isLoading) webView.stopLoading(); else webView.reload();
 		});
 
 		setIsLoading(false);

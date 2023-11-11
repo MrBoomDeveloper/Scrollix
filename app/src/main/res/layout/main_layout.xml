@@ -30,7 +30,7 @@
     <LinearLayout
         android:id="@+id/top_bar"
         android:layout_width="0dp"
-        android:layout_height="50dp"
+        android:layout_height="wrap_content"
         android:background="#222222"
         android:orientation="horizontal"
         android:gravity="center_vertical"

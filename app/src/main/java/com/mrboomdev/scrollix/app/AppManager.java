@@ -22,6 +22,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.color.DynamicColors;
+import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.data.DataProfile;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
@@ -33,7 +35,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class AppManager {
+	public static String profileName = "Default";
 	public static AppSettings settings;
+	private static DataProfile profile;
 	private static final String TAG = "AppManager";
 	private static ActivityCallbackLauncher activityCallbackLauncher;
 	private static Method getContextMethod;
@@ -146,8 +150,8 @@ public class AppManager {
 		}
 	}
 
-	public static void loadSettings() {
-		settings = new AppSettings();
+	public static void postCreate() {
+		TabsManager.setCurrent(TabsManager.get(profile.currentTab()));
 	}
 
 	public static void startup(AppCompatActivity context) {
@@ -155,27 +159,45 @@ public class AppManager {
 			DynamicColors.applyToActivitiesIfAvailable(context.getApplication());
 		}
 
-		loadSettings();
+		boolean isIncognito = context instanceof IncognitoActivity;
+
+		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isIncognito) {
+			profileName = "Incognito";
+			WebView.setDataDirectorySuffix(profileName);
+		} else if(isIncognito) {
+			Toast.makeText(context, R.string.error_incognito_unavailable, Toast.LENGTH_LONG).show();
+		}
+
+		restoreState();
+		activityCallbackLauncher = new ActivityCallbackLauncher(context);
+		ThemeSettings.ThemeManager.setContext(getAppContext());
 
 		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 			registerNotificationChannels(context);
 		} else {
 			Log.i(TAG, "Skipping notification channels registration, because device sdk version is lower than required.");
 		}
+	}
 
-		if(context instanceof IncognitoActivity) {
-			if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-				WebView.setDataDirectorySuffix("incognito");
-			} else {
-				Toast.makeText(context, "Incognito mode isn't supported on your device", Toast.LENGTH_LONG).show();
-			}
-		}
+	public static void saveState() {
+		var profile = new DataProfile(
+				TabsManager.tabs,
+				TabsManager.getCurrentIndex(),
+				settings);
 
-		activityCallbackLauncher = new ActivityCallbackLauncher(context);
-		ThemeSettings.ThemeManager.setContext(getAppContext());
+		profile.save(profileName);
+	}
+
+	public static void restoreState() {
+		profile = DataProfile.load(profileName);
+
+		settings = profile.settings();
+		TabsManager.tabs = profile.tabs();
 	}
 
 	public static void dispose() {
+		saveState();
+
 		activityCallbackLauncher = null;
 		TabsManager.tabs.clear();
 		ThemeSettings.ThemeManager.setContext(null);
@@ -187,6 +209,10 @@ public class AppManager {
 
 	public static Configuration getConfiguration() {
 		return getAppContext().getResources().getConfiguration();
+	}
+
+	public static boolean isLandscape() {
+		return getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
 	}
 
 	public enum NotificationChannelGroup {
