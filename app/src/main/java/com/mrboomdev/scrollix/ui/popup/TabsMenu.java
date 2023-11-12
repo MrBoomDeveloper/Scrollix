@@ -187,7 +187,7 @@ public class TabsMenu {
 			}
 
 			public void setTab(@NonNull Tab tab) {
-				title.setText(tab.getUrl());
+				title.setText(tab.getTitle());
 
 				boolean isCurrent = tab == TabManager.getCurrentTab();
 				title.setTextColor(Color.parseColor(isCurrent ? "#ffffff" : "#bbaacc"));

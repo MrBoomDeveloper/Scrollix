@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.engine.EngineInternal;
+import com.mrboomdev.scrollix.ui.layout.BarsAnimator;
 
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
@@ -16,9 +17,14 @@ import java.util.List;
 
 public class TabManager {
 	protected static GeckoRuntime runtime;
+	protected static BarsAnimator barsAnimator;
 	private static GeckoView geckoView;
 	private static Tab currentTab;
 	private static List<TabListener> listeners;
+
+	public static void setBarsAnimator(BarsAnimator animator) {
+		barsAnimator = animator;
+	}
 
 	public static Tab getCurrentTab() {
 		return currentTab;
@@ -28,10 +34,18 @@ public class TabManager {
 		listeners.add(listener);
 	}
 
+	public static void removeListener(TabListener listener) {
+		listeners.remove(listener);
+	}
+
 	public static void setCurrentTab(@NonNull Tab tab) {
+		setCurrentTab(tab, true);
+	}
+
+	public static void setCurrentTab(@NonNull Tab tab, boolean tryToinit) {
 		currentTab = tab;
 
-		tab.init();
+		if(tryToinit) tab.init();
 		geckoView.setSession(tab.getSession());
 
 		for(var listener : listeners) {

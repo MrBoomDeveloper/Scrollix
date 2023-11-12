@@ -11,7 +11,7 @@ import java.util.Objects;
 public class Tab {
 	private final GeckoSession session;
 	protected boolean canGoBack, canGoForward;
-	protected String url;
+	protected String url, title;
 	private boolean didInit;
 
 	public Tab(String url, boolean lateInit) {
@@ -52,6 +52,8 @@ public class Tab {
 		if(didInit) return;
 		didInit = true;
 
+		if(session.isOpen()) return;
+
 		session.open(TabManager.runtime);
 		loadUrl(Objects.requireNonNullElse(url, EngineInternal.Link.HOME.getRealUrl()));
 	}
@@ -63,6 +65,10 @@ public class Tab {
 
 	public String getUrl() {
 		return url;
+	}
+
+	public String getTitle() {
+		return title;
 	}
 
 	public void goBack() {

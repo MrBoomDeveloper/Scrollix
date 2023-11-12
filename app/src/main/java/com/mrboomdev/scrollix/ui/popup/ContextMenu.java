@@ -62,7 +62,7 @@ public class ContextMenu extends LinearLayout {
 
 	public static class Builder {
 		private final List<Action> actions = new ArrayList<>();
-		private String url;
+		private String url, title;
 		private final Context context;
 		private boolean dismissOnSelect;
 		private AlertDialog dialog;
@@ -81,13 +81,8 @@ public class ContextMenu extends LinearLayout {
 			return this;
 		}
 
-		public Builder setImage(String url) {
-			//TODO: Stub
-			return this;
-		}
-
-		public Builder setUrl(String url) {
-			this.url = url;
+		public Builder setTitle(String title) {
+			this.title = title;
 			return this;
 		}
 

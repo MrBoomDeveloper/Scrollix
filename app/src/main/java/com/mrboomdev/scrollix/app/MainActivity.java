@@ -71,6 +71,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
 	private View backButton, forwardButton;
+	private boolean isFullscreen;
 
 	@SuppressLint({"ClickableViewAccessibility"})
 	@Override
@@ -150,6 +151,32 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		progressIndicator.setVisibility(View.VISIBLE);
 	}
 
+	@Override
+	public void onTabGotTitle(com.mrboomdev.scrollix.engine.tab.Tab tab, String title) {
+		if(tab != TabManager.getCurrentTab()) return;
+
+		searchBar.setTitle(title);
+	}
+
+	@Override
+	public void onTabFullscreenToggle(com.mrboomdev.scrollix.engine.tab.Tab tab, boolean isFullscreen) {
+		if(tab != TabManager.getCurrentTab()) return;
+		this.isFullscreen = isFullscreen;
+
+		updateBarsVisibility();
+	}
+
+	private void updateBarsVisibility() {
+		if(isFullscreen) {
+			topbar.setVisibility(View.GONE);
+			bottombar.setVisibility(View.GONE);
+			sidebar.setVisibility(View.GONE);
+		} else {
+			topbar.setVisibility(View.VISIBLE);
+			reloadLayout();
+		}
+	}
+
 	private void updateBackForwardButtons() {
 		var tab = TabManager.getCurrentTab();
 
@@ -163,22 +190,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 		progressIndicator.setProgress(progress, true);
 		if(progress == 100) finishedLoading();
-	}
-
-	private void initTabCallbacks(@NonNull Tab tab) {
-		tab.onTitleCallbacks.add(_tab -> {
-			if(tab != __deprecatedCurrentTab) return;
-
-			searchBar.setTitle(tab.title);
-		});
-
-		tab.onFaviconCallbacks.add(_tab -> {
-			if(tab != __deprecatedCurrentTab) return;
-
-			searchBar.setFavicon(tab.favicon);
-		});
-
-		tab.onDisposeCallbacks.add(tabs::remove);
 	}
 
 	private void finishedLoading() {
@@ -370,7 +381,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		button.setBackground(buttonRipple);
 		button.setClickable(true);
 		button.setFocusable(true);
-		
+
 		var buttonIcon = ResourcesCompat.getDrawable(getResources(), icon, getTheme());
 		DrawableCompat.setTint(Objects.requireNonNull(buttonIcon), primaryColor);
 		button.setImageDrawable(buttonIcon);
@@ -451,8 +462,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 				menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(image));
 			}
 
-			menu.setUrl(link);
-			menu.setImage(image);
 			menu.build();
 
 			return false;
@@ -503,7 +512,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			if(tab.canGoBack()) {
 				tab.goBack();
 			} else {
-				finishAffinity();
+				TabStore.removeTab(tab);
 			}
 		};
 

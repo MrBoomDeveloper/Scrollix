@@ -3,6 +3,8 @@ package com.mrboomdev.scrollix.engine.tab;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.mrboomdev.scrollix.app.AppManager;
+
 import org.jetbrains.annotations.Contract;
 
 import java.util.ArrayList;
@@ -62,7 +64,8 @@ public class TabStore {
 
 	private static void selectNearestTab(int index) {
 		if(tabs.isEmpty()) {
-			createTab(true);
+			AppManager.getActivityContext().finish();
+			//createTab(true);
 			return;
 		}
 
