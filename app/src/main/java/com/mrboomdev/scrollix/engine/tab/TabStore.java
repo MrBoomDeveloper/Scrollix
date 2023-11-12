@@ -12,18 +12,69 @@ public class TabStore {
 
 	public static void addTab(Tab tab, int index) {
 		tabs.add(index, tab);
+		runModifierListeners();
 	}
 
 	public static void addTab(Tab tab) {
 		tabs.add(tab);
+		runModifierListeners();
+	}
+
+	public static void createTab(String url, boolean focus) {
+		var tab = new Tab(url);
+		addTab(tab);
+
+		if(focus) {
+			TabManager.setCurrentTab(tab);
+		}
+	}
+
+	public static void createTab(boolean focus) {
+		createTab(null, focus);
 	}
 
 	public static void removeTab(Tab tab) {
+		boolean wasCurrent = TabManager.getCurrentTab() == tab;
+
 		tabs.remove(tab);
+		runModifierListeners();
+
+		if(wasCurrent) {
+			selectNearestTab(getTabIndex(tab));
+		}
 	}
 
 	public static void removeTab(int index) {
+		boolean wasCurrent = getTabIndex(TabManager.getCurrentTab()) == index;
+
 		tabs.remove(index);
+		runModifierListeners();
+
+		if(wasCurrent) {
+			selectNearestTab(index);
+		}
+	}
+
+	private static void selectNearestTab(int index) {
+		if(tabs.isEmpty()) {
+			createTab(true);
+			return;
+		}
+
+		var nearestTab = getNearestTab(index);
+		if(nearestTab != null) {
+			TabManager.setCurrentTab(nearestTab);
+			return;
+		}
+
+		TabManager.setCurrentTab(tabs.get(0));
+	}
+
+	public static Tab getNearestTab(int index) {
+		var previousTab = getTab(index - 1);
+		if(previousTab != null) return previousTab;
+
+		return getTab(index);
 	}
 
 	@Nullable
@@ -55,10 +106,19 @@ public class TabStore {
 		}
 
 		tabs.clear();
+		runModifierListeners();
+		selectNearestTab(-1);
 	}
 
 	public static void setTabs(List<Tab> newTabs) {
 		clearTabs();
 		tabs.addAll(newTabs);
+		runModifierListeners();
+	}
+
+	private static void runModifierListeners() {
+		for(var listener : TabManager.getTabListeners()) {
+			listener.onTabListModified();
+		}
 	}
 }

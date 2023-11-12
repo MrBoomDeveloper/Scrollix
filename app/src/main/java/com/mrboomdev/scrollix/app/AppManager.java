@@ -21,9 +21,11 @@ import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
+import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.Map;
+import java.util.Objects;
 
 public class AppManager {
 	public static String profileName = "Default";
@@ -42,15 +44,17 @@ public class AppManager {
 	}
 
 	public static void postCreate() {
-		TabsManager.setCurrent(TabsManager.get(profile.currentTab()));
+		//TabsManager.setCurrent(TabsManager.get(profile.currentTab()));
 
 		var intent = getActivityContext().getIntent();
 		var extra = intent.getDataString();
 
 		if(extra != null) {
-			TabsManager.create(extra);
+			TabStore.createTab(extra, true);
 			intent.setData(null);
 		}
+
+		TabManager.setCurrentTab(Objects.requireNonNull(TabStore.getTab(0)));
 	}
 
 	public static void useCrashHandler() {
@@ -122,7 +126,7 @@ public class AppManager {
 		activityCallbackLauncher = null;
 
 		activityContext = null;
-		TabsManager.tabs.clear();
+		TabStore.clearTabs();
 		TabManager.dispose();
 		ThemeSettings.ThemeManager.setContext(null);
 

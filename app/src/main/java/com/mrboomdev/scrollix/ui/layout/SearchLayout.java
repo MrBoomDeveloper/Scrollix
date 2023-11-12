@@ -31,7 +31,7 @@ import java.util.Objects;
 public class SearchLayout extends LinearLayout implements TextView.OnEditorActionListener {
 	private final EditText editText;
 	private LaunchLinkListener listener;
-	private String url;
+	private String url = "";
 	private Animation animation;
 	private boolean isOpened;
 

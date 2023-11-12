@@ -22,8 +22,9 @@ import com.google.android.material.snackbar.Snackbar;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
-import com.mrboomdev.scrollix.data.tabs.Tab;
-import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.tab.Tab;
+import com.mrboomdev.scrollix.engine.tab.TabManager;
+import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 
@@ -82,7 +83,7 @@ public class TabsMenu {
 		linear.addView(createButton, createButtonSizes[1], createButtonSizes[1]);
 
 		createButton.setOnClickListener(_view -> {
-			TabsManager.create(true);
+			TabStore.createTab(true);
 
 			close();
 		});
@@ -108,17 +109,17 @@ public class TabsMenu {
 		}
 
 		public void remove(int index) {
-			var tab = TabsManager.get(index);
-			int wasCount = TabsManager.getCount();
+			var tab = TabStore.getTab(index);
+			int wasCount = TabStore.getTabCount();
 
-			TabsManager.remove(index);
+			TabStore.removeTab(index);
 			notifyItemRemoved(index);
 
-			int newIndex = TabsManager.getCurrentIndex();
+			int newIndex = TabStore.getTabIndex(TabManager.getCurrentTab());
 			notifyItemChanged(newIndex);
 
 			//A new tab is being automatically created if there is 0 tabs
-			if(TabsManager.getCount() == 1 && wasCount == 1) close();
+			if(TabStore.getTabCount() == 1 && wasCount == 1) close();
 
 			if(tab == null) return;
 
@@ -128,7 +129,7 @@ public class TabsMenu {
 
 			snackbar.setAction("Restore tab", _view -> {
 				restore(tab, index);
-				TabsManager.setCurrent(tab);
+				TabManager.setCurrentTab(tab);
 				didRestored.set(true);
 				snackbar.dismiss();
 			});
@@ -145,23 +146,23 @@ public class TabsMenu {
 		}
 
 		public void move(int fromIndex, int toIndex) {
-			TabsManager.move(fromIndex, toIndex);
-			notifyItemMoved(fromIndex, toIndex);
+			//TabsManager.move(fromIndex, toIndex);
+			//notifyItemMoved(fromIndex, toIndex);
 		}
 
 		public void restore(Tab tab, int index) {
-			TabsManager.add(tab, index);
+			TabStore.addTab(tab, index);
 			notifyItemInserted(index);
 		}
 
 		@Override
 		public void onBindViewHolder(@NonNull MyViewHolder holder, int position) {
-			holder.setTab(Objects.requireNonNull(TabsManager.get(position)));
+			holder.setTab(Objects.requireNonNull(TabStore.getTab(position)));
 		}
 
 		@Override
 		public int getItemCount() {
-			return TabsManager.getCount();
+			return TabStore.getTabCount();
 		}
 
 		private class MyViewHolder extends RecyclerView.ViewHolder {
@@ -186,13 +187,13 @@ public class TabsMenu {
 			}
 
 			public void setTab(@NonNull Tab tab) {
-				title.setText(tab.title);
+				title.setText(tab.getUrl());
 
-				boolean isCurrent = tab == TabsManager.getCurrent();
+				boolean isCurrent = tab == TabManager.getCurrentTab();
 				title.setTextColor(Color.parseColor(isCurrent ? "#ffffff" : "#bbaacc"));
 
 				linear.setOnClickListener(view -> {
-					TabsManager.setCurrent(tab);
+					TabManager.setCurrentTab(tab);
 					popup.dismiss();
 					popup = null;
 				});

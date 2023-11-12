@@ -20,6 +20,7 @@ import com.mrboomdev.scrollix.webview.ScrollixJsBridge;
 import java.util.ArrayList;
 import java.util.List;
 
+@Deprecated
 public class Tab {
 	public static final String SCROLLIX_HOME = "file:///android_asset/pages/home.html";
 	public String url, title, previousUrl;
@@ -31,10 +32,12 @@ public class Tab {
 	private Context context;
 	private boolean didInit;
 
+	@Deprecated
 	public Tab(Context context) {
 		this(context, false);
 	}
 
+	@Deprecated
 	public Tab(Context context, boolean lateInit) {
 		this.context = context;
 
@@ -49,6 +52,7 @@ public class Tab {
 		onTitleCallbacks = new ArrayList<>();
 	}
 
+	@Deprecated
 	public void init() {
 		if(didInit) return;
 		didInit = true;
@@ -70,6 +74,7 @@ public class Tab {
 		webView.addJavascriptInterface(scrollixJsBridge, "scrollix");
 	}
 
+	@Deprecated
 	public void dispose() {
 		runCallbacks(onDisposeCallbacks);
 
@@ -90,6 +95,7 @@ public class Tab {
 		context = null;
 	}
 
+	@Deprecated
 	@SuppressLint("SetJavaScriptEnabled")
 	public void reloadSettings() {
 		var settings = webView.getSettings();
@@ -105,6 +111,7 @@ public class Tab {
 		settings.setAllowFileAccess(true);
 	}
 
+	@Deprecated
 	public void setUrl(String url) {
 		this.url = url;
 
@@ -114,18 +121,21 @@ public class Tab {
 		}
 	}
 
+	@Deprecated
 	public void setTitle(String title) {
 		this.title = title;
 
 		runCallbacks(onTitleCallbacks);
 	}
 
+	@Deprecated
 	public void runCallbacks(@NonNull List<TabCallback> callbacks) {
 		if(callbacks.isEmpty()) return;
 
 		callbacks.forEach(callback -> callback.run(this));
 	}
 
+	@Deprecated
 	public interface TabCallback {
 		void run(Tab tab);
 	}

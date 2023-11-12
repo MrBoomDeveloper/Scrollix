@@ -41,6 +41,7 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
@@ -57,8 +58,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements TabListener {
 	private final List<Tab> tabs = new ArrayList<>();
+
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
 	private ScrollListener scrollListener;
@@ -77,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
 		setContentView(R.layout.main_layout);
 
 		AppManager.startup(this);
+		TabManager.addListener(this);
 		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
 
 		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
@@ -89,8 +92,9 @@ public class MainActivity extends AppCompatActivity {
 		searchLayout.setVisibility(View.GONE, false);
 
 		searchLayout.setLaunchLinkListener(url -> {
-			webView.loadUrl(url);
-			currentTab.runCallbacks(currentTab.onStartedCallbacks);
+			TabManager.getCurrentTab().loadUrl(url);
+			//webView.loadUrl(url);
+			//currentTab.runCallbacks(currentTab.onStartedCallbacks);
 		});
 
 		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
@@ -106,26 +110,39 @@ public class MainActivity extends AppCompatActivity {
 		scrollListener = new ScrollListener();
 		reloadLayout();
 
-		TabsManager.selectTabCallbacks.add(this::setCurrentTab);
-		TabsManager.createTabCallbacks.add(tab -> updateTabCounter());
+		//TabsManager.selectTabCallbacks.add(this::setCurrentTab);
+		//TabsManager.createTabCallbacks.add(tab -> updateTabCounter());
 
-		TabsManager.removeTabCallbacks.add((tab, wasIndex) -> {
+		/*TabsManager.removeTabCallbacks.add((tab, wasIndex) -> {
 			updateTabCounter();
 
 			if(tab == currentTab) {
 				var nearestTab = TabsManager.getNearestTab(wasIndex);
 				if(nearestTab != null) setCurrentTab(nearestTab);
 			}
-		});
+		});*/
 
 		AppManager.postCreate();
 	}
 
-	private void updateTabCounter() {
+	@Override
+	public void onTabListModified() {
 		if(tabsCounter != null) {
-			var count = String.valueOf(TabsManager.getCount());
+			var count = String.valueOf(TabStore.getTabCount());
 			tabsCounter.setText(count);
 		}
+	}
+
+	@Override
+	public void onTabFocused(@NonNull com.mrboomdev.scrollix.engine.tab.Tab tab) {
+		searchBar.setUrl(tab.getUrl());
+		searchLayout.setUrl(tab.getUrl());
+	}
+
+	@Override
+	public void onTabLoaded(@NonNull com.mrboomdev.scrollix.engine.tab.Tab tab) {
+		searchBar.setUrl(tab.getUrl());
+		searchLayout.setUrl(tab.getUrl());
 	}
 
 	private void initTabCallbacks(@NonNull Tab tab) {
@@ -393,10 +410,6 @@ public class MainActivity extends AppCompatActivity {
 
 	@SuppressLint("ClickableViewAccessibility")
 	public void setCurrentTab(@NonNull Tab tab) {
-		TabManager.setCurrentTab(Objects.requireNonNull(TabStore.getTab(0)));
-
-
-
 		//TO NOT CRASH APP USE THIS SEGMENT
 		this.webView = tab.webView;
 		this.currentTab = tab;
@@ -406,7 +419,7 @@ public class MainActivity extends AppCompatActivity {
 		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
 
 		TabsManager.setCurrent(tab, false);
-		updateTabCounter();
+		//updateTabCounter();
 
 		if(!tabs.contains(tab)) {
 			initTabCallbacks(tab);

@@ -1,9 +1,12 @@
 package com.mrboomdev.scrollix.engine.tab;
 
+import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.util.LinkUtil;
 
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
+
+import java.util.Objects;
 
 public class Tab {
 	private final GeckoSession session;
@@ -11,9 +14,10 @@ public class Tab {
 	private boolean didInit;
 
 	public Tab(String url, boolean lateInit) {
+		this.url = url;
+
 		session = new GeckoSession();
 		applySettings();
-		session.loadUri(url);
 
 		if(!lateInit) init();
 	}
@@ -42,6 +46,7 @@ public class Tab {
 		didInit = true;
 
 		session.open(TabManager.runtime);
+		loadUrl(Objects.requireNonNullElse(url, EngineInternal.Link.HOME.getRealUrl()));
 	}
 
 	public void loadUrl(String url) {
