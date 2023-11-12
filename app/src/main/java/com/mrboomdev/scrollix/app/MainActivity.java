@@ -11,7 +11,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -27,7 +26,9 @@ import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -41,6 +42,7 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
@@ -90,12 +92,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 		searchLayout = new SearchLayout(this);
 		searchLayout.setVisibility(View.GONE, false);
-
-		searchLayout.setLaunchLinkListener(url -> {
-			TabManager.getCurrentTab().loadUrl(url);
-			//webView.loadUrl(url);
-			//currentTab.runCallbacks(currentTab.onStartedCallbacks);
-		});
+		searchLayout.setLaunchLinkListener(url -> TabManager.getCurrentTab().loadUrl(url));
 
 		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
 		searchLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
@@ -110,19 +107,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		scrollListener = new ScrollListener();
 		reloadLayout();
 
-		//TabsManager.selectTabCallbacks.add(this::setCurrentTab);
-		//TabsManager.createTabCallbacks.add(tab -> updateTabCounter());
-
-		/*TabsManager.removeTabCallbacks.add((tab, wasIndex) -> {
-			updateTabCounter();
-
-			if(tab == currentTab) {
-				var nearestTab = TabsManager.getNearestTab(wasIndex);
-				if(nearestTab != null) setCurrentTab(nearestTab);
-			}
-		});*/
-
 		AppManager.postCreate();
+		registerBackHandler();
 	}
 
 	@Override
@@ -219,13 +205,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		progressIndicator.setIndicatorColor(Color.parseColor(theme.primary), Color.parseColor(theme.primary), Color.parseColor(theme.primary));
 	}
 
-	private int getSizeForButton(boolean isSmall) {
-		return (int)TypedValue.applyDimension(
-				TypedValue.COMPLEX_UNIT_DIP,
-				isSmall ? 34 : 38,
-				getResources().getDisplayMetrics());
-	}
-
 	public void reloadLayout() {
 		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
 		if(theme.isInvalid()) theme = new ThemeSettings();
@@ -245,7 +224,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		for(var item : AppManager.settings.leftActions) {
 			var view = createActionButton(item, theme);
 
-			int size = getSizeForButton(isLandscape);
+			int size = FormatUtil.getDip(isLandscape ? 34 : 38);
 			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, isLandscape ? size : ViewGroup.LayoutParams.MATCH_PARENT);
 			if(!isLandscape) params.weight = 1;
 			params.setMargins(isLandscape ? 12 : 0, 0, isLandscape ? 10 : 0, 0);
@@ -259,7 +238,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			for(var item : AppManager.settings.menuActions) {
 				var view = createActionButton(item, theme);
 
-				int size = getSizeForButton(true);
+				int size = FormatUtil.getDip(34);
 				var params = new LinearLayout.LayoutParams(size, size);
 				params.setMargins(0, 12, 0, 12);
 
@@ -270,15 +249,13 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		}
 
 		searchBar = new SearchBarWidget(this, theme);
-		if(webView != null) searchBar.setTitle(webView.getTitle());
-		topbar.addView(searchBar);
-
 		searchBar.setOnClickListener(view -> searchLayout.show());
+		topbar.addView(searchBar);
 
 		for(var item : AppManager.settings.rightActions) {
 			var view = createActionButton(item, theme);
 
-			int size = getSizeForButton(isLandscape);
+			int size = FormatUtil.getDip(isLandscape ? 34 : 38);
 			var params = new LinearLayout.LayoutParams(isLandscape ? size : 0, isLandscape ? size : ViewGroup.LayoutParams.MATCH_PARENT);
 			if(!isLandscape) params.weight = 1;
 			params.setMargins(isLandscape ? 10 : 0, 0, isLandscape ? 12 : 0, 0);
@@ -286,11 +263,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
 
-		//webViewClient.setSearchBar(searchBar);
-		//chromeClient.setSearchBar(searchBar);
-
 		bottombar.setVisibility(!isLandscape ? View.VISIBLE : View.GONE);
-
 		applyTheme(theme);
 	}
 
@@ -314,27 +287,27 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		switch(name) {
 			case "home" -> {
 				icon = R.drawable.ic_home_black;
-				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.HOME.getFullUrl()));
+				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(EngineInternal.Link.HOME.getRealUrl()));
 			}
 
 			case "settings" -> {
 				icon = R.drawable.ic_settings_black;
-				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.SETTINGS.getFullUrl()));
+				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(EngineInternal.Link.SETTINGS.getRealUrl()));
 			}
 
 			case "downloads" -> {
 				icon = R.drawable.ic_download_black;
-				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.DOWNLOADS.getFullUrl()));
+				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(LinkUtil.ScrollixUrls.DOWNLOADS.getFullUrl()));
 			}
 
 			case "history" -> {
 				icon = R.drawable.ic_history_black;
-				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.HISTORY.getFullUrl()));
+				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(LinkUtil.ScrollixUrls.HISTORY.getFullUrl()));
 			}
 
 			case "bookmarks" -> {
 				icon = R.drawable.ic_star_black;
-				button.setOnClickListener(view -> webView.loadUrl(LinkUtil.ScrollixUrls.BOOKMARKS.getFullUrl()));
+				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(LinkUtil.ScrollixUrls.BOOKMARKS.getFullUrl()));
 			}
 
 			case "menu" -> {
@@ -356,13 +329,13 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 			case "back" -> {
 				icon = R.drawable.ic_back_black;
-				button.setOnClickListener(view -> webView.goBack());
+				button.setOnClickListener(view -> TabManager.getCurrentTab().goBack());
 			}
 
 			case "next" -> {
 				icon = R.drawable.ic_back_black;
 				button.setScaleX(-1);
-				button.setOnClickListener(view -> webView.goForward());
+				button.setOnClickListener(view -> TabManager.getCurrentTab().goForward());
 			}
 
 			case "tabs" -> {
@@ -410,34 +383,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 	@SuppressLint("ClickableViewAccessibility")
 	public void setCurrentTab(@NonNull Tab tab) {
-		//TO NOT CRASH APP USE THIS SEGMENT
-		this.webView = tab.webView;
-		this.currentTab = tab;
-
-		//PREVENT OLD BEHAVIOR WITHOUT WARNINGS
-		if(Integer.parseInt("1") == 1) return;
-		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
-
-		TabsManager.setCurrent(tab, false);
-		//updateTabCounter();
-
-		if(!tabs.contains(tab)) {
-			initTabCallbacks(tab);
-			tabs.add(tab);
-
-			var parent = tab.webView.getParent();
-			if(parent instanceof LinearLayout linear) {
-				linear.removeView(tab.webView);
-			}
-
-			webViewHolder.addView(tab.webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-		}
-
-		for(var _tab : tabs) {
-			_tab.webView.setVisibility(View.GONE);
-		}
-
-		webView.setVisibility(View.VISIBLE);
 		webView.setOnTouchListener(scrollListener);
 
 		webView.setOnLongClickListener(view -> {
@@ -533,18 +478,29 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		reloadLayout();
 	}
 
-	@SuppressLint({"MissingSuperCall"})
-	@Override
-	public void onBackPressed() {
-		if(searchLayout.isOpened()) {
-			searchLayout.hide();
-			return;
-		}
+	private void registerBackHandler() {
+		Runnable callback = () -> {
+			if(searchLayout.isOpened()) {
+				searchLayout.hide();
+				return;
+			}
 
-		if(webView.canGoBack()) {
-			webView.goBack();
+			if(webView.canGoBack()) {
+				TabManager.getCurrentTab().goBack();
+			} else {
+				finishAffinity();
+			}
+		};
+
+		if(Build.VERSION.SDK_INT > 32) {
+			getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback::run);
 		} else {
-			finishAffinity();
+			getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+				@Override
+				public void handleOnBackPressed() {
+					callback.run();
+				}
+			});
 		}
 	}
 

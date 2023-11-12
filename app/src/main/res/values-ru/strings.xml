@@ -4,6 +4,8 @@
     <string name="layout_top_bar">Верхнее Меню</string>
     <string name="layout_bottom_bar">Нижнее Меню</string>
 
+    <string name="comment_search_something">Искать что-нибудь…</string>
+
     <string name="error_incognito_unavailable">Режим инкогнито не поддерживается на вашем устройстве!</string>
     <string name="error_theme_invalid">Ваша тема повреждена, поэтому мы ее сбросили!</string>
 </resources>

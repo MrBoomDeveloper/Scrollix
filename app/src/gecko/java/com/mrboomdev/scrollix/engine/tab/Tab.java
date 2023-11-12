@@ -58,6 +58,22 @@ public class Tab {
 		return url;
 	}
 
+	public void goBack() {
+		session.goBack();
+	}
+
+	public void reload() {
+		session.reload();
+	}
+
+	public void stopLoading() {
+		session.stop();
+	}
+
+	public void goForward() {
+		session.goForward();
+	}
+
 	public void dispose() {
 		session.close();
 	}

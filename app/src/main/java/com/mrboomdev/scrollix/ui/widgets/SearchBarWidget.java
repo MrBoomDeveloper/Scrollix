@@ -21,7 +21,7 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
-import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 
@@ -101,7 +101,7 @@ public class SearchBarWidget extends LinearLayout {
 		titleView.setTextSize(14);
 		titleView.setTextColor(primaryColor);
 		titleView.setSingleLine(true);
-		titleView.setText("Search anything...");
+		titleView.setText(R.string.comment_search_something);
 		styledHolder.addView(titleView);
 		((LayoutParams)titleView.getLayoutParams()).weight = 1;
 
@@ -115,8 +115,8 @@ public class SearchBarWidget extends LinearLayout {
 		((LayoutParams)refreshButton.getLayoutParams()).setMargins(20, 0, 0, 0);
 
 		refreshButton.setOnClickListener(view -> {
-			var webView = TabsManager.getCurrent().webView;
-			if(isLoading) webView.stopLoading(); else webView.reload();
+			var tab = TabManager.getCurrentTab();
+			if(isLoading) tab.stopLoading(); else tab.reload();
 		});
 
 		setIsLoading(false);

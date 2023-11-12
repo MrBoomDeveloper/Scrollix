@@ -5,6 +5,8 @@
     <string name="layout_top_bar">Top bar</string>
     <string name="layout_bottom_bar">Bottom bar</string>
 
+    <string name="comment_search_something">Search something…</string>
+
     <string name="error_incognito_unavailable">Incognito mode isn\'t supported on your device!</string>
     <string name="error_theme_invalid">Your theme was corrupted, so wel\'ll use a default one!</string>
 </resources>
