@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.tabs;
 
 import android.annotation.SuppressLint;
+import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -19,9 +20,6 @@ public class TabsManager {
 	@SuppressLint("StaticFieldLeak")
 	private static Tab currentTab;
 
-	public static void setCurrent(Tab tab) {
-		setCurrent(tab, true);
-	}
 
 	public static int getIndex(Tab tab) {
 		for(int i = 0; i < getCount(); i++) {
@@ -36,6 +34,7 @@ public class TabsManager {
 		return getIndex(getCurrent());
 	}
 
+
 	public static void setCurrent(Tab tab, boolean runCallbacks) {
 		currentTab = tab;
 
@@ -44,6 +43,10 @@ public class TabsManager {
 				callback.run(tab);
 			}
 		}
+	}
+
+	public static void setCurrent(Tab tab) {
+		setCurrent(tab, true);
 	}
 
 	public static Tab getCurrent() {
@@ -74,6 +77,11 @@ public class TabsManager {
 	}
 
 	@NonNull
+	public static Tab create(String url) {
+		return create(url, true);
+	}
+
+	@NonNull
 	public static Tab create(String url, boolean focus) {
 		return create(url, focus, true);
 	}
@@ -82,7 +90,6 @@ public class TabsManager {
 	public static Tab create(String url, boolean focus, boolean sideEffects) {
 		var tab = new Tab(AppManager.getAppContext());
 
-		tab.reloadSettings();
 		tab.webView.loadUrl(Objects.requireNonNullElse(url, Tab.SCROLLIX_HOME));
 
 		if(sideEffects) tabs.add(tab);
@@ -109,11 +116,24 @@ public class TabsManager {
 	}
 
 	@Nullable
+	public static Tab get(WebView webView) {
+		for(var tab : tabs) {
+			if(tab.webView == webView) return tab;
+		}
+
+		return null;
+	}
+
+	@Nullable
 	public static Tab getNearestTab(int index) {
 		var previousTab = get(index - 1);
 		if(previousTab != null) return previousTab;
 
 		return get(index);
+	}
+
+	public static void remove(Tab tab) {
+		remove(getIndex(tab));
 	}
 
 	public static void remove(int index) {

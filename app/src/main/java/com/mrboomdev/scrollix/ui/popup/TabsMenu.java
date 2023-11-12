@@ -17,6 +17,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.snackbar.BaseTransientBottomBar;
+import com.google.android.material.snackbar.Snackbar;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
@@ -26,6 +28,7 @@ import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class TabsMenu {
 	private static final int LANDSCAPE_WIDTH = 300;
@@ -105,6 +108,7 @@ public class TabsMenu {
 		}
 
 		public void remove(int index) {
+			var tab = TabsManager.get(index);
 			int wasCount = TabsManager.getCount();
 
 			TabsManager.remove(index);
@@ -113,8 +117,31 @@ public class TabsMenu {
 			int newIndex = TabsManager.getCurrentIndex();
 			notifyItemChanged(newIndex);
 
-			//A NEW TAB IS BEING AUTOMATICALLY CREATED IF THERE IS 0 TABS
+			//A new tab is being automatically created if there is 0 tabs
 			if(TabsManager.getCount() == 1 && wasCount == 1) close();
+
+			if(tab == null) return;
+
+			var parent = AppManager.getActivityContext().findViewById(R.id.main_screen_parent);
+			var snackbar = Snackbar.make(parent, "Tab was closed. Do you want to restore it?", Snackbar.LENGTH_SHORT);
+			var didRestored = new AtomicBoolean(false);
+
+			snackbar.setAction("Restore tab", _view -> {
+				restore(tab, index);
+				TabsManager.setCurrent(tab);
+				didRestored.set(true);
+				snackbar.dismiss();
+			});
+
+			snackbar.addCallback(new BaseTransientBottomBar.BaseCallback<>() {
+				@Override
+				public void onDismissed(Snackbar transientBottomBar, int event) {
+					if(didRestored.get()) return;
+					tab.dispose();
+				}
+			});
+
+			snackbar.show();
 		}
 
 		public void move(int fromIndex, int toIndex) {
@@ -220,14 +247,16 @@ public class TabsMenu {
 
 		@Override
 		public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
-			return makeMovementFlags(ItemTouchHelper.UP | ItemTouchHelper.DOWN, ItemTouchHelper.LEFT);
+			return makeMovementFlags(
+					ItemTouchHelper.UP | ItemTouchHelper.DOWN,
+					ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT);
 		}
 
 		@Override
 		public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
 			int position = viewHolder.getAdapterPosition();
 
-			if(direction == ItemTouchHelper.LEFT) {
+			if(direction == ItemTouchHelper.LEFT || direction == ItemTouchHelper.RIGHT) {
 				adapter.remove(position);
 			}
 		}

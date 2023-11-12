@@ -17,8 +17,10 @@ import com.liulishuo.okdownload.core.breakpoint.BreakpointInfo;
 import com.liulishuo.okdownload.core.cause.EndCause;
 import com.liulishuo.okdownload.core.cause.ResumeFailedCause;
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.MainActivity;
+import com.mrboomdev.scrollix.app.NotificationManager;
+import com.mrboomdev.scrollix.app.permission.Permission;
+import com.mrboomdev.scrollix.app.permission.PermissionManager;
 import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.util.ArrayList;
@@ -52,7 +54,7 @@ public class MyDownloadListener implements DownloadListener {
 				.setPassIfAlreadyCompleted(false)
 				.build();
 
-		AppManager.checkAndRequestPermission(context, AppManager.Permission.NOTIFICATION, isSuccess -> {
+		PermissionManager.checkAndRequestPermission(Permission.NOTIFICATION, isSuccess -> {
 			var listener = new ProgressListener(context, isSuccess, name);
 			listener.setTotalSize(contentLength);
 			task.enqueue(listener);
@@ -118,7 +120,7 @@ public class MyDownloadListener implements DownloadListener {
 			cancelIntent.putExtra("id", progressNotificationId);
 			var cancelIntentPending = PendingIntent.getActivity(context, 1, cancelIntent, PendingIntent.FLAG_IMMUTABLE);
 
-			progressNotification = new NotificationCompat.Builder(context, AppManager.NotificationChannel.DOWNLOAD_PROGRESS.getAndroidId())
+			progressNotification = new NotificationCompat.Builder(context, NotificationManager.NotificationChannel.DOWNLOAD_PROGRESS.getAndroidId())
 					.setContentTitle("Starting download of \"" + name + "\"")
 					.setProgress(0, 0, true)
 					.addAction(R.mipmap.ic_launcher, "Cancel", cancelIntentPending)
@@ -262,8 +264,8 @@ public class MyDownloadListener implements DownloadListener {
 			if(title == null) return;
 
 			var channel = isOk
-					? AppManager.NotificationChannel.DOWNLOAD_FINISHED
-					: AppManager.NotificationChannel.DOWNLOAD_ERROR;
+					? NotificationManager.NotificationChannel.DOWNLOAD_FINISHED
+					: NotificationManager.NotificationChannel.DOWNLOAD_ERROR;
 
 			var notification = new NotificationCompat.Builder(context, channel.getAndroidId())
 					.setContentTitle(title)

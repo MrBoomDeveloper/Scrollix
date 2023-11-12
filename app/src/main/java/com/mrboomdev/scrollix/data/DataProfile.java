@@ -77,7 +77,6 @@ public record DataProfile(
 		@FromJson
 		public Tab tabFromJson(@NonNull SerializableTab serializableTab) {
 			var tab = new Tab(AppManager.getAppContext());
-			tab.reloadSettings();
 			tab.webView.loadUrl(serializableTab.url);
 			return tab;
 		}

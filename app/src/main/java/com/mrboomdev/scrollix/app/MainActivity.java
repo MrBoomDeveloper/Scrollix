@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -101,6 +102,7 @@ public class MainActivity extends AppCompatActivity {
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		SplashScreen.installSplashScreen(this);
+
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main_layout);
 
@@ -424,6 +426,7 @@ public class MainActivity extends AppCompatActivity {
 		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
 
 		TabsManager.setCurrent(tab, false);
+		updateTabCounter();
 		this.webView = tab.webView;
 		this.currentTab = tab;
 
@@ -476,7 +479,11 @@ public class MainActivity extends AppCompatActivity {
 			if(link != null) {
 				menu.addAction("Open link in new tab", () -> TabsManager.create(link, true));
 				menu.addAction("Open link in background", () -> TabsManager.create(link, false));
-				//menu.addAction("Open link in new incognito tab", () -> {});
+				menu.addAction("Open link in new incognito tab", () -> {
+					var intent = new Intent(this, IncognitoActivity.class);
+					intent.setData(Uri.parse(link));
+					startActivity(intent);
+				});
 				menu.addAction("Share link", () -> AndroidUtil.share("Share link", link));
 				menu.addAction("Copy link to clipboard", () -> AndroidUtil.copyToClipboard(link));
 			}
@@ -485,7 +492,11 @@ public class MainActivity extends AppCompatActivity {
 			if(image != null) {
 				menu.addAction("Open image in new tab", () -> TabsManager.create(image, true));
 				menu.addAction("Open image in background", () -> TabsManager.create(image, false));
-				//menu.addAction("Open image in new incognito tab", () -> {});
+				menu.addAction("Open image in new incognito tab", () -> {
+					var intent = new Intent(this, IncognitoActivity.class);
+					intent.setData(Uri.parse(image));
+					startActivity(intent);
+				});
 				//menu.addAction("Download image", () -> {});
 				menu.addAction("Share image", () -> AndroidUtil.share("Share image link", image));
 				menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(image));
@@ -532,6 +543,7 @@ public class MainActivity extends AppCompatActivity {
 
 					if(shouldExpand != isExpanded && Math.abs(startY - event.getY()) > 50) {
 						isExpanded = shouldExpand;
+						System.out.println("start animation");
 
 						topBarAnimation.cancel();
 						bottomBarAnimation.cancel();

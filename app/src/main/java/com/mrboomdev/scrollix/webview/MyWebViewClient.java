@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.webview;
 
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -15,7 +16,10 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.tabs.Tab;
+import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -31,12 +35,24 @@ public class MyWebViewClient extends WebViewClient {
 
 	@Override
 	public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
-		super.onReceivedHttpError(view, request, errorResponse);
+		//view.post(() -> Toast.makeText(view.getContext(), "HttpError: " + request.getUrl(), Toast.LENGTH_LONG).show());
 	}
 
 	@Override
-	public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-		super.onReceivedError(view, request, error);
+	public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request, WebResourceError error) {
+		var webviewUrl = view.getUrl();
+		var requestUrl = request.getUrl().toString();
+
+		if(Objects.equals(webviewUrl, requestUrl)) {
+			view.loadUrl(LinkUtil.ScrollixUrls.SETTINGS.getFullUrl());
+		}
+
+		view.post(() -> Toast.makeText(view.getContext(), webviewUrl + "\n" + requestUrl, Toast.LENGTH_LONG).show());
+	}
+
+	@Override
+	public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+
 	}
 
 	@Override
@@ -65,7 +81,7 @@ public class MyWebViewClient extends WebViewClient {
 
 			case "intent" -> {
 				try {
-					var context = view.getContext();
+					var context = AppManager.getActivityContext();
 					Intent intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
 
 					if(intent == null) {
@@ -121,8 +137,29 @@ public class MyWebViewClient extends WebViewClient {
 		}
 	}
 
+	@SuppressLint("WebViewClientOnReceivedSslError")
 	@Override
-	public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-		super.onReceivedSslError(view, handler, error);
+	public void onReceivedSslError(WebView view, @NonNull SslErrorHandler handler, @NonNull SslError error) {
+		var certificate = error.getCertificate();
+
+		var description = "Url: " + error.getUrl() + "\n" +
+				"Certificate issued by: " + certificate.getIssuedBy() + "\n" +
+				"Certificate valid until: " + certificate.getValidNotAfterDate() + "\n" +
+				"Certificate valid from: " + certificate.getValidNotBeforeDate();
+
+		AppManager.getActivityContext().runOnUiThread(() -> {
+			new MaterialAlertDialogBuilder(view.getContext())
+					.setTitle("Ssl error has happened!")
+					.setMessage("You can either continue, or cancel the request. \n\n" + description)
+					.setPositiveButton("Proceed", (_dialog, _button) -> {
+						handler.proceed();
+						_dialog.cancel();
+					})
+					.setNegativeButton("Cancel", (_dialog, _button) -> {
+						handler.cancel();
+						_dialog.cancel();
+					})
+					.show();
+		});
 	}
 }

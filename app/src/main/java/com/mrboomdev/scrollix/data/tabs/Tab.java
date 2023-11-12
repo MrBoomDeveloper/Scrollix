@@ -27,11 +27,34 @@ public class Tab {
 	public WebView webView;
 	public final List<TabCallback> onStartedCallbacks, onProgressCallbacks, onFinishedCallbacks, onDisposeCallbacks;
 	public final List<TabCallback> onFaviconCallbacks, onTitleCallbacks;
+	private Context context;
+	private boolean didInit;
 
 	public Tab(Context context) {
+		this(context, false);
+	}
+
+	public Tab(Context context, boolean lateInit) {
+		this.context = context;
+
+		if(!lateInit) init();
+
+		onStartedCallbacks = new ArrayList<>();
+		onProgressCallbacks = new ArrayList<>();
+		onFinishedCallbacks = new ArrayList<>();
+		onDisposeCallbacks = new ArrayList<>();
+
+		onFaviconCallbacks = new ArrayList<>();
+		onTitleCallbacks = new ArrayList<>();
+	}
+
+	public void init() {
+		if(didInit) return;
+		didInit = true;
+
 		webView = new WebView(context);
-		webView.setTag(webView.hashCode());
 		webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+		reloadSettings();
 
 		var downloadListener = new MyDownloadListener(context);
 		webView.setDownloadListener(downloadListener);
@@ -44,21 +67,15 @@ public class Tab {
 
 		var scrollixJsBridge = new ScrollixJsBridge(this);
 		webView.addJavascriptInterface(scrollixJsBridge, "scrollix");
-
-		onStartedCallbacks = new ArrayList<>();
-		onProgressCallbacks = new ArrayList<>();
-		onFinishedCallbacks = new ArrayList<>();
-		onDisposeCallbacks = new ArrayList<>();
-
-		onFaviconCallbacks = new ArrayList<>();
-		onTitleCallbacks = new ArrayList<>();
 	}
 
 	public void dispose() {
 		runCallbacks(onDisposeCallbacks);
 
-		var parent = (LinearLayout)webView.getParent();
-		parent.removeView(webView);
+		if(webView != null) {
+			var parent = (LinearLayout)webView.getParent();
+			parent.removeView(webView);
+		}
 
 		onStartedCallbacks.clear();
 		onProgressCallbacks.clear();
@@ -69,6 +86,7 @@ public class Tab {
 
 		webView = null;
 		favicon = null;
+		context = null;
 	}
 
 	@SuppressLint("SetJavaScriptEnabled")
