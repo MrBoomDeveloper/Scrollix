@@ -41,6 +41,8 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.tab.TabManager;
+import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
@@ -66,38 +68,6 @@ public class MainActivity extends AppCompatActivity {
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
 
-	@Override
-	protected void onNewIntent(Intent intent) {
-		super.onNewIntent(intent);
-
-		var type = intent.getStringExtra("type");
-		if(type == null) return;
-
-		switch(type) {
-			case "update_theme" -> reloadLayout();
-
-			case "cancel_download" -> MyDownloadListener.ProgressListener.cancel(
-					intent.getIntExtra("id", 0));
-
-			case "error" -> {
-				var title = intent.getStringExtra("title");
-				var message = intent.getStringExtra("message");
-
-				new MaterialAlertDialogBuilder(this)
-					.setTitle(title)
-					.setMessage(message)
-					.setPositiveButton("Ok", (_dialog, _button) -> _dialog.cancel())
-					.show();
-			}
-		}
-	}
-
-	@Override
-	public void onConfigurationChanged(@NonNull Configuration newConfig) {
-		super.onConfigurationChanged(newConfig);
-		reloadLayout();
-	}
-
 	@SuppressLint({"ClickableViewAccessibility"})
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -113,13 +83,11 @@ public class MainActivity extends AppCompatActivity {
 		topbar = findViewById(R.id.top_bar);
 		bottombar = findViewById(R.id.bottom_bar);
 		sidebar = findViewById(R.id.sidebar);
-
 		progressIndicator = findViewById(R.id.progressIndicator);
-
-		scrollListener = new ScrollListener();
 
 		searchLayout = new SearchLayout(this);
 		searchLayout.setVisibility(View.GONE, false);
+
 		searchLayout.setLaunchLinkListener(url -> {
 			webView.loadUrl(url);
 			currentTab.runCallbacks(currentTab.onStartedCallbacks);
@@ -130,13 +98,15 @@ public class MainActivity extends AppCompatActivity {
 		searchLayoutParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID;
 		searchLayoutParams.leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID;
 		searchLayoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
-
 		parent.addView(searchLayout, searchLayoutParams);
 
+		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
+		TabManager.setTabHolder(webViewHolder);
+
+		scrollListener = new ScrollListener();
 		reloadLayout();
 
 		TabsManager.selectTabCallbacks.add(this::setCurrentTab);
-
 		TabsManager.createTabCallbacks.add(tab -> updateTabCounter());
 
 		TabsManager.removeTabCallbacks.add((tab, wasIndex) -> {
@@ -423,12 +393,20 @@ public class MainActivity extends AppCompatActivity {
 
 	@SuppressLint("ClickableViewAccessibility")
 	public void setCurrentTab(@NonNull Tab tab) {
+		TabManager.setCurrentTab(Objects.requireNonNull(TabStore.getTab(0)));
+
+
+
+		//TO NOT CRASH APP USE THIS SEGMENT
+		this.webView = tab.webView;
+		this.currentTab = tab;
+
+		//PREVENT OLD BEHAVIOR WITHOUT WARNINGS
+		if(Integer.parseInt("1") == 1) return;
 		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
 
 		TabsManager.setCurrent(tab, false);
 		updateTabCounter();
-		this.webView = tab.webView;
-		this.currentTab = tab;
 
 		if(!tabs.contains(tab)) {
 			initTabCallbacks(tab);
@@ -508,6 +486,38 @@ public class MainActivity extends AppCompatActivity {
 
 			return false;
 		});
+	}
+
+	@Override
+	protected void onNewIntent(Intent intent) {
+		super.onNewIntent(intent);
+
+		var type = intent.getStringExtra("type");
+		if(type == null) return;
+
+		switch(type) {
+			case "update_theme" -> reloadLayout();
+
+			case "cancel_download" -> MyDownloadListener.ProgressListener.cancel(
+					intent.getIntExtra("id", 0));
+
+			case "error" -> {
+				var title = intent.getStringExtra("title");
+				var message = intent.getStringExtra("message");
+
+				new MaterialAlertDialogBuilder(this)
+						.setTitle(title)
+						.setMessage(message)
+						.setPositiveButton("Ok", (_dialog, _button) -> _dialog.cancel())
+						.show();
+			}
+		}
+	}
+
+	@Override
+	public void onConfigurationChanged(@NonNull Configuration newConfig) {
+		super.onConfigurationChanged(newConfig);
+		reloadLayout();
 	}
 
 	@SuppressLint({"MissingSuperCall"})

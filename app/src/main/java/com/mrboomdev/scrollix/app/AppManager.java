@@ -20,6 +20,7 @@ import com.mrboomdev.scrollix.data.DataProfile;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.Map;
@@ -72,6 +73,7 @@ public class AppManager {
 	public static void startup(AppCompatActivity context) {
 		useCrashHandler();
 		activityContext = context;
+		TabManager.startup();
 
 		if(DynamicColors.isDynamicColorAvailable()) {
 			DynamicColors.applyToActivitiesIfAvailable(context.getApplication());
@@ -121,6 +123,7 @@ public class AppManager {
 
 		activityContext = null;
 		TabsManager.tabs.clear();
+		TabManager.dispose();
 		ThemeSettings.ThemeManager.setContext(null);
 
 		for(var download : MyDownloadListener.ProgressListener.activeDownloads.values()) {

@@ -1,25 +1,44 @@
 plugins {
-    id 'com.android.application'
+    id "com.android.application"
 }
 
 android {
-    namespace 'com.mrboomdev.scrollix'
+    namespace "com.mrboomdev.scrollix"
     compileSdk 34
 
     defaultConfig {
         applicationId "com.mrboomdev.scrollix"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "1.0.4"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
-        release {
+        debug {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+
+    flavorDimensions = [ "engine" ]
+    productFlavors {
+        gecko {
+            dimension "engine"
+            applicationIdSuffix ".gecko"
+            versionNameSuffix "-gecko"
+        }
+
+        chromium {
+            dimension "engine"
+            applicationIdSuffix ".chromium"
+            versionNameSuffix "-chromium"
         }
     }
 
@@ -30,21 +49,24 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.10.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.webkit:webkit:1.8.0'
-    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "com.google.android.material:material:1.10.0"
+    implementation "androidx.constraintlayout:constraintlayout:2.1.4"
+    implementation "androidx.webkit:webkit:1.8.0"
+    implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
     implementation "androidx.core:core-splashscreen:1.0.1"
 
-    implementation 'com.squareup.moshi:moshi:1.15.0'
+    implementation "com.squareup.moshi:moshi:1.15.0"
     implementation "com.squareup.okhttp3:okhttp:4.9.2"
 
-    implementation 'com.liulishuo.okdownload:okdownload:1.0.7'
-    implementation 'com.liulishuo.okdownload:sqlite:1.0.7'
-    implementation 'com.liulishuo.okdownload:okhttp:1.0.7'
+    implementation "com.liulishuo.okdownload:okdownload:1.0.7"
+    implementation "com.liulishuo.okdownload:sqlite:1.0.7"
+    implementation "com.liulishuo.okdownload:okhttp:1.0.7"
 
-    testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    geckoImplementation "org.mozilla.geckoview:geckoview-nightly:121.0.20231112094805"
+    chromiumImplementation "androidx.webkit:webkit:1.8.0"
+
+    testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test.ext:junit:1.1.5"
+    androidTestImplementation "androidx.test.espresso:espresso-core:3.5.1"
 }

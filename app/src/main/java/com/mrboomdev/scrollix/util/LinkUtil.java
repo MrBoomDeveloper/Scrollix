@@ -191,4 +191,29 @@ public class LinkUtil {
 
 		return url;
 	}
+
+	public enum UserAgent {
+		FIREFOX_MOBILE("Firefox Mobile", ""),
+		CHROME_MOBILE("Chrome Mobile", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.5845.114 Mobile Safari/537.36"),
+		SAFARI_MOBILE("Safari Mobile", ""),
+		FIREFOX_DESKTOP("Firefox Desktop", ""),
+		CHROME_DESKTOP("Chrome Desktop", ""),
+		SAFARI_DESKTOP("Safari Desktop", "");
+
+		final String text, name;
+
+		UserAgent(String name, String text) {
+			this.text = text;
+			this.name = name;
+		}
+
+		public String getUserAgentText() {
+			return text;
+		}
+
+		@NonNull
+		public String getUserAgentName() {
+			return name();
+		}
+	}
 }

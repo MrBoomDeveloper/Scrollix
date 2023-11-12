@@ -1,10 +1,10 @@
 package com.mrboomdev.scrollix.ui.layout;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.Animation;
@@ -14,6 +14,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
@@ -27,18 +28,12 @@ import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.util.Objects;
 
-@SuppressLint("ViewConstructor")
-public class SearchLayout extends LinearLayout {
+public class SearchLayout extends LinearLayout implements TextView.OnEditorActionListener {
 	private final EditText editText;
 	private LaunchLinkListener listener;
 	private String url;
 	private Animation animation;
 	private boolean isOpened;
-
-	public void setTheme(@NonNull ThemeSettings theme) {
-		setBackgroundColor(Color.parseColor(theme.bars));
-		editText.setTextColor(Color.parseColor(theme.barsOverlay));
-	}
 
 	public SearchLayout(Context context) {
 		super(context);
@@ -73,25 +68,7 @@ public class SearchLayout extends LinearLayout {
 		editTextParams.weight = 1;
 		editTextParams.leftMargin = 16;
 		editText.setLayoutParams(editTextParams);
-
-		editText.setOnEditorActionListener((view, action, event) -> {
-			if(action != EditorInfo.IME_ACTION_SEARCH) return false;
-
-			if(listener != null) {
-				var engine = AppManager.settings.searchEngine.getEngine();
-				var query = editText.getText().toString();
-
-				if(LinkUtil.isUrlValid(query)) {
-					listener.launch(LinkUtil.resolveInputUrl(query));
-				} else {
-					var fixed = LinkUtil.tryToFixUrl(query);
-					listener.launch(Objects.requireNonNullElse(fixed, engine.getSearchUrl(query)));
-				}
-			}
-
-			hide();
-			return true;
-		});
+		editText.setOnEditorActionListener(this);
 
 		var removeIcon = FileUtil.getDrawable(R.drawable.ic_close_black);
 		FileUtil.setDrawableColor(removeIcon, Color.parseColor("#ccccdd"));
@@ -106,6 +83,11 @@ public class SearchLayout extends LinearLayout {
 		inputBar.addView(removeButton, iconSize, iconSize);
 
 		setOnClickListener(view -> hide());
+	}
+
+	public void setTheme(@NonNull ThemeSettings theme) {
+		setBackgroundColor(Color.parseColor(theme.bars));
+		editText.setTextColor(Color.parseColor(theme.barsOverlay));
 	}
 
 	private void startAnimation() {
@@ -182,6 +164,26 @@ public class SearchLayout extends LinearLayout {
 				case GONE, INVISIBLE -> hide();
 			}
 		}
+	}
+
+	@Override
+	public boolean onEditorAction(TextView v, int action, KeyEvent event) {
+		if(action != EditorInfo.IME_ACTION_SEARCH) return false;
+
+		if(listener != null) {
+			var engine = AppManager.settings.searchEngine.getEngine();
+			var query = editText.getText().toString();
+
+			if(LinkUtil.isUrlValid(query)) {
+				listener.launch(LinkUtil.resolveInputUrl(query));
+			} else {
+				var fixed = LinkUtil.tryToFixUrl(query);
+				listener.launch(Objects.requireNonNullElse(fixed, engine.getSearchUrl(query)));
+			}
+		}
+
+		hide();
+		return true;
 	}
 
 	public interface LaunchLinkListener {
