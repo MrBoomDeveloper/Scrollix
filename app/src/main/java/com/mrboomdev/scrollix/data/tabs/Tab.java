@@ -13,6 +13,7 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 import com.mrboomdev.scrollix.webview.MyWebChromeClient;
+import com.mrboomdev.scrollix.webview.MyWebView;
 import com.mrboomdev.scrollix.webview.MyWebViewClient;
 import com.mrboomdev.scrollix.webview.ScrollixJsBridge;
 
@@ -52,7 +53,7 @@ public class Tab {
 		if(didInit) return;
 		didInit = true;
 
-		webView = new WebView(context);
+		webView = new MyWebView(context);
 		webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 		reloadSettings();
 

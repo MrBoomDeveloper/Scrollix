@@ -56,7 +56,6 @@ public class MyWebChromeClient extends WebChromeClient {
 
 		var results = new HashMap<String, Boolean>();
 		Runnable finishCallback = () -> {
-			System.out.println("finish");
 			if(results.size() != requestedPermissions.size()) return;
 			var list = new ArrayList<String>();
 
@@ -65,7 +64,6 @@ public class MyWebChromeClient extends WebChromeClient {
 			}
 
 			request.grant(list.toArray(new String[0]));
-			System.out.println("finish done");
 		};
 
 		for(var permission : requestedPermissions.entrySet()) {
@@ -81,16 +79,13 @@ public class MyWebChromeClient extends WebChromeClient {
 
 						results.put(permission.getValue(), result.get());
 						finishCallback.run();
-						System.out.println("dismiss");
 					})
 					.setPositiveButton("Accept", (_dialog, _button) -> {
 						didSetValue.set(true);
-						System.out.println("accept");
 
 						PermissionManager.checkAndRequestPermission(permission.getKey(), isOk -> {
 							results.put(permission.getValue(), isOk);
 							finishCallback.run();
-							System.out.println("grant");
 						});
 
 						_dialog.cancel();

@@ -112,8 +112,11 @@ public class LinkUtil {
 		return url;
 	}
 
+	@NonNull
 	public static String resolveInputUrl(String url) {
-		if(AppManager.settings.urlFormatRules.replaceScrollix && url.startsWith(SCROLLIX_PROTOCOL)) {
+		if(url == null) return "";
+
+		if(url.startsWith(SCROLLIX_PROTOCOL)) {
 			var shortenUrl = url.substring(SCROLLIX_PROTOCOL.length());
 
 			for(var link : ScrollixUrls.values()) {
@@ -125,6 +128,10 @@ public class LinkUtil {
 			}
 		}
 
+		if(url.endsWith("/")) {
+			url = url.substring(0, url.lastIndexOf("/") - 1);
+		}
+
 		return url;
 	}
 
@@ -133,6 +140,7 @@ public class LinkUtil {
 		SETTINGS("settings", "settings.html"),
 		DOWNLOADS("downloads", "list.html?show=downloads"),
 		HISTORY("history", "list.html?show=history"),
+		ERROR("error", "error.html"),
 		BOOKMARKS("bookmarks", "list.html?show=bookmarks");
 
 		private final String scrollixUrl, realUrl;

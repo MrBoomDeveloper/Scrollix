@@ -543,7 +543,6 @@ public class MainActivity extends AppCompatActivity {
 
 					if(shouldExpand != isExpanded && Math.abs(startY - event.getY()) > 50) {
 						isExpanded = shouldExpand;
-						System.out.println("start animation");
 
 						topBarAnimation.cancel();
 						bottomBarAnimation.cancel();

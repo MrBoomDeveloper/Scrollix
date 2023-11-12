@@ -40,14 +40,9 @@ public class MyWebViewClient extends WebViewClient {
 
 	@Override
 	public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request, WebResourceError error) {
-		var webviewUrl = view.getUrl();
-		var requestUrl = request.getUrl().toString();
-
-		if(Objects.equals(webviewUrl, requestUrl)) {
-			view.loadUrl(LinkUtil.ScrollixUrls.SETTINGS.getFullUrl());
+		if(request.isForMainFrame()) {
+			view.loadUrl(LinkUtil.ScrollixUrls.ERROR.getFullUrl());
 		}
-
-		view.post(() -> Toast.makeText(view.getContext(), webviewUrl + "\n" + requestUrl, Toast.LENGTH_LONG).show());
 	}
 
 	@Override
@@ -57,14 +52,20 @@ public class MyWebViewClient extends WebViewClient {
 
 	@Override
 	public void onPageFinished(WebView view, String url) {
+		if(!Objects.equals(url, LinkUtil.ScrollixUrls.ERROR.getFullUrl())) {
+			tab.setUrl(url);
+		}
+
 		tab.runCallbacks(tab.onFinishedCallbacks);
 	}
 
 	@Override
 	public void onPageStarted(WebView view, String url, Bitmap favicon) {
-		tab.favicon = null;
-		tab.setUrl(url);
+		if(!Objects.equals(url, LinkUtil.ScrollixUrls.ERROR.getFullUrl())) {
+			tab.setUrl(url);
+		}
 
+		tab.favicon = null;
 		tab.runCallbacks(tab.onStartedCallbacks);
 		tab.runCallbacks(tab.onFaviconCallbacks);
 	}
