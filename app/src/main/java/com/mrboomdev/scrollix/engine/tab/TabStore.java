@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.engine.tab;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.jetbrains.annotations.Contract;
@@ -20,17 +21,21 @@ public class TabStore {
 		runModifierListeners();
 	}
 
-	public static void createTab(String url, boolean focus) {
+	@NonNull
+	public static Tab createTab(String url, boolean focus) {
 		var tab = new Tab(url);
 		addTab(tab);
 
 		if(focus) {
 			TabManager.setCurrentTab(tab);
 		}
+
+		return tab;
 	}
 
-	public static void createTab(boolean focus) {
-		createTab(null, focus);
+	@NonNull
+	public static Tab createTab(boolean focus) {
+		return createTab(null, focus);
 	}
 
 	public static void removeTab(Tab tab) {

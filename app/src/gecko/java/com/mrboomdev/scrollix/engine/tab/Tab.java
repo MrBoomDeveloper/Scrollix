@@ -11,7 +11,7 @@ import java.util.Objects;
 public class Tab {
 	private final GeckoSession session;
 	protected boolean canGoBack, canGoForward;
-	private String url;
+	protected String url;
 	private boolean didInit;
 
 	public Tab(String url, boolean lateInit) {

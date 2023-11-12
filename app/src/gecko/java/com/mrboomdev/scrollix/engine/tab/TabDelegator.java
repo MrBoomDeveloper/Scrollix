@@ -16,7 +16,38 @@ public class TabDelegator {
 	}
 
 	public void register() {
+		tab.getSession().setProgressDelegate(new GeckoSession.ProgressDelegate() {
+			@Override
+			public void onPageStop(@NonNull GeckoSession session, boolean success) {
+				for(var listener : TabManager.getTabListeners()) {
+					listener.onTabLoadingFinished(tab);
+				}
+			}
+
+			@Override
+			public void onProgressChange(@NonNull GeckoSession session, int progress) {
+				for(var listener : TabManager.getTabListeners()) {
+					listener.onTabLoadingProgress(tab, progress);
+				}
+			}
+
+			@Override
+			public void onPageStart(@NonNull GeckoSession session, @NonNull String url) {
+				tab.url = url;
+
+				for(var listener : TabManager.getTabListeners()) {
+					listener.onTabLoadingStarted(tab);
+				}
+			}
+		});
+
 		tab.getSession().setNavigationDelegate(new GeckoSession.NavigationDelegate() {
+
+			@Override
+			public GeckoResult<GeckoSession> onNewSession(@NonNull GeckoSession session, @NonNull String uri) {
+				var tab = TabStore.createTab(uri, true);
+				return GeckoResult.fromValue(tab.getSession());
+			}
 
 			@Override
 			public GeckoResult<String> onLoadError(@NonNull GeckoSession session, @Nullable String uri, @NonNull WebRequestError error) {

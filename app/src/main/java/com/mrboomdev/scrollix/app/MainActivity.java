@@ -62,15 +62,15 @@ import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity implements TabListener {
 	private final List<Tab> tabs = new ArrayList<>();
-
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
 	private ScrollListener scrollListener;
-	private Tab currentTab;
+	private Tab __deprecatedCurrentTab;
 	private LinearProgressIndicator progressIndicator;
 	private WebView webView;
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
+	private View backButton, forwardButton;
 
 	@SuppressLint({"ClickableViewAccessibility"})
 	@Override
@@ -121,48 +121,59 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 	@Override
 	public void onTabFocused(@NonNull com.mrboomdev.scrollix.engine.tab.Tab tab) {
+		if(tab != TabManager.getCurrentTab()) return;
+
 		searchBar.setUrl(tab.getUrl());
 		searchLayout.setUrl(tab.getUrl());
 	}
 
 	@Override
-	public void onTabLoaded(@NonNull com.mrboomdev.scrollix.engine.tab.Tab tab) {
+	public void onTabLoadingFinished(@NonNull com.mrboomdev.scrollix.engine.tab.Tab tab) {
+		if(tab != TabManager.getCurrentTab()) return;
+		updateBackForwardButtons();
+
 		searchBar.setUrl(tab.getUrl());
 		searchLayout.setUrl(tab.getUrl());
+		finishedLoading();
+	}
+
+	@Override
+	public void onTabLoadingStarted(com.mrboomdev.scrollix.engine.tab.Tab tab) {
+		if(tab != TabManager.getCurrentTab()) return;
+		updateBackForwardButtons();
+
+		searchBar.setIsLoading(true);
+		searchBar.setTitle(tab.getUrl());
+		searchLayout.setUrl(tab.getUrl());
+
+		progressIndicator.setProgress(0);
+		progressIndicator.setVisibility(View.VISIBLE);
+	}
+
+	private void updateBackForwardButtons() {
+		var tab = TabManager.getCurrentTab();
+
+		if(backButton != null) backButton.setAlpha(tab.canGoBack() ? 1 : .6f);
+		if(forwardButton != null) forwardButton.setAlpha(tab.canGoForward() ? 1 : .6f);
+	}
+
+	@Override
+	public void onTabLoadingProgress(com.mrboomdev.scrollix.engine.tab.Tab tab, int progress) {
+		if(tab != TabManager.getCurrentTab()) return;
+
+		progressIndicator.setProgress(progress, true);
+		if(progress == 100) finishedLoading();
 	}
 
 	private void initTabCallbacks(@NonNull Tab tab) {
-		tab.onStartedCallbacks.add(_tab -> {
-			if(tab != currentTab) return;
-
-			searchBar.setIsLoading(true);
-			searchBar.setTitle(tab.url);
-			searchLayout.setUrl(tab.url);
-
-			progressIndicator.setVisibility(View.VISIBLE);
-		});
-
 		tab.onTitleCallbacks.add(_tab -> {
-			if(tab != currentTab) return;
+			if(tab != __deprecatedCurrentTab) return;
 
 			searchBar.setTitle(tab.title);
 		});
 
-		tab.onFinishedCallbacks.add(_tab -> {
-			if(tab != currentTab) return;
-
-			finishedLoading();
-		});
-
-		tab.onProgressCallbacks.add(_tab -> {
-			if(tab != currentTab) return;
-
-			progressIndicator.setProgress(tab.progress, true);
-			if(tab.progress == 100) finishedLoading();
-		});
-
 		tab.onFaviconCallbacks.add(_tab -> {
-			if(tab != currentTab) return;
+			if(tab != __deprecatedCurrentTab) return;
 
 			searchBar.setFavicon(tab.favicon);
 		});
@@ -330,12 +341,14 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			case "back" -> {
 				icon = R.drawable.ic_back_black;
 				button.setOnClickListener(view -> TabManager.getCurrentTab().goBack());
+				backButton = button;
 			}
 
 			case "next" -> {
 				icon = R.drawable.ic_back_black;
 				button.setScaleX(-1);
 				button.setOnClickListener(view -> TabManager.getCurrentTab().goForward());
+				forwardButton = button;
 			}
 
 			case "tabs" -> {
