@@ -485,8 +485,10 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 				return;
 			}
 
-			if(webView.canGoBack()) {
-				TabManager.getCurrentTab().goBack();
+			var tab = TabManager.getCurrentTab();
+
+			if(tab.canGoBack()) {
+				tab.goBack();
 			} else {
 				finishAffinity();
 			}

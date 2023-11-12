@@ -10,6 +10,7 @@ import java.util.Objects;
 
 public class Tab {
 	private final GeckoSession session;
+	protected boolean canGoBack, canGoForward;
 	private String url;
 	private boolean didInit;
 
@@ -18,6 +19,7 @@ public class Tab {
 
 		session = new GeckoSession();
 		applySettings();
+		applyDelegators();
 
 		if(!lateInit) init();
 	}
@@ -31,6 +33,11 @@ public class Tab {
 		settings.setUseTrackingProtection(true);
 
 		settings.setUserAgentOverride(LinkUtil.UserAgent.CHROME_MOBILE.getUserAgentText());
+	}
+
+	public void applyDelegators() {
+		var delegator = new TabDelegator(this);
+		delegator.register();
 	}
 
 	public Tab(String url) {
@@ -64,6 +71,14 @@ public class Tab {
 
 	public void reload() {
 		session.reload();
+	}
+
+	public boolean canGoBack() {
+		return canGoBack;
+	}
+
+	public boolean canGoForward() {
+		return canGoForward;
 	}
 
 	public void stopLoading() {
