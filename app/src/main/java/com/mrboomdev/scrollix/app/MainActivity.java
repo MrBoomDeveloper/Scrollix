@@ -42,7 +42,6 @@ import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
-import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
@@ -52,9 +51,9 @@ import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AndroidUtil;
-import com.mrboomdev.scrollix.util.FormatUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
+import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.Objects;
@@ -99,10 +98,12 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		searchLayoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
 		parent.addView(searchLayout, searchLayoutParams);
 
+		scrollListener = new ScrollListener();
+
 		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
 		TabManager.setTabHolder(webViewHolder);
+		TabManager.setBarsAnimator(scrollListener);
 
-		scrollListener = new ScrollListener();
 		reloadLayout();
 
 		AppManager.postCreate();
@@ -250,9 +251,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	}
 
 	public void reloadLayout() {
-		var theme = ThemeSettings.ThemeManager.getCurrentTheme();
-		if(theme.isInvalid()) theme = new ThemeSettings();
-
+		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 		var barsColor = Color.parseColor(theme.bars);
 
 		topbar.removeAllViews();
@@ -414,7 +413,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			parent.addView(button);
 
 			tabsCounter = new TextView(this);
-			tabsCounter.setText(String.valueOf(TabsManager.getCount()));
+			tabsCounter.setText(String.valueOf(TabStore.getTabCount()));
 			tabsCounter.setTextColor(primaryColor);
 			tabsCounter.setTextSize(13);
 			tabsCounter.setGravity(Gravity.CENTER);
@@ -458,8 +457,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 			var link = linkMessage.getData().getString("url");
 			if(link != null) {
-				menu.addAction("Open link in new tab", () -> TabsManager.create(link, true));
-				menu.addAction("Open link in background", () -> TabsManager.create(link, false));
+				menu.addAction("Open link in new tab", () -> TabStore.createTab(link, true));
+				menu.addAction("Open link in background", () -> TabStore.createTab(link, false));
 				menu.addAction("Open link in new incognito tab", () -> {
 					var intent = new Intent(this, IncognitoActivity.class);
 					intent.setData(Uri.parse(link));
@@ -471,8 +470,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 			var image = imageMessage.getData().getString("url");
 			if(image != null) {
-				menu.addAction("Open image in new tab", () -> TabsManager.create(image, true));
-				menu.addAction("Open image in background", () -> TabsManager.create(image, false));
+				menu.addAction("Open image in new tab", () -> TabStore.createTab(image, true));
+				menu.addAction("Open image in background", () -> TabStore.createTab(image, false));
 				menu.addAction("Open image in new incognito tab", () -> {
 					var intent = new Intent(this, IncognitoActivity.class);
 					intent.setData(Uri.parse(image));

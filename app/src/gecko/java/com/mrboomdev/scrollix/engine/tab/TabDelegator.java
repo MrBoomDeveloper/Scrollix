@@ -152,11 +152,7 @@ public class TabDelegator {
 
 			@Override
 			public void onPageStart(@NonNull GeckoSession session, @NonNull String url) {
-				if(!url.equals(tab.url)) {
-					tab.title = url;
-				}
-
-				tab.url = url;
+				tab.setUrl(url);
 
 				for(var listener : TabManager.getTabListeners()) {
 					listener.onTabLoadingStarted(tab);

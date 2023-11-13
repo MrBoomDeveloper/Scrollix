@@ -1,7 +1,6 @@
 package com.mrboomdev.scrollix.ui.popup;
 
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Color;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,8 +24,9 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
-import com.mrboomdev.scrollix.util.FormatUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
+import com.mrboomdev.scrollix.util.format.FormatUtil;
+import com.mrboomdev.scrollix.util.format.Formats;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,9 +53,13 @@ public class TabsMenu {
 	}
 
 	public void showAt(View showAtView) {
+		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
+		boolean isLandscape = AppManager.isLandscape();
+
 		var linear = new LinearLayout(context);
 		linear.setOrientation(LinearLayout.VERTICAL);
-		linear.setBackgroundResource(R.color.black);
+		linear.setBackground(DrawableUtil.createDrawable(theme.popupBackground, isLandscape ? 16 : 0));
+		FormatUtil.setPadding(linear, Formats.SMALL_PADDING);
 
 		var recycler = new RecyclerView(context);
 		recycler.setLayoutManager(new LinearLayoutManager(context));
@@ -70,11 +74,11 @@ public class TabsMenu {
 		linear.addView(recycler, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
 		((LinearLayout.LayoutParams)recycler.getLayoutParams()).weight = 1;
 
-		var createIcon = DrawableUtil.getDrawable(R.drawable.ic_add_black, "#ccccdd");
+		var createIcon = DrawableUtil.getDrawable(R.drawable.ic_add_black, theme.primary);
 		var createButtonSizes = FormatUtil.getDip(12, 50);
 
 		var createButton = new ImageView(context);
-		createButton.setPadding(createButtonSizes[0], createButtonSizes[0], createButtonSizes[0], createButtonSizes[0]);
+		FormatUtil.setPadding(createButton, createButtonSizes[0]);
 		createButton.setImageDrawable(createIcon);
 		createButton.setBackgroundResource(R.drawable.ripple_circle);
 		createButton.setClickable(true);
@@ -87,7 +91,7 @@ public class TabsMenu {
 			close();
 		});
 
-		if(AppManager.getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+		if(isLandscape) {
 			popup = new PopupWindow(linear, FormatUtil.getDip(LANDSCAPE_WIDTH), LinearLayout.LayoutParams.WRAP_CONTENT);
 			popup.setFocusable(true);
 			popup.showAsDropDown(showAtView);
@@ -170,14 +174,13 @@ public class TabsMenu {
 
 			public MyViewHolder(LinearLayout parent) {
 				super(parent);
-				int padding = FormatUtil.getDip(12);
 
 				linear = new LinearLayout(context);
 				linear.setOrientation(LinearLayout.HORIZONTAL);
 				linear.setClickable(true);
 				linear.setFocusable(true);
-				linear.setPadding(padding, padding, padding, padding);
 				linear.setBackgroundResource(R.drawable.ripple_square);
+				FormatUtil.setPadding(linear, Formats.BIG_PADDING);
 
 				title = new TextView(context);
 				linear.addView(title);
@@ -193,8 +196,7 @@ public class TabsMenu {
 
 				linear.setOnClickListener(view -> {
 					TabManager.setCurrentTab(tab);
-					popup.dismiss();
-					popup = null;
+					close();
 				});
 			}
 		}

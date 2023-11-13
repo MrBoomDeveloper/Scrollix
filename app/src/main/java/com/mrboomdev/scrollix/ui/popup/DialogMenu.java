@@ -8,9 +8,10 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
+import com.mrboomdev.scrollix.util.format.Formats;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,62 +53,76 @@ public class DialogMenu {
 	}
 
 	public void show() {
-		var parentViewPadding = FormatUtil.getDip(6);
-		var elementPadding = FormatUtil.getDip(12);
-		var smallElementPadding = FormatUtil.getDip(4);
-		var smallTextSize = FormatUtil.getSp(10);
+		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 
-		var background = new DrawableBuilder("#141315")
+		var background = new DrawableBuilder(theme.popupBackground)
 				.setCornerRadius(16)
 				.setStroke("#000000", 4)
 				.build();
 
 		var dialogView = new LinearLayout(context);
 		dialogView.setOrientation(LinearLayout.VERTICAL);
-		dialogView.setPadding(parentViewPadding, parentViewPadding, parentViewPadding, parentViewPadding);
 		dialogView.setBackground(background);
+
+		dialogView.setPadding(
+				Formats.NORMAL_PADDING,
+				Formats.NORMAL_PADDING,
+				Formats.NORMAL_PADDING,
+				Formats.NORMAL_PADDING);
 
 		var titleView = new TextView(context);
 		titleView.setText(title);
 
 		titleView.setPadding(
-				(int)(elementPadding * 1.75f),
-				(int)(elementPadding * 1.5f),
-				(int)(elementPadding * 1.75f),
-				elementPadding);
+				Formats.LARGE_PADDING,
+				Formats.LARGE_PADDING,
+				Formats.LARGE_PADDING,
+				Formats.BIG_PADDING);
 
-		titleView.setTextSize(FormatUtil.getSp(14));
-		titleView.setTextColor(Color.WHITE);
+		titleView.setTextSize(Formats.LARGE_TEXT);
+		titleView.setTextColor(Color.parseColor(theme.popupTitle));
 		dialogView.addView(titleView);
 
 		if(description != null) {
 			var descriptionView = new TextView(context);
 			descriptionView.setText(description);
+			descriptionView.setTextColor(Color.parseColor(theme.popupDescription));
 
 			descriptionView.setPadding(
-					(int)(elementPadding * 1.75f),
-					elementPadding / 2,
-					(int)(elementPadding * 1.75f),
-					elementPadding);
+					Formats.LARGE_PADDING,
+					Formats.NORMAL_PADDING,
+					Formats.LARGE_PADDING,
+					Formats.BIG_PADDING);
 
-			descriptionView.setTextSize(smallTextSize);
+			descriptionView.setTextSize(Formats.NORMAL_TEXT);
 			dialogView.addView(descriptionView);
 		}
 
 		if(!actions.isEmpty()) {
 			var actionsView = new LinearLayout(context);
 			actionsView.setOrientation(LinearLayout.HORIZONTAL);
-			actionsView.setPadding(elementPadding, elementPadding, elementPadding, elementPadding);
 			dialogView.addView(actionsView);
+
+			actionsView.setPadding(
+					Formats.BIG_PADDING,
+					Formats.BIG_PADDING,
+					Formats.BIG_PADDING,
+					Formats.BIG_PADDING);
 
 			for(var action : actions) {
 				var actionView = new LinearLayout(context);
 				actionView.setOrientation(LinearLayout.HORIZONTAL);
 				actionView.setFocusable(true);
 				actionView.setClickable(true);
-				actionView.setPadding(smallElementPadding, smallElementPadding, smallElementPadding, smallElementPadding);
-				actionView.setForeground(DrawableUtil.createRippleDrawable("#cc555555", "#ccffffff", 10));
-				actionView.setBackground(DrawableUtil.createDrawable("#303030", 10));
+
+				actionView.setPadding(
+						Formats.SMALL_PADDING,
+						Formats.SMALL_PADDING,
+						Formats.SMALL_PADDING,
+						Formats.SMALL_PADDING);
+
+				actionView.setForeground(DrawableUtil.createRippleDrawable(theme.primaryRipple, 10));
+				actionView.setBackground(DrawableUtil.createDrawable(theme.primary, 10));
 				actionView.setGravity(Gravity.CENTER);
 
 				actionView.setOnClickListener(_view -> {
@@ -119,18 +134,18 @@ public class DialogMenu {
 
 				actionsView.addView(actionView, 0, ViewGroup.LayoutParams.WRAP_CONTENT);
 				((LinearLayout.LayoutParams)actionView.getLayoutParams()).weight = 1;
-				((LinearLayout.LayoutParams)actionView.getLayoutParams()).topMargin = elementPadding;
+				((LinearLayout.LayoutParams)actionView.getLayoutParams()).topMargin = Formats.BIG_PADDING;
 
 				var actionTextView = new TextView(context);
 				actionTextView.setText(action.title());
 
 				actionTextView.setPadding(
-						smallElementPadding,
-						(int)(smallElementPadding * 1.5f),
-						smallElementPadding,
-						(int)(smallElementPadding * 1.5f));
+						Formats.SMALL_PADDING,
+						Formats.NORMAL_PADDING,
+						Formats.SMALL_PADDING,
+						Formats.NORMAL_PADDING);
 
-				actionTextView.setTextSize(smallTextSize);
+				actionTextView.setTextSize(Formats.NORMAL_TEXT);
 				actionTextView.setTextColor(Color.WHITE);
 				actionView.addView(actionTextView);
 			}
@@ -151,6 +166,7 @@ public class DialogMenu {
 
 		if(window != null) {
 			window.setBackgroundDrawable(null);
+			window.setDimAmount(.75f);
 		}
 	}
 

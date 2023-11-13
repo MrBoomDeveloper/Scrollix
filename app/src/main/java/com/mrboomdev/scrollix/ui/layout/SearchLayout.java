@@ -22,9 +22,9 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
-import com.mrboomdev.scrollix.util.FormatUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
+import com.mrboomdev.scrollix.util.format.FormatUtil;
 
 import java.util.Objects;
 

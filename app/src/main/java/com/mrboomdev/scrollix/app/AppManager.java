@@ -22,6 +22,7 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.util.format.Formats;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
 import java.util.Map;
@@ -77,6 +78,7 @@ public class AppManager {
 	public static void startup(AppCompatActivity context) {
 		useCrashHandler();
 		activityContext = context;
+		Formats.init();
 		TabManager.startup();
 
 		if(DynamicColors.isDynamicColorAvailable()) {

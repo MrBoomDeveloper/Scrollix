@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.engine.tab;
 
+import androidx.annotation.NonNull;
+
 import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.util.LinkUtil;
 
@@ -22,6 +24,14 @@ public class Tab {
 		applyDelegators();
 
 		if(!lateInit) init();
+	}
+
+	protected void setUrl(@NonNull String url) {
+		if(!url.equals(this.url)) {
+			this.title = url;
+		}
+
+		this.url = url;
 	}
 
 	public void applySettings() {

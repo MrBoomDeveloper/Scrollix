@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.engine.tab;
 
+import android.annotation.SuppressLint;
+import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
@@ -22,8 +24,10 @@ public class TabManager {
 	private static Tab currentTab;
 	private static List<TabListener> listeners;
 
-	public static void setBarsAnimator(BarsAnimator animator) {
-		barsAnimator = animator;
+	@SuppressLint("ClickableViewAccessibility")
+	public static void setBarsAnimator(View.OnTouchListener animator) {
+		geckoView.setOnTouchListener(animator);
+		//barsAnimator = animator;
 	}
 
 	public static Tab getCurrentTab() {

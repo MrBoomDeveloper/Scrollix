@@ -1,6 +1,7 @@
-package com.mrboomdev.scrollix.util;
+package com.mrboomdev.scrollix.util.format;
 
 import android.util.TypedValue;
+import android.view.View;
 
 import androidx.annotation.NonNull;
 
@@ -10,6 +11,10 @@ public class FormatUtil {
 
 	public static int getDip(int value) {
 		return (int)getResponsiveValue(value, Dimension.DIP);
+	}
+
+	public static void setPadding(@NonNull View view, int padding) {
+		view.setPadding(padding, padding, padding, padding);
 	}
 
 	@NonNull

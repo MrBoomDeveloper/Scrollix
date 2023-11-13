@@ -3,15 +3,17 @@ package com.mrboomdev.scrollix.ui.popup;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.Context;
-import android.util.TypedValue;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.res.ResourcesCompat;
 
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.data.settings.ThemeSettings;
+import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
+import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
+import com.mrboomdev.scrollix.util.format.FormatUtil;
+import com.mrboomdev.scrollix.util.format.Formats;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,29 +24,29 @@ public class ContextMenu extends LinearLayout {
 
 	public ContextMenu(Context context, @NonNull Builder builder) {
 		super(context);
+		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 
-		setBackgroundResource(R.color.black);
+		var background = new DrawableBuilder(theme.popupBackground)
+				.setCornerRadius(16)
+				.setStroke("#000000", 4)
+				.build();
+
+		setBackground(background);
 		setOrientation(VERTICAL);
 
 		url = builder.url;
 
 		for(var action : builder.actions) {
-			var padding = FormatUtil.getDip(10);
-
 			var linear = new LinearLayout(context);
-			linear.setPadding(padding, padding, padding, padding);
 			linear.setFocusable(true);
 			linear.setClickable(true);
+			linear.setForeground(DrawableUtil.getDrawable(R.drawable.ripple_square));
+			FormatUtil.setPadding(linear, Formats.BIG_PADDING);
 			addView(linear);
-
-			linear.setForeground(ResourcesCompat.getDrawable(
-					getResources(),
-					R.drawable.ripple_search,
-					context.getTheme()));
 
 			var title = new TextView(context);
 			title.setText(action.title());
-			title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+			title.setTextSize(Formats.NORMAL_TEXT);
 
 			linear.setOnClickListener(view -> {
 				action.callback().run();
@@ -92,6 +94,12 @@ public class ContextMenu extends LinearLayout {
 			dialog = new AlertDialog.Builder(context)
 					.setView(menu)
 					.show();
+
+			var window = dialog.getWindow();
+
+			if(window != null) {
+				window.setBackgroundDrawable(null);
+			}
 		}
 	}
 }

@@ -16,7 +16,9 @@ import java.util.List;
 
 public class ThemeSettings {
 	public String bars, barsOverlay, barsInner;
-	public String primary, background;
+	public String primary, primaryRipple, background;
+	public String popupBackground, popupTitle, popupDescription, popupSeparator;
+	private static final ThemeSettings DEFAULT_THEME = new ThemeSettings();
 
 	public ThemeSettings() {
 		reset();
@@ -27,12 +29,22 @@ public class ThemeSettings {
 		this.barsOverlay = "#ccccdd";
 		this.barsInner = "#11ffffff";
 
-		this.primary = "#ff0000";
+		this.primary = "#373b3d";
+		this.primaryRipple = "#cc555555";
 		this.background = "#111111";
+
+		this.popupBackground = "#141315";
+		this.popupTitle = "#ffffff";
+		this.popupDescription = "#ccccdd";
+		this.popupSeparator = "#55cccccc";
 	}
 
 	public boolean isInvalid() {
-		for(var item : List.of(bars, barsOverlay, barsInner, primary, background)) {
+		for(var item : List.of(
+				bars, barsOverlay, barsInner,
+				primary, primaryRipple, background,
+				popupBackground, popupTitle, popupDescription
+		)) {
 			try {
 				Color.parseColor(item);;
 			} catch(Exception e) {
@@ -150,6 +162,11 @@ public class ThemeSettings {
 
 		public static ThemeSettings getCurrentTheme() {
 			return getTheme(getCurrentThemeName());
+		}
+
+		public static ThemeSettings getCurrentValidTheme() {
+			var theme = getTheme(getCurrentThemeName());
+			return theme.isInvalid() ? DEFAULT_THEME : theme;
 		}
 	}
 }
