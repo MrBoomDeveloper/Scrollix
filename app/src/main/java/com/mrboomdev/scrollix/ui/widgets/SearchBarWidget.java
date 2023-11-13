@@ -22,8 +22,8 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
-import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 
 import java.util.Objects;
 
@@ -35,6 +35,7 @@ public class SearchBarWidget extends LinearLayout {
 	private boolean isLoading;
 	private final int primaryColor;
 	private final TextView titleView;
+	private String wasUrl;
 
 	public SearchBarWidget(Context context, @NonNull ThemeSettings theme) {
 		super(context);
@@ -54,7 +55,7 @@ public class SearchBarWidget extends LinearLayout {
 		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
 		styledHolder.setGravity(Gravity.CENTER_VERTICAL);
 
-		var background = FileUtil.getDrawable(R.drawable.search_input_background, theme.barsInner);
+		var background = DrawableUtil.getDrawable(R.drawable.search_input_background, theme.barsInner);
 		styledHolder.setBackground(background);
 
 		boolean isLandscape = AppManager.isLandscape();
@@ -81,9 +82,7 @@ public class SearchBarWidget extends LinearLayout {
 
 		int size = FormatUtil.getDip(34);
 
-		securityIconImage = FileUtil.getDrawable(R.drawable.ic_lock_black);
-		FileUtil.setDrawableColor(securityIconImage, primaryColor);
-
+		securityIconImage = DrawableUtil.getDrawable(R.drawable.ic_lock_black, primaryColor);
 		securityIcon = new ImageView(context);
 		securityIcon.setImageDrawable(securityIconImage);
 		securityIcon.setPadding(11, 11, 11, 11);
@@ -106,7 +105,7 @@ public class SearchBarWidget extends LinearLayout {
 		((LayoutParams)titleView.getLayoutParams()).weight = 1;
 
 		refreshButton = new ImageView(context);
-		refreshButton.setBackground(FileUtil.copyDrawable(circleRipple));
+		refreshButton.setBackground(DrawableUtil.copyDrawable(circleRipple));
 
 		refreshButton.setClickable(true);
 		refreshButton.setFocusable(true);
@@ -132,9 +131,13 @@ public class SearchBarWidget extends LinearLayout {
 	}
 
 	public void setUrl(String url) {
+		if(Objects.equals(url, wasUrl)) return;
+
 		titleView.setText(AppManager.settings.urlFormatRules.parseSearchQuery ?
 				SearchEngine.parseQueryAll(url)
 				: url);
+
+		wasUrl = url;
 	}
 
 	public void setTitle(String title) {

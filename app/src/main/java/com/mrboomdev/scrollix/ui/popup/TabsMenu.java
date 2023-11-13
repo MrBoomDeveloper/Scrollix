@@ -25,8 +25,8 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
-import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
+import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -70,8 +70,7 @@ public class TabsMenu {
 		linear.addView(recycler, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
 		((LinearLayout.LayoutParams)recycler.getLayoutParams()).weight = 1;
 
-		var createIcon = FileUtil.getDrawable(R.drawable.ic_add_black, "#ccccdd");
-
+		var createIcon = DrawableUtil.getDrawable(R.drawable.ic_add_black, "#ccccdd");
 		var createButtonSizes = FormatUtil.getDip(12, 50);
 
 		var createButton = new ImageView(context);

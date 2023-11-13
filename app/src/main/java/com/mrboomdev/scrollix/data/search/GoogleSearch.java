@@ -3,7 +3,7 @@ package com.mrboomdev.scrollix.data.search;
 import android.graphics.drawable.Drawable;
 
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.util.FileUtil;
+import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 
 public class GoogleSearch implements SearchEngine {
 
@@ -19,6 +19,6 @@ public class GoogleSearch implements SearchEngine {
 
 	@Override
 	public Drawable getIcon() {
-		return FileUtil.getDrawable(R.drawable.ic_google_colorful);
+		return DrawableUtil.getDrawable(R.drawable.ic_google_colorful);
 	}
 }

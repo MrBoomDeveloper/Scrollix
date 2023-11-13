@@ -15,6 +15,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.Animation;
@@ -51,21 +52,17 @@ import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AndroidUtil;
-import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.FormatUtil;
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity implements TabListener {
-	private final List<Tab> tabs = new ArrayList<>();
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
 	private ScrollListener scrollListener;
-	private Tab __deprecatedCurrentTab;
 	private LinearProgressIndicator progressIndicator;
 	private WebView webView;
 	private SearchBarWidget searchBar;
@@ -144,7 +141,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		updateBackForwardButtons();
 
 		searchBar.setIsLoading(true);
-		searchBar.setTitle(tab.getUrl());
+		searchBar.setUrl(tab.getUrl());
 		searchLayout.setUrl(tab.getUrl());
 
 		progressIndicator.setProgress(0);
@@ -162,6 +159,31 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	public void onTabFullscreenToggle(com.mrboomdev.scrollix.engine.tab.Tab tab, boolean isFullscreen) {
 		if(tab != TabManager.getCurrentTab()) return;
 		this.isFullscreen = isFullscreen;
+
+		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
+		parent.setFitsSystemWindows(isFullscreen);
+
+		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+			var insets = getWindow().getInsetsController();
+			var type = WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout();
+
+			if(insets != null) {
+				if(isFullscreen) insets.hide(type);
+				else insets.show(type);
+			}
+
+			getWindow().getAttributes().layoutInDisplayCutoutMode = isFullscreen
+					? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+					: WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+
+			getWindow().setDecorFitsSystemWindows(isFullscreen);
+		} else {
+			var fullscreenFlag = WindowManager.LayoutParams.FLAG_FULLSCREEN;
+			var window = getWindow();
+
+			if(isFullscreen) window.setFlags(fullscreenFlag, fullscreenFlag);
+			else window.clearFlags(fullscreenFlag);
+		}
 
 		updateBarsVisibility();
 	}
@@ -294,9 +316,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor(theme.barsOverlay);
 		var button = new ImageView(this);
 
-		var buttonRipple = AppManager.isLandscape()
-				? FileUtil.getDrawable(R.drawable.ripple_circle)
-				: FileUtil.getDrawable(R.drawable.ripple_square);
+		var buttonRipple = DrawableUtil.getDrawable(
+				AppManager.isLandscape() ? R.drawable.ripple_circle : R.drawable.ripple_square);
 
 		button.setOnClickListener(view -> {
 			String message = "Unknown action, please check your settings!";

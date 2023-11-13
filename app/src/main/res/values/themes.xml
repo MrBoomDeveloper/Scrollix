@@ -1,6 +1,7 @@
 <resources>
     <style name="Scrollix" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">#E822F6</item>
+        <item name="android:windowIsTranslucent">true</item>
     </style>
 
     <style name="Scrollix.Splash" parent="Theme.SplashScreen">

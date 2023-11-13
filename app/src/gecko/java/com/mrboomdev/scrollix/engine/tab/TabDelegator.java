@@ -10,11 +10,13 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.IncognitoActivity;
 import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
+import com.mrboomdev.scrollix.ui.popup.DialogMenu;
 import com.mrboomdev.scrollix.util.AndroidUtil;
 
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.WebRequestError;
+
 public class TabDelegator {
 	private final Tab tab;
 
@@ -23,12 +25,20 @@ public class TabDelegator {
 	}
 
 	public void register() {
-		/*tab.getSession().setMediaSessionDelegate(new MediaSession.Delegate() {
-			@Override
-			public void onPlay(@NonNull GeckoSession session, @NonNull MediaSession mediaSession) {
+		tab.getSession().setPromptDelegate(new GeckoSession.PromptDelegate() {
 
+			@Override
+			public GeckoResult<PromptResponse> onAlertPrompt(@NonNull GeckoSession session, @NonNull AlertPrompt prompt) {
+				new DialogMenu(AppManager.getActivityContext())
+						.setTitle(prompt.title)
+						.setDescription(prompt.message)
+						.addAction("Continue")
+						.setOnCloseCallback(prompt::dismiss)
+						.show();
+
+				return null;
 			}
-		});*/
+		});
 
 		tab.getSession().setContentDelegate(new GeckoSession.ContentDelegate() {
 			@Override
@@ -142,8 +152,11 @@ public class TabDelegator {
 
 			@Override
 			public void onPageStart(@NonNull GeckoSession session, @NonNull String url) {
+				if(!url.equals(tab.url)) {
+					tab.title = url;
+				}
+
 				tab.url = url;
-				tab.title = url;
 
 				for(var listener : TabManager.getTabListeners()) {
 					listener.onTabLoadingStarted(tab);

@@ -57,6 +57,8 @@ public class TabManager {
 		var context = AppManager.getActivityContext();
 
 		geckoView = new GeckoView(context);
+		geckoView.setFitsSystemWindows(true);
+
 		view.addView(geckoView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 	}
 
