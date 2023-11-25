@@ -9,7 +9,7 @@ import java.util.List;
 public class AppSettings {
 	public List<String> leftActions, rightActions, menuActions;
 	public BottomBarMode sideBar;
-	public SearchEngine.SearchEnginePreset searchEngine, autocompletion;
+	public SearchEngine.Preset searchEngine, autocompletion;
 	public boolean useLayoutColorFromPage;
 	public UrlFormatRules urlFormatRules;
 	public UrlCleanRules urlCleanRules;
@@ -34,7 +34,7 @@ public class AppSettings {
 		rightActions.addAll(Arrays.asList("back", "next", "tabs", "menu"));
 		menuActions.addAll(Arrays.asList("history", "bookmarks", "downloads", "settings"));
 
-		searchEngine = SearchEngine.SearchEnginePreset.GOOGLE;
+		searchEngine = SearchEngine.Preset.GOOGLE;
 
 		urlFormatRules.replaceScrollix = true;
 		urlFormatRules.parseSearchQuery = true;

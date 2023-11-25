@@ -14,7 +14,6 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.color.DynamicColors;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.DataProfile;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
@@ -22,8 +21,13 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
 import com.mrboomdev.scrollix.webview.MyDownloadListener;
+import com.nostra13.universalimageloader.core.DisplayImageOptions;
+import com.nostra13.universalimageloader.core.ImageLoader;
+import com.nostra13.universalimageloader.core.ImageLoaderConfiguration;
 
 import java.util.Map;
 import java.util.Objects;
@@ -55,29 +59,39 @@ public class AppManager {
 			intent.setData(null);
 		}
 
-		TabManager.setCurrentTab(Objects.requireNonNull(TabStore.getTab(0)));
+		if(TabStore.getTabCount() == 1) {
+			TabManager.setCurrentTab(Objects.requireNonNull(TabStore.getTab(0)));
+		}
 	}
 
-	public static void useCrashHandler() {
+	public static void setupCrashHandler() {
 		Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
 			var context = getActivityContext();
 
-			context.runOnUiThread(() -> {
-				new MaterialAlertDialogBuilder(context)
-						.setTitle("App just crashed!")
-						.setMessage("Stacktrace: \n\n" + Log.getStackTraceString(throwable))
-						.setPositiveButton("Exit app", (_dialog, _button) -> {
-							context.finishAffinity();
-							_dialog.cancel();
-						})
-						.show();
-			});
+			context.runOnUiThread(() -> new DialogMenu(context)
+					.setCancelable(false)
+					.setTitle("App just crashed!")
+					.setDescription("Stacktrace: \n\n" + Log.getStackTraceString(throwable))
+					.addAction("Exit app", () -> System.exit(0))
+					.show());
 		});
 	}
 
 	public static void startup(AppCompatActivity context) {
-		useCrashHandler();
+		setupCrashHandler();
 		activityContext = context;
+
+		var displayImageOptions = new DisplayImageOptions.Builder()
+				.showImageOnFail(R.drawable.ic_error_black)
+				.showImageForEmptyUri(R.drawable.ic_error_black);
+
+		var imageLoaderConfig = new ImageLoaderConfiguration.Builder(context)
+				.defaultDisplayImageOptions(displayImageOptions.build())
+				.diskCacheSize(FormatUtil.getBytesFromMegabytes(50));
+
+		var imageLoader = ImageLoader.getInstance();
+		imageLoader.init(imageLoaderConfig.build());
+
 		Formats.init();
 		TabManager.startup();
 

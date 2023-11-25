@@ -1,3 +1,5 @@
+import java.text.SimpleDateFormat
+
 plugins {
     id "com.android.application"
 }
@@ -10,8 +12,10 @@ android {
         applicationId "com.mrboomdev.scrollix"
         minSdk 24
         targetSdk 34
-        versionCode 6
-        versionName "1.0.06"
+
+        var date = new Date()
+        versionName "1.0.1." + new SimpleDateFormat("DHmmss").format(date)
+        versionCode Integer.parseInt(new SimpleDateFormat("DHmmss").format(date))
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -22,8 +26,9 @@ android {
         }
 
         release {
-            minifyEnabled true
+            minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            signingConfig signingConfigs.debug
         }
     }
 
@@ -52,12 +57,12 @@ dependencies {
     implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "com.google.android.material:material:1.10.0"
     implementation "androidx.constraintlayout:constraintlayout:2.1.4"
-    implementation "androidx.webkit:webkit:1.8.0"
-    implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
     implementation "androidx.core:core-splashscreen:1.0.1"
 
     implementation "com.squareup.moshi:moshi:1.15.0"
+
     implementation "com.squareup.okhttp3:okhttp:4.9.2"
+    implementation "com.nostra13.universalimageloader:universal-image-loader:1.9.5"
 
     implementation "com.liulishuo.okdownload:okdownload:1.0.7"
     implementation "com.liulishuo.okdownload:sqlite:1.0.7"

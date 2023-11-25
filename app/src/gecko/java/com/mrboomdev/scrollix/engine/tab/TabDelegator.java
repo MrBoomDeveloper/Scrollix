@@ -122,6 +122,9 @@ public class TabDelegator {
 					case ContextElement.TYPE_NONE -> {}
 				}
 
+				menu.setTitle(element.title != null ? element.title : element.altText);
+				menu.setLink(element.linkUri);
+				menu.setImage(element.srcUri);
 				menu.build();
 			}
 

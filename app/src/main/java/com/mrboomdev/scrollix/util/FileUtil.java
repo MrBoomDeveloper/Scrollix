@@ -11,6 +11,7 @@ import org.jetbrains.annotations.Contract;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
@@ -19,7 +20,7 @@ import java.util.Objects;
 public class FileUtil {
 
 	@NonNull
-	public static String readFile(File file) {
+	public static String readFileString(File file) {
 		try(var reader = new BufferedReader(new FileReader(file))) {
 			var builder = new StringBuilder();
 
@@ -31,6 +32,17 @@ public class FileUtil {
 			return builder.toString();
 		} catch(IOException e) {
 			throw new RuntimeException("Failed to read a file!", e);
+		}
+	}
+
+	@NonNull
+	public static byte[] readFileBytes(@NonNull File file) {
+		try(var stream = new FileInputStream(file)) {
+			var array = new byte[(int)file.length()];
+			stream.read(array);
+			return array;
+		} catch(IOException e) {
+			throw new RuntimeException("Failed to read bytes from a file!", e);
 		}
 	}
 
@@ -63,5 +75,9 @@ public class FileUtil {
 		var resources = AppManager.getAppContext().getResources();
 		var bitmap = BitmapFactory.decodeResource(resources, res);
 		writeBitmap(bitmap, file);
+	}
+
+	public static Bitmap createBitmap(byte[] bytes) {
+		return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
 	}
 }

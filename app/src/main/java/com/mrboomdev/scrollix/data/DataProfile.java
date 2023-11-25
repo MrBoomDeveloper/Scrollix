@@ -50,7 +50,7 @@ public record DataProfile(
 			return createDefault();
 		}
 
-		return deserialize(FileUtil.readFile(file));
+		return deserialize(FileUtil.readFileString(file));
 	}
 
 	@NonNull

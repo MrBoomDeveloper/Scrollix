@@ -1,8 +1,11 @@
 package com.mrboomdev.scrollix.ui.layout;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
@@ -17,19 +20,27 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.util.callback.CallbackController;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
+import com.mrboomdev.scrollix.util.format.Formats;
 
+import java.util.List;
 import java.util.Objects;
 
-public class SearchLayout extends LinearLayout implements TextView.OnEditorActionListener {
+public class SearchLayout extends LinearLayout implements TextView.OnEditorActionListener, TextWatcher {
+	private static final List<SearchEngine.SearchSuggestion> EMPTY_SUGGESTIONS_LIST = List.of();
 	private final EditText editText;
+	private final SuggestionsAdapter adapter;
+	private CallbackController searchQueriesCallbackController;
 	private LaunchLinkListener listener;
 	private String url = "";
 	private Animation animation;
@@ -42,46 +53,51 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 		var inputBar = new LinearLayout(context);
 		inputBar.setOrientation(HORIZONTAL);
 		inputBar.setGravity(Gravity.CENTER_VERTICAL);
-		inputBar.setPadding(12, 0, 12, 0);
-		addView(inputBar, ViewGroup.LayoutParams.MATCH_PARENT, FormatUtil.getDip(50));
-
-		int iconSize = FormatUtil.getDip(34);
+		//inputBar.setPadding(Formats.NORMAL_PADDING, Formats.NORMAL_PADDING, Formats.NORMAL_PADDING, Formats.NORMAL_PADDING);
+		FormatUtil.setPadding(inputBar, Formats.NORMAL_PADDING);
+		addView(inputBar, Formats.MATCH_PARENT, Formats.WRAP_CONTENT);
 
 		ImageView engineIcon = new ImageView(context);
 		engineIcon.setImageDrawable(AppManager.settings.searchEngine.getEngine().getIcon());
 		engineIcon.setClickable(true);
-		engineIcon.setPadding(10, 10, 10, 10);
+		FormatUtil.setPadding(engineIcon, Formats.PADDING);
 		engineIcon.setBackgroundResource(R.drawable.ripple_circle);
 		engineIcon.setFocusable(true);
-		inputBar.addView(engineIcon, iconSize, iconSize);
+		inputBar.addView(engineIcon, Formats.NORMAL_ELEMENT, Formats.NORMAL_ELEMENT);
 
 		editText = new EditText(context);
-		editText.setBackgroundColor(getResources().getColor(android.R.color.transparent, context.getTheme()));
+		editText.setBackgroundResource(android.R.color.transparent);
 		editText.setSelectAllOnFocus(true);
 		editText.setSingleLine();
-		editText.setTextSize(14);
+		editText.setTextSize(Formats.NORMAL_TEXT);
 		editText.setImeOptions(EditorInfo.IME_ACTION_SEARCH | EditorInfo.IME_FLAG_NO_FULLSCREEN);
 		editText.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
 		inputBar.addView(editText, 0, ViewGroup.LayoutParams.MATCH_PARENT);
 
 		var editTextParams = (LayoutParams)editText.getLayoutParams();
 		editTextParams.weight = 1;
-		editTextParams.leftMargin = 16;
+		editTextParams.leftMargin = Formats.BIG_PADDING;
 		editText.setLayoutParams(editTextParams);
 		editText.setOnEditorActionListener(this);
+		editText.addTextChangedListener(this);
 
 		var removeIcon = DrawableUtil.getDrawable(R.drawable.ic_close_black, "#ccccdd");
 
 		var removeButton = new ImageView(context);
-		removeButton.setPadding(6, 6, 6, 6);
+		FormatUtil.setPadding(removeButton, Formats.PADDING);
 		removeButton.setImageDrawable(removeIcon);
 		removeButton.setBackgroundResource(R.drawable.ripple_circle);
 		removeButton.setOnClickListener(view -> editText.setText(""));
 		removeButton.setClickable(true);
 		removeButton.setFocusable(true);
-		inputBar.addView(removeButton, iconSize, iconSize);
+		inputBar.addView(removeButton, Formats.NORMAL_ELEMENT, Formats.NORMAL_ELEMENT);
 
 		setOnClickListener(view -> hide());
+
+		var recycler = new RecyclerView(context);
+		recycler.setLayoutManager(new LinearLayoutManager(context));
+		recycler.setAdapter(adapter = new SuggestionsAdapter());
+		addView(recycler);
 	}
 
 	public void setTheme(@NonNull ThemeSettings theme) {
@@ -183,6 +199,100 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 
 		hide();
 		return true;
+	}
+
+	@Override
+	public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+	@Override
+	public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+	@Override
+	public void afterTextChanged(@NonNull Editable s) {
+		var query = s.toString();
+
+		if(this.searchQueriesCallbackController != null) {
+			this.searchQueriesCallbackController.cancel();
+		}
+
+		if(query.isBlank()) {
+			adapter.setData(EMPTY_SUGGESTIONS_LIST);
+			return;
+		}
+
+		var searchEngine = SearchEngine.Preset.GOOGLE.getEngine();
+		searchQueriesCallbackController = searchEngine.getSearchResults(query, results -> {
+			var context = AppManager.getActivityContext();
+			context.runOnUiThread(() -> adapter.setData(results));
+		});
+	}
+
+	private class SuggestionsAdapter extends RecyclerView.Adapter<SuggestionView> {
+		private List<SearchEngine.SearchSuggestion> data;
+
+		@NonNull
+		@Override
+		public SuggestionView onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+			var linear = new LinearLayout(getContext());
+			linear.setLayoutParams(new RecyclerView.LayoutParams(Formats.MATCH_PARENT, Formats.WRAP_CONTENT));
+
+			return new SuggestionView(linear);
+		}
+
+		@Override
+		public void onBindViewHolder(@NonNull SuggestionView holder, int position) {
+			holder.setData(data.get(position));
+		}
+
+		@SuppressLint("NotifyDataSetChanged")
+		public void setData(List<SearchEngine.SearchSuggestion> data) {
+			this.data = data;
+			notifyDataSetChanged();
+		}
+
+		@Override
+		public int getItemCount() {
+			return data != null ? data.size() : 0;
+		}
+	}
+
+	private class SuggestionView extends RecyclerView.ViewHolder {
+		private final TextView title;
+		private SearchEngine.SearchSuggestion suggestion;
+
+		public SuggestionView(@NonNull LinearLayout itemView) {
+			super(itemView);
+
+			itemView.setOrientation(HORIZONTAL);
+			itemView.setClickable(true);
+			itemView.setFocusable(true);
+			itemView.setBackgroundResource(R.drawable.ripple_square);
+
+			itemView.setPadding(
+					Formats.BIG_PADDING,
+					Formats.LARGE_PADDING - Formats.SMALL_PADDING,
+					Formats.BIG_PADDING,
+					Formats.LARGE_PADDING - Formats.SMALL_PADDING);
+
+			itemView.setOnClickListener(view -> {
+				if(listener == null) return;
+
+				var engine = SearchEngine.Preset.GOOGLE.getEngine();
+				var url = engine.getSearchUrl(suggestion.title());
+
+				listener.launch(url);
+				hide();
+			});
+
+			title = new TextView(getContext());
+			title.setTextSize(Formats.NORMAL_TEXT);
+			itemView.addView(title);
+		}
+
+		public void setData(@NonNull SearchEngine.SearchSuggestion suggestion) {
+			title.setText(suggestion.title());
+			this.suggestion = suggestion;
+		}
 	}
 
 	public interface LaunchLinkListener {

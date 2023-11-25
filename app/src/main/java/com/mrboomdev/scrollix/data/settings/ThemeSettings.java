@@ -8,11 +8,13 @@ import android.graphics.Color;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.mrboomdev.scrollix.util.exception.InvalidThemeException;
 import com.squareup.moshi.Moshi;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class ThemeSettings {
 	public String bars, barsOverlay, barsInner;
@@ -46,7 +48,7 @@ public class ThemeSettings {
 				popupBackground, popupTitle, popupDescription
 		)) {
 			try {
-				Color.parseColor(item);;
+				Color.parseColor(item);
 			} catch(Exception e) {
 				e.printStackTrace();
 				return true;
@@ -83,7 +85,7 @@ public class ThemeSettings {
 			return resetIfInvalidTheme(prefs.getString("data_" + name, ""));
 		}
 
-		public static ThemeSettings getTheme(@NonNull String name) {
+		public static ThemeSettings getTheme(@NonNull String name) throws InvalidThemeException {
 			if(name.equals(currentName)) return currentData;
 
 			var json = resetIfInvalidTheme(prefs.getString("data_" + name, ""));
@@ -91,9 +93,15 @@ public class ThemeSettings {
 			var adapter = moshi.adapter(ThemeSettings.class);
 
 			try {
-				return adapter.fromJson(json);
+				var theme = Objects.requireNonNull(adapter.fromJson(json));
+
+				if(theme.isInvalid()) {
+					throw new InvalidThemeException("Invalid theme values! " + json);
+				}
+
+				return theme;
 			} catch(IOException e) {
-				throw new IllegalArgumentException("Invalid theme json!", e);
+				throw new InvalidThemeException("Invalid theme json!", e);
 			}
 		}
 
@@ -131,7 +139,7 @@ public class ThemeSettings {
 			try {
 				currentData = adapter.fromJson(fixedJson);
 			} catch(IOException e) {
-				throw new IllegalArgumentException("Invalid theme json!", e);
+				throw new InvalidThemeException("Invalid theme json!", e);
 			}
 
 			prefs.edit().putString("current", name).apply();
@@ -160,13 +168,18 @@ public class ThemeSettings {
 			return currentName;
 		}
 
-		public static ThemeSettings getCurrentTheme() {
+		public static ThemeSettings getCurrentTheme() throws InvalidThemeException {
 			return getTheme(getCurrentThemeName());
 		}
 
 		public static ThemeSettings getCurrentValidTheme() {
-			var theme = getTheme(getCurrentThemeName());
-			return theme.isInvalid() ? DEFAULT_THEME : theme;
+			try {
+				var theme = getCurrentTheme();
+				return theme.isInvalid() ? DEFAULT_THEME : theme;
+			} catch(InvalidThemeException e) {
+				e.printStackTrace();
+				return DEFAULT_THEME;
+			}
 		}
 	}
 }

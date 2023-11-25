@@ -5,6 +5,10 @@ import android.graphics.drawable.Drawable;
 import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.util.callback.Callback1;
+import com.mrboomdev.scrollix.util.callback.CallbackController;
+import com.mrboomdev.scrollix.util.callback.CallbackWithError;
+import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -50,8 +54,22 @@ public interface SearchEngine {
 		}
 	}
 
+	default CallbackController getSearchResults(String query, CallbackWithError<List<SearchSuggestion>, Exception> callback) {
+		if(this instanceof GoogleSearch) {
+			throw new UnexpectedBehaviourException("Google search results doesn't override it's default behaviour!");
+		}
+
+		return Preset.GOOGLE.getEngine().getSearchResults(query, callback);
+	}
+
+	default CallbackController getSearchResults(String query, Callback1<List<SearchSuggestion>> callback) {
+		return getSearchResults(query, CallbackWithError.fromValue(callback));
+	}
+
+	record SearchSuggestion(String title) {}
+
 	static String parseQueryAll(String url) {
-		for(var preset : SearchEnginePreset.values()) {
+		for(var preset : Preset.values()) {
 			var engine = preset.getEngine();
 			if(engine == null) continue;
 
@@ -62,7 +80,7 @@ public interface SearchEngine {
 		return url;
 	}
 
-	enum SearchEnginePreset {
+	enum Preset {
 		GOOGLE(new GoogleSearch()),
 		DUCKDUCKGO(null),
 		YANDEX(new YandexSearch()),
@@ -71,7 +89,7 @@ public interface SearchEngine {
 
 		private final SearchEngine engine;
 
-		SearchEnginePreset(SearchEngine engine) {
+		Preset(SearchEngine engine) {
 			this.engine = engine;
 		}
 

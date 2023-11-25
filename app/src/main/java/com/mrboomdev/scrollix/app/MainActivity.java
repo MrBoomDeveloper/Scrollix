@@ -164,6 +164,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
 		parent.setFitsSystemWindows(isFullscreen);
 
+		//TODO: Fix notch still being shown...
+
 		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
 			var insets = getWindow().getInsetsController();
 			var type = WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout();
@@ -178,8 +180,10 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 					: WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
 
 			getWindow().setDecorFitsSystemWindows(isFullscreen);
+
+
 		} else {
-			var fullscreenFlag = WindowManager.LayoutParams.FLAG_FULLSCREEN;
+			var fullscreenFlag = WindowManager.LayoutParams.FLAG_FULLSCREEN;// | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
 			var window = getWindow();
 
 			if(isFullscreen) window.setFlags(fullscreenFlag, fullscreenFlag);
@@ -566,6 +570,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 					if(shouldExpand != isExpanded && Math.abs(startY - event.getY()) > 50) {
 						isExpanded = shouldExpand;
+
+
 
 						topBarAnimation.cancel();
 						bottomBarAnimation.cancel();

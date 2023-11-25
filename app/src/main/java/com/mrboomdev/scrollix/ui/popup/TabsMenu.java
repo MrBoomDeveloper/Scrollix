@@ -74,7 +74,7 @@ public class TabsMenu {
 		linear.addView(recycler, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
 		((LinearLayout.LayoutParams)recycler.getLayoutParams()).weight = 1;
 
-		var createIcon = DrawableUtil.getDrawable(R.drawable.ic_add_black, theme.primary);
+		var createIcon = DrawableUtil.getDrawable(R.drawable.ic_add_black, theme.popupTitle);
 		var createButtonSizes = FormatUtil.getDip(12, 50);
 
 		var createButton = new ImageView(context);

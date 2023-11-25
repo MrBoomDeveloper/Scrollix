@@ -7,6 +7,8 @@ import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.app.AppManager;
 
+import java.util.List;
+
 public class FormatUtil {
 
 	public static int getDip(int value) {
@@ -28,6 +30,23 @@ public class FormatUtil {
 		}
 
 		return newArray;
+	}
+
+	public static int getBytesFromMegabytes(int mb) {
+		return getBytesFromKilobytes(mb * 1024);
+	}
+
+	public static int getBytesFromKilobytes(int kb) {
+		return kb * 1024;
+	}
+
+	public static String removeBase64ImagePrefix(String string) {
+		for(var prefix : List.of(Formats.BASE64_JPEG_PREFIX, Formats.BASE64_JPG_PREFIX, Formats.BASE64_PNG_PREFIX)) {
+			if(!string.startsWith(prefix)) continue;
+			string = string.substring(prefix.length());
+		}
+
+		return string;
 	}
 
 	@NonNull
