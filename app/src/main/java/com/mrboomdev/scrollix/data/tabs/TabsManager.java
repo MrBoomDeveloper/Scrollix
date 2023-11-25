@@ -32,11 +32,6 @@ public class TabsManager {
 		return -1;
 	}
 
-	@Deprecated
-	public static int getCurrentIndex() {
-		return getIndex(getCurrent());
-	}
-
 
 	@Deprecated
 	public static void setCurrent(Tab tab, boolean runCallbacks) {

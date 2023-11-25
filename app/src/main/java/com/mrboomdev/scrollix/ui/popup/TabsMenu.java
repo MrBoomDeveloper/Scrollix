@@ -75,15 +75,14 @@ public class TabsMenu {
 		((LinearLayout.LayoutParams)recycler.getLayoutParams()).weight = 1;
 
 		var createIcon = DrawableUtil.getDrawable(R.drawable.ic_add_black, theme.popupTitle);
-		var createButtonSizes = FormatUtil.getDip(12, 50);
 
 		var createButton = new ImageView(context);
-		FormatUtil.setPadding(createButton, createButtonSizes[0]);
+		FormatUtil.setPadding(createButton, Formats.BIG_PADDING);
 		createButton.setImageDrawable(createIcon);
 		createButton.setBackgroundResource(R.drawable.ripple_circle);
 		createButton.setClickable(true);
 		createButton.setFocusable(true);
-		linear.addView(createButton, createButtonSizes[1], createButtonSizes[1]);
+		linear.addView(createButton, Formats.NORMAL_ELEMENT, Formats.NORMAL_ELEMENT);
 
 		createButton.setOnClickListener(_view -> {
 			TabStore.createTab(true);
@@ -124,9 +123,10 @@ public class TabsMenu {
 			//A new tab is being automatically created if there is 0 tabs
 			if(TabStore.getTabCount() == 1 && wasCount == 1) close();
 
-			if(tab == null) return;
+			var context = AppManager.getActivityContext();
+			if(context == null || tab == null) return;
 
-			var parent = AppManager.getActivityContext().findViewById(R.id.main_screen_parent);
+			var parent = context.findViewById(R.id.main_screen_parent);
 			var snackbar = Snackbar.make(parent, "Tab was closed. Do you want to restore it?", Snackbar.LENGTH_SHORT);
 			var didRestored = new AtomicBoolean(false);
 

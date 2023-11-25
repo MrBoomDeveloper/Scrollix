@@ -6,8 +6,7 @@ import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
-import com.mrboomdev.scrollix.data.tabs.Tab;
-import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.squareup.moshi.FromJson;
 import com.squareup.moshi.Json;
@@ -57,7 +56,7 @@ public record DataProfile(
 	@Contract(" -> new")
 	public static DataProfile createDefault() {
 		List<Tab> tabs = new ArrayList<>();
-		tabs.add(TabsManager.create(null, false, false));
+		tabs.add(new Tab(true));
 
 		return new DataProfile(tabs, 0, new AppSettings());
 	}
@@ -71,16 +70,16 @@ public record DataProfile(
 
 		@ToJson
 		public SerializableTab tabToJson(@NonNull Tab tab) {
-			return new SerializableTab(tab.url);
+			return new SerializableTab(tab.getUrl(), tab.getTitle());
 		}
 
 		@FromJson
 		public Tab tabFromJson(@NonNull SerializableTab serializableTab) {
-			var tab = new Tab(AppManager.getAppContext());
-			tab.webView.loadUrl(serializableTab.url);
+			var tab = new Tab(serializableTab.url, true);
+			tab.setTitle(serializableTab.title);
 			return tab;
 		}
 	}
 
-	public record SerializableTab(String url) {}
+	public record SerializableTab(String url, String title) {}
 }

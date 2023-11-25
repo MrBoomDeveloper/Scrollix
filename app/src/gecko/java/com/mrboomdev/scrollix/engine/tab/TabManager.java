@@ -7,7 +7,6 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.app.AppManager;
-import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.ui.layout.BarsAnimator;
 
 import org.mozilla.geckoview.GeckoRuntime;
@@ -46,10 +45,10 @@ public class TabManager {
 		setCurrentTab(tab, true);
 	}
 
-	public static void setCurrentTab(@NonNull Tab tab, boolean tryToinit) {
+	public static void setCurrentTab(@NonNull Tab tab, boolean tryToInit) {
 		currentTab = tab;
 
-		if(tryToinit) tab.init();
+		if(tryToInit) tab.init();
 		geckoView.setSession(tab.getSession());
 
 		for(var listener : listeners) {
@@ -74,16 +73,14 @@ public class TabManager {
 				.aboutConfigEnabled(true)
 				.allowInsecureConnections(GeckoRuntimeSettings.ALLOW_ALL)
 				.consoleOutput(false)
-				.extensionsWebAPIEnabled(false)
+				.extensionsWebAPIEnabled(true)
 				.remoteDebuggingEnabled(false)
 				.preferredColorScheme(GeckoRuntimeSettings.COLOR_SCHEME_DARK)
 				.forceUserScalableEnabled(true)
-				.extensionsProcessEnabled(false)
+				.extensionsProcessEnabled(true)
 				.build();
 
 		runtime = GeckoRuntime.create(context, runtimeSettings);
-
-		TabStore.addTab(new Tab(EngineInternal.Link.HOME.getRealUrl()));
 	}
 
 	public static void dispose() {

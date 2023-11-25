@@ -26,6 +26,10 @@ public class Tab {
 		if(!lateInit) init();
 	}
 
+	public void setTitle(String title) {
+		this.title = title;
+	}
+
 	protected void setUrl(@NonNull String url) {
 		if(!url.equals(this.url)) {
 			this.title = url;
@@ -52,6 +56,10 @@ public class Tab {
 
 	public Tab(String url) {
 		this(url, false);
+	}
+
+	public Tab(boolean lateInit) {
+		this(null, lateInit);
 	}
 
 	public Tab() {

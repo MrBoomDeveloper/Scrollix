@@ -18,6 +18,10 @@ public class TabStore {
 		runModifierListeners();
 	}
 
+	public static List<Tab> getAllTabs() {
+		return tabs;
+	}
+
 	public static void addTab(Tab tab) {
 		tabs.add(tab);
 		runModifierListeners();
@@ -62,9 +66,9 @@ public class TabStore {
 		}
 	}
 
-	private static void selectNearestTab(int index) {
+	private static void selectNearestTab(int index, boolean exitIfEmpty) {
 		if(tabs.isEmpty()) {
-			AppManager.getActivityContext().finish();
+			if(exitIfEmpty) AppManager.dispose();
 			//createTab(true);
 			return;
 		}
@@ -76,6 +80,10 @@ public class TabStore {
 		}
 
 		TabManager.setCurrentTab(tabs.get(0));
+	}
+
+	private static void selectNearestTab(int index) {
+		selectNearestTab(index, true);
 	}
 
 	public static Tab getNearestTab(int index) {
@@ -108,18 +116,26 @@ public class TabStore {
 		return tabs.size();
 	}
 
-	public static void clearTabs() {
+	public static boolean isEmpty() {
+		return tabs.isEmpty();
+	}
+
+	public static void clearTabs(boolean exitIfEmpty) {
 		for(var tab : tabs) {
 			tab.dispose();
 		}
 
 		tabs.clear();
 		runModifierListeners();
-		selectNearestTab(-1);
+		selectNearestTab(-1, exitIfEmpty);
+	}
+
+	public static void clearTabs() {
+		clearTabs(true);
 	}
 
 	public static void setTabs(List<Tab> newTabs) {
-		clearTabs();
+		clearTabs(false);
 		tabs.addAll(newTabs);
 		runModifierListeners();
 	}

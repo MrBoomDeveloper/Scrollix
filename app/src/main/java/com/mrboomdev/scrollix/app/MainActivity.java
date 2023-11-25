@@ -17,9 +17,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.view.animation.Animation;
-import android.view.animation.Transformation;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -36,6 +33,7 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.splashscreen.SplashScreen;
+import androidx.transition.TransitionManager;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
@@ -496,6 +494,13 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	protected void onNewIntent(Intent intent) {
 		super.onNewIntent(intent);
 
+		var url = intent.getDataString();
+		if(url != null) {
+			TabStore.createTab(url, true);
+			intent.setData(null);
+			return;
+		}
+
 		var type = intent.getStringExtra("type");
 		if(type == null) return;
 
@@ -553,14 +558,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	}
 
 	private class ScrollListener implements View.OnTouchListener {
-		private final BarAnimation topBarAnimation, bottomBarAnimation;
 		private boolean isExpanded = true;
 		private float startY;
-
-		public ScrollListener() {
-			topBarAnimation = new BarAnimation(topbar, Gravity.TOP);
-			bottomBarAnimation = new BarAnimation(bottombar, Gravity.BOTTOM);
-		}
 
 		@Override
 		public boolean onTouch(View view, @NonNull MotionEvent event) {
@@ -571,13 +570,18 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 					if(shouldExpand != isExpanded && Math.abs(startY - event.getY()) > 50) {
 						isExpanded = shouldExpand;
 
+						ConstraintLayout parent = findViewById(R.id.main_screen_parent);
+						TransitionManager.beginDelayedTransition(parent);
 
+						var topbarParams = (ConstraintLayout.LayoutParams)topbar.getLayoutParams();
+						topbarParams.topToTop = isExpanded ? R.id.main_screen_parent : -1;
+						topbarParams.bottomToTop = isExpanded ? -1 : R.id.main_screen_parent;
+						topbar.setLayoutParams(topbarParams);
 
-						topBarAnimation.cancel();
-						bottomBarAnimation.cancel();
-
-						topBarAnimation.startAnimation(isExpanded);
-						bottomBarAnimation.startAnimation(isExpanded);
+						/*var bottombarParams = (ConstraintLayout.LayoutParams)bottombar.getLayoutParams();
+						topbarParams.topToTop = isExpanded ? R.id.main_screen_parent : -1;
+						topbarParams.bottomToTop = isExpanded ? -1 : R.id.main_screen_parent;
+						bottombar.setLayoutParams(bottombarParams);*/
 					}
 				}
 
@@ -587,44 +591,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			}
 
 			return false;
-		}
-	}
-
-	private static class BarAnimation extends Animation {
-		private final View view;
-		private final int gravity;
-		private boolean show;
-
-		public BarAnimation(View view, int gravity) {
-			this.view = view;
-			this.gravity = gravity;
-
-			setDuration(150);
-			setInterpolator(new AccelerateDecelerateInterpolator());
-		}
-
-		@Override
-		protected void applyTransformation(float interpolatedTime, Transformation t) {
-			float hideOffset = -view.getHeight();
-
-			var currentTranslation = show
-					? (hideOffset + interpolatedTime * -hideOffset)
-					: -hideOffset * interpolatedTime * -1;
-
-			var params = (ConstraintLayout.LayoutParams)view.getLayoutParams();
-
-			if(gravity == Gravity.TOP) {
-				params.topMargin = Math.round(currentTranslation);
-			} else {
-				params.bottomMargin = Math.round(currentTranslation);
-			}
-
-			view.setLayoutParams(params);
-		}
-
-		public void startAnimation(boolean show) {
-			this.show = show;
-			view.startAnimation(this);
 		}
 	}
 }

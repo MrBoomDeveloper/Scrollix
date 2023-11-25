@@ -18,7 +18,7 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.DataProfile;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
-import com.mrboomdev.scrollix.data.tabs.TabsManager;
+import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
@@ -30,7 +30,6 @@ import com.nostra13.universalimageloader.core.ImageLoader;
 import com.nostra13.universalimageloader.core.ImageLoaderConfiguration;
 
 import java.util.Map;
-import java.util.Objects;
 
 public class AppManager {
 	public static String profileName = "Default";
@@ -49,18 +48,26 @@ public class AppManager {
 	}
 
 	public static void postCreate() {
-		//TabsManager.setCurrent(TabsManager.get(profile.currentTab()));
-
 		var intent = getActivityContext().getIntent();
 		var extra = intent.getDataString();
+		Tab tab = null;
 
 		if(extra != null) {
-			TabStore.createTab(extra, true);
+			tab = TabStore.createTab(extra, true);
 			intent.setData(null);
 		}
 
-		if(TabStore.getTabCount() == 1) {
-			TabManager.setCurrentTab(Objects.requireNonNull(TabStore.getTab(0)));
+		if(tab != null) {
+			TabManager.setCurrentTab(tab);
+			return;
+		}
+
+		tab = TabStore.getTab(profile == null ? 0 : profile.currentTab());
+
+		if(tab == null) {
+			TabStore.createTab(true);
+		} else {
+			TabManager.setCurrentTab(tab);
 		}
 	}
 
@@ -121,8 +128,8 @@ public class AppManager {
 
 	public static void saveState() {
 		var profile = new DataProfile(
-				TabsManager.tabs,
-				TabsManager.getCurrentIndex(),
+				TabStore.getAllTabs(),
+				TabStore.getTabIndex(TabManager.getCurrentTab()),
 				settings);
 
 		profile.save(profileName);
@@ -132,10 +139,11 @@ public class AppManager {
 		profile = DataProfile.load(profileName);
 
 		settings = profile.settings();
-		TabsManager.tabs = profile.tabs();
+		TabStore.setTabs(profile.tabs());
 	}
 
 	public static void dispose() {
+		if(getActivityContext() == null) return;
 		saveState();
 
 		activityCallbackLauncher.dispose();
