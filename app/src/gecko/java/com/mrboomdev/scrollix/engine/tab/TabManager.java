@@ -25,7 +25,7 @@ public class TabManager {
 
 	@SuppressLint("ClickableViewAccessibility")
 	public static void setBarsAnimator(View.OnTouchListener animator) {
-		geckoView.setOnTouchListener(animator);
+		//geckoView.setOnTouchListener(animator);
 		//barsAnimator = animator;
 	}
 

@@ -31,6 +31,8 @@ public class Tab {
 	}
 
 	protected void setUrl(@NonNull String url) {
+		if(url.startsWith("intent://")) return;
+
 		if(!url.equals(this.url)) {
 			this.title = url;
 		}
@@ -77,8 +79,8 @@ public class Tab {
 	}
 
 	public void loadUrl(String url) {
+		setUrl(url);
 		session.loadUri(url);
-		this.url = url;
 	}
 
 	public String getUrl() {

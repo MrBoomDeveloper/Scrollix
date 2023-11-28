@@ -17,7 +17,7 @@ import java.util.ArrayList;
 public class PermissionHandler {
 
 	protected static void handleStoragePermission(@NonNull Permission permission, AppManager.ResultCallback callback, boolean retry) {
-		var context = AppManager.getAppContext();
+		var context = AppManager.getActivityContext();
 
 		var requiredPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 				? Manifest.permission.MANAGE_EXTERNAL_STORAGE
@@ -36,8 +36,9 @@ public class PermissionHandler {
 		}
 
 		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+			var intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
 			var uri = Uri.fromParts("package", context.getPackageName(), null);
-			var intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION, uri);
+			intent.setData(uri);
 
 			AppManager.activityCallbackLauncher.launchIntent(intent, () ->
 					PermissionManager.checkAndRequestPermission(permission, callback, false));

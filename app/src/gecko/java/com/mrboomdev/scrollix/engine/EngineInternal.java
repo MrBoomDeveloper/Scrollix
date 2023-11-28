@@ -7,7 +7,9 @@ public class EngineInternal {
 		HOME(INTERNAL_LINK_PREFIX + "home.html", "scrollix://home"),
 		SETTINGS(INTERNAL_LINK_PREFIX + "settings.html", "scrollix://settings"),
 		ERROR(INTERNAL_LINK_PREFIX + "error.html", "scrollix://error"),
-		DOWNLOADS("", "scrollix://downloads");
+		DOWNLOADS("list.html?page=downloads", "scrollix://downloads"),
+		HISTORY("list.html?page=history", "scrollix://history"),
+		BOOKMARKS("list.html?page=bookmarks", "scrollix://bookmarks");
 
 		final String realUrl, scrollixUrl;
 

@@ -24,8 +24,15 @@ public class LinkUtil {
 			new URL(url.replace("scrollix://", "https://")).toURI();
 			return true;
 		} catch(MalformedURLException | URISyntaxException e) {
-			return false;
+			return isDeeplyValidUrl(url);
 		}
+	}
+
+	@Contract(pure = true)
+	private static boolean isDeeplyValidUrl(@NonNull String url) {
+		if(url.contains(" ")) return false;
+
+		return url.startsWith("about:");
 	}
 
 	@Nullable

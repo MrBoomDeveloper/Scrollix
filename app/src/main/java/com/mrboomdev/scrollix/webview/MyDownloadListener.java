@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+@Deprecated
 public class MyDownloadListener implements DownloadListener {
 	private static final String TAG = "MyDownloadListener";
 	private final Context context;

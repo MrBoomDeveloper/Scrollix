@@ -27,15 +27,13 @@ import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.core.content.res.ResourcesCompat;
-import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.transition.TransitionManager;
 
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
@@ -49,12 +47,11 @@ import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AndroidUtil;
-import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
-import com.mrboomdev.scrollix.webview.MyDownloadListener;
+import com.mrboomdev.scrollix.util.format.Formats;
 
-import java.util.Objects;
+import org.jetbrains.annotations.Contract;
 
 public class MainActivity extends AppCompatActivity implements TabListener {
 	private TextView tabsCounter;
@@ -312,6 +309,16 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		applyTheme(theme);
 	}
 
+	@Contract("_, _, _ -> param2")
+	private int setUrlAction(@NonNull ImageView button, @DrawableRes int icon, EngineInternal.Link link) {
+		button.setOnClickListener(view -> {
+			var tab = TabManager.getCurrentTab();
+			tab.loadUrl(link.getRealUrl());
+		});
+
+		return icon;
+	}
+
 	@NonNull
 	private View createActionButton(@NonNull String name, @NonNull ThemeSettings theme) {
 		int icon = R.drawable.ic_close_black, primaryColor = Color.parseColor(theme.barsOverlay);
@@ -329,30 +336,11 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		button.setPadding(buttonPadding, buttonPadding, buttonPadding, buttonPadding);
 
 		switch(name) {
-			case "home" -> {
-				icon = R.drawable.ic_home_black;
-				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(EngineInternal.Link.HOME.getRealUrl()));
-			}
-
-			case "settings" -> {
-				icon = R.drawable.ic_settings_black;
-				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(EngineInternal.Link.SETTINGS.getRealUrl()));
-			}
-
-			case "downloads" -> {
-				icon = R.drawable.ic_download_black;
-				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(LinkUtil.ScrollixUrls.DOWNLOADS.getFullUrl()));
-			}
-
-			case "history" -> {
-				icon = R.drawable.ic_history_black;
-				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(LinkUtil.ScrollixUrls.HISTORY.getFullUrl()));
-			}
-
-			case "bookmarks" -> {
-				icon = R.drawable.ic_star_black;
-				button.setOnClickListener(view -> TabManager.getCurrentTab().loadUrl(LinkUtil.ScrollixUrls.BOOKMARKS.getFullUrl()));
-			}
+			case "home" -> icon = setUrlAction(button, R.drawable.ic_home_black, EngineInternal.Link.HOME);
+			case "settings" -> icon = setUrlAction(button, R.drawable.ic_settings_black, EngineInternal.Link.SETTINGS);
+			case "downloads" -> icon = setUrlAction(button, R.drawable.ic_download_black, EngineInternal.Link.DOWNLOADS);
+			case "history" -> icon = setUrlAction(button, R.drawable.ic_history_black, EngineInternal.Link.HISTORY);
+			case "bookmarks" -> icon = setUrlAction(button, R.drawable.ic_star_black, EngineInternal.Link.BOOKMARKS);
 
 			case "menu" -> {
 				icon = R.drawable.ic_menu_black;
@@ -404,8 +392,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		button.setClickable(true);
 		button.setFocusable(true);
 
-		var buttonIcon = ResourcesCompat.getDrawable(getResources(), icon, getTheme());
-		DrawableCompat.setTint(Objects.requireNonNull(buttonIcon), primaryColor);
+		var buttonIcon = DrawableUtil.getDrawable(icon, primaryColor);
 		button.setImageDrawable(buttonIcon);
 
 		if(name.equals("tabs")) {
@@ -419,7 +406,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			tabsCounter.setTextColor(primaryColor);
 			tabsCounter.setTextSize(13);
 			tabsCounter.setGravity(Gravity.CENTER);
-			parent.addView(tabsCounter, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+			parent.addView(tabsCounter, Formats.MATCH_PARENT, Formats.MATCH_PARENT);
 
 			return parent;
 		}
@@ -493,34 +480,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	@Override
 	protected void onNewIntent(Intent intent) {
 		super.onNewIntent(intent);
-
-		var url = intent.getDataString();
-		if(url != null) {
-			TabStore.createTab(url, true);
-			intent.setData(null);
-			return;
-		}
-
-		var type = intent.getStringExtra("type");
-		if(type == null) return;
-
-		switch(type) {
-			case "update_theme" -> reloadLayout();
-
-			case "cancel_download" -> MyDownloadListener.ProgressListener.cancel(
-					intent.getIntExtra("id", 0));
-
-			case "error" -> {
-				var title = intent.getStringExtra("title");
-				var message = intent.getStringExtra("message");
-
-				new MaterialAlertDialogBuilder(this)
-						.setTitle(title)
-						.setMessage(message)
-						.setPositiveButton("Ok", (_dialog, _button) -> _dialog.cancel())
-						.show();
-			}
-		}
+		IntentHandler.handleIntent(intent);
 	}
 
 	@Override

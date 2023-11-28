@@ -10,6 +10,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.UiThread;
 
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
@@ -62,6 +63,7 @@ public class DialogMenu {
 		return this;
 	}
 
+	@UiThread
 	public void show() {
 		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 

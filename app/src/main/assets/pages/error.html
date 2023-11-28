@@ -3,12 +3,71 @@
     <head>
         <meta http-equiv="content-type" content="text/html; charset=utf-8" />
         <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
-        <title>Error</title>
+        <title>Home</title>
+        <script src="backend-loader.js"></script>
         <link rel="stylesheet" href="style.css" />
+        
+        <style>
+            html {
+                min-height: 100%;
+            }
+            
+            body {
+                display: flex;
+                min-height: 95vh;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .title {
+                letter-spacing: .025em;
+            }
+            
+            .description {
+                font-size: 1.15em;
+                padding-inline: 2.5rem;
+                line-height: 1.4;
+                letter-spacing: .025em;
+            }
+            
+            .container {
+                gap: 1rem;
+            }
+            
+            .button {
+                display: block;
+                margin-inline: 2.5rem;
+                font-size: 1.15em;
+                padding-block: .6em;
+                border-color: transparent;
+                transition: .1s;
+                background-color: #ddd;
+                text-align: center;
+                border-radius: 5px;
+                
+                &:active {
+                    background-color: #ccc;
+                    scale: .98;
+                }
+            }
+        </style>
     </head>
-
+    
     <body>
-        <h1>Error</h1>
-        <p>Суси бака съела данный сайт :(</p>
+        <div class="container">
+            <header>
+                <h1 class="title">Webpage not available</h1>
+            </header>
+            
+            <p class="description">The webpage at <span id="url">$url</span> could not be loaded. Try again in a couple of minutes. You may have entered the address incorrectly.</p>
+            
+            <p class="description">Reason: <span id="reason">$reason</span></p>
+            
+            <a class="button" id="reload">Reload</a>
+        </div>
+        
+        <script>
+            //prompt("", encodeURIComponent("https://www.google.com"))
+        </script>
     </body>
 </html>

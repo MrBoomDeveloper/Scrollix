@@ -8,14 +8,18 @@ import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.IncognitoActivity;
+import com.mrboomdev.scrollix.app.IntentHandler;
+import com.mrboomdev.scrollix.data.download.UserMadeDownload;
 import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
 import com.mrboomdev.scrollix.util.AndroidUtil;
 
+import org.mozilla.geckoview.AllowOrDeny;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.WebRequestError;
+import org.mozilla.geckoview.WebResponse;
 
 public class TabDelegator {
 	private final Tab tab;
@@ -41,6 +45,13 @@ public class TabDelegator {
 		});
 
 		tab.getSession().setContentDelegate(new GeckoSession.ContentDelegate() {
+			@Override
+			public void onExternalResponse(@NonNull GeckoSession session, @NonNull WebResponse response) {
+				new UserMadeDownload(response.uri)
+						.setHeaders(response.headers)
+						.start();
+			}
+
 			@Override
 			public void onFullScreen(@NonNull GeckoSession session, boolean fullScreen) {
 				for(var listener : TabManager.getTabListeners()) {
@@ -74,7 +85,6 @@ public class TabDelegator {
 						intent.setData(Uri.parse(element.linkUri));
 						context.startActivity(intent);
 					});
-					//menu.addAction("Download image", () -> {});
 					menu.addAction("Share link", () -> AndroidUtil.share("Share image link", element.linkUri));
 					menu.addAction("Copy link to clipboard", () -> AndroidUtil.copyToClipboard(element.linkUri));
 				}
@@ -88,7 +98,10 @@ public class TabDelegator {
 							intent.setData(Uri.parse(element.srcUri));
 							context.startActivity(intent);
 						});
-						//menu.addAction("Download image", () -> {});
+						menu.addAction("Download image", () -> {
+							var download = new UserMadeDownload(element.srcUri);
+							download.start();
+						});
 						menu.addAction("Share image link", () -> AndroidUtil.share("Share image link", element.srcUri));
 						menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(element.srcUri));
 					}
@@ -101,7 +114,10 @@ public class TabDelegator {
 							intent.setData(Uri.parse(element.srcUri));
 							context.startActivity(intent);
 						});
-						//menu.addAction("Download image", () -> {});
+						menu.addAction("Download audio", () -> {
+							var download = new UserMadeDownload(element.srcUri);
+							download.start();
+						});
 						menu.addAction("Share audio link", () -> AndroidUtil.share("Share image link", element.srcUri));
 						menu.addAction("Copy audio link to clipboard", () -> AndroidUtil.copyToClipboard(element.srcUri));
 					}
@@ -114,7 +130,10 @@ public class TabDelegator {
 							intent.setData(Uri.parse(element.srcUri));
 							context.startActivity(intent);
 						});
-						//menu.addAction("Download image", () -> {});
+						menu.addAction("Download video", () -> {
+							var download = new UserMadeDownload(element.srcUri);
+							download.start();
+						});
 						menu.addAction("Share video link", () -> AndroidUtil.share("Share image link", element.srcUri));
 						menu.addAction("Copy video link to clipboard", () -> AndroidUtil.copyToClipboard(element.srcUri));
 					}
@@ -177,6 +196,17 @@ public class TabDelegator {
 			public GeckoResult<String> onLoadError(@NonNull GeckoSession session, @Nullable String uri, @NonNull WebRequestError error) {
 				//TODO: provide additional data to the error page
 				return GeckoResult.fromValue(EngineInternal.Link.ERROR.getRealUrl());
+			}
+
+			@Nullable
+			@Override
+			public GeckoResult<AllowOrDeny> onLoadRequest(@NonNull GeckoSession session, @NonNull LoadRequest request) {
+				if(request.uri.startsWith("intent://")) {
+					IntentHandler.launchInExternal(request.uri);
+					return GeckoResult.deny();
+				}
+
+				return null;
 			}
 
 			@Override

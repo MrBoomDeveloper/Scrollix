@@ -40,17 +40,24 @@ public class GoogleSearch implements SearchEngine {
 		new Thread(() -> call.enqueue(new Callback() {
 			@Override
 			public void onFailure(@NonNull Call call, @NonNull IOException e) {
+				if(call.isCanceled()) return;
+
 				callback.onError(new UnexpectedBehaviourException("Failed to fetch search query results", e));
 			}
 
 			@Override
 			public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
 				var string = Objects.requireNonNull(response.body()).string();
+				List<String> results;
 
-				var startIndex = string.indexOf("\",[") + 2;
-				var endIndex = string.indexOf("]") + 1;
-				var substring = string.substring(startIndex, endIndex);
-				var results = Objects.requireNonNull(adapter.fromJson(substring));
+				try {
+					var startIndex = string.indexOf("\",[") + 2;
+					var endIndex = string.indexOf("]") + 1;
+					var substring = string.substring(startIndex, endIndex);
+					results = Objects.requireNonNull(adapter.fromJson(substring));
+				} catch(StringIndexOutOfBoundsException e) {
+					return;
+				}
 
 				var suggestions = new ArrayList<SearchSuggestion>(results.size());
 

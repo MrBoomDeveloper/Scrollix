@@ -1,5 +1,6 @@
-package com.mrboomdev.scrollix.app;
+package com.mrboomdev.scrollix.data.download;
 
+import android.os.Environment;
 import android.util.Base64;
 
 import androidx.annotation.NonNull;
@@ -10,9 +11,46 @@ import com.mrboomdev.scrollix.util.format.Formats;
 import org.jetbrains.annotations.Contract;
 
 import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
 
 public class DownloadManager {
+	protected static final Map<Integer, Download> downloads = new HashMap<>();
+	private static final Random random = new Random();
+
+	public static Download getDownloadById(int id) {
+		return downloads.get(id);
+	}
+
+	public static void obtainIdForDownload(Download download) {
+		if(downloads.containsValue(download)) return;
+
+		boolean contains = true;
+		int id = 0;
+
+		while(contains) {
+			id = random.nextInt(Integer.MAX_VALUE);
+			contains = downloads.containsKey(id);
+		}
+
+		download.setId(id);
+		downloads.put(id, download);
+	}
+
+	public static void download(Download download) {
+		obtainIdForDownload(download);
+
+		if(download.getFile() == null) {
+			var parentDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+			var file = new File(parentDirectory, "download.bin");
+			download.setFile(file);
+		}
+
+		var thread = new Thread(() -> DownloadEngine.start(download));
+		thread.setName("DownloadFile");
+		thread.start();
+	}
 
 	@Contract(pure = true)
 	public static void download(@NonNull String url, File parentDirectory, String fileName) {
@@ -48,5 +86,9 @@ public class DownloadManager {
 		}
 
 		return file;
+	}
+
+	public static void cancel(int id) {
+		DownloadEngine.stop(getDownloadById(id));
 	}
 }

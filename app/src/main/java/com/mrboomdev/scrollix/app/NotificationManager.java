@@ -9,7 +9,24 @@ import androidx.annotation.RequiresApi;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 public class NotificationManager {
+	private static final List<Integer> usedIds = new ArrayList<>();
+	private static final Random random = new Random();
+
+	public static int getUniqueNotificationId() {
+		boolean contains = true;
+		int id = 0;
+
+		while(contains) {
+			id = random.nextInt(Integer.MAX_VALUE);
+			contains = usedIds.contains(id);
+		}
+
+		usedIds.add(id);
+
+		return id;
+	}
 
 	@RequiresApi(api = Build.VERSION_CODES.O)
 	@SuppressLint("WrongConstant")
