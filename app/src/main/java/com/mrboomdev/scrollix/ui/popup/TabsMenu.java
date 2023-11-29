@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -34,14 +35,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class TabsMenu {
 	private static final int LANDSCAPE_WIDTH = 300;
 	private final Context context;
-	private final ThemeSettings theme;
 	private PopupWindow popup;
 	private BottomSheetDialog bottomSheet;
 	private Adapter adapter;
 
-	public TabsMenu(Context context, ThemeSettings theme) {
+	public TabsMenu(Context context) {
 		this.context = context;
-		this.theme = theme;
 	}
 
 	public void close() {
@@ -57,6 +56,7 @@ public class TabsMenu {
 		boolean isLandscape = AppManager.isLandscape();
 
 		var linear = new LinearLayout(context);
+		linear.setLayoutParams(new WindowManager.LayoutParams(Formats.MATCH_PARENT, Formats.WRAP_CONTENT));
 		linear.setOrientation(LinearLayout.VERTICAL);
 		linear.setBackground(DrawableUtil.createDrawable(theme.popupBackground, isLandscape ? 16 : 0));
 		FormatUtil.setPadding(linear, Formats.SMALL_PADDING);
@@ -71,7 +71,7 @@ public class TabsMenu {
 		var touchHelper = new ItemTouchHelper(new SwipeCallback());
 		touchHelper.attachToRecyclerView(recycler);
 
-		linear.addView(recycler, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+		linear.addView(recycler, Formats.MATCH_PARENT, Formats.WRAP_CONTENT);
 		((LinearLayout.LayoutParams)recycler.getLayoutParams()).weight = 1;
 
 		var createIcon = DrawableUtil.getDrawable(R.drawable.ic_add_black, theme.popupTitle);
@@ -91,7 +91,7 @@ public class TabsMenu {
 		});
 
 		if(isLandscape) {
-			popup = new PopupWindow(linear, FormatUtil.getDip(LANDSCAPE_WIDTH), LinearLayout.LayoutParams.WRAP_CONTENT);
+			popup = new PopupWindow(linear, FormatUtil.getDip(LANDSCAPE_WIDTH), Formats.WRAP_CONTENT);
 			popup.setFocusable(true);
 			popup.showAsDropDown(showAtView);
 		} else {
@@ -107,7 +107,10 @@ public class TabsMenu {
 		@NonNull
 		@Override
 		public MyViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-			return new MyViewHolder(new LinearLayout(context));
+			var linear = new LinearLayout(context);
+			var width = AppManager.isLandscape() ? FormatUtil.getDip(LANDSCAPE_WIDTH) : Formats.MATCH_PARENT;
+			linear.setLayoutParams(new RecyclerView.LayoutParams(width, Formats.WRAP_CONTENT));
+			return new MyViewHolder(linear);
 		}
 
 		public void remove(int index) {
@@ -183,9 +186,11 @@ public class TabsMenu {
 				FormatUtil.setPadding(linear, Formats.BIG_PADDING);
 
 				title = new TextView(context);
+				title.setSingleLine();
 				linear.addView(title);
 
-				parent.addView(linear, FormatUtil.getDip(LANDSCAPE_WIDTH), ViewGroup.LayoutParams.WRAP_CONTENT);
+				var width = AppManager.isLandscape() ? FormatUtil.getDip(LANDSCAPE_WIDTH) : Formats.MATCH_PARENT;
+				parent.addView(linear, width, ViewGroup.LayoutParams.WRAP_CONTENT);
 			}
 
 			public void setTab(@NonNull Tab tab) {

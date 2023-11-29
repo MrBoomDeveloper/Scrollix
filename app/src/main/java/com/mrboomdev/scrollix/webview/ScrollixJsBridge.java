@@ -5,6 +5,7 @@ import android.webkit.JavascriptInterface;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 
+@Deprecated
 public class ScrollixJsBridge {
 	private final Tab tab;
 

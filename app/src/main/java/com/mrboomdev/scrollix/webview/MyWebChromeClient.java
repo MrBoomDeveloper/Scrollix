@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+@Deprecated
 public class MyWebChromeClient extends WebChromeClient {
 	private final Tab tab;
 

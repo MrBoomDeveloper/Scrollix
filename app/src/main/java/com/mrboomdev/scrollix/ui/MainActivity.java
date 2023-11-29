@@ -1,22 +1,17 @@
 package com.mrboomdev.scrollix.ui;
 
-import static android.webkit.WebView.HitTestResult;
-
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
-import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -37,16 +32,14 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.IntentHandler;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
-import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.engine.EngineInternal;
+import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
-import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
-import com.mrboomdev.scrollix.util.AndroidUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
@@ -58,7 +51,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
 	private LinearProgressIndicator progressIndicator;
-	private WebView webView;
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
 	private View backButton, forwardButton;
@@ -113,7 +105,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	}
 
 	@Override
-	public void onTabFocused(@NonNull com.mrboomdev.scrollix.engine.tab.Tab tab) {
+	public void onTabFocused(@NonNull Tab tab) {
 		if(tab != TabManager.getCurrentTab()) return;
 
 		searchBar.setUrl(tab.getUrl());
@@ -121,7 +113,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	}
 
 	@Override
-	public void onTabLoadingFinished(@NonNull com.mrboomdev.scrollix.engine.tab.Tab tab) {
+	public void onTabLoadingFinished(@NonNull Tab tab) {
 		if(tab != TabManager.getCurrentTab()) return;
 		updateBackForwardButtons();
 
@@ -131,7 +123,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	}
 
 	@Override
-	public void onTabLoadingStarted(com.mrboomdev.scrollix.engine.tab.Tab tab) {
+	public void onTabLoadingStarted(Tab tab) {
 		if(tab != TabManager.getCurrentTab()) return;
 		updateBackForwardButtons();
 
@@ -144,14 +136,14 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	}
 
 	@Override
-	public void onTabGotTitle(com.mrboomdev.scrollix.engine.tab.Tab tab, String title) {
+	public void onTabGotTitle(Tab tab, String title) {
 		if(tab != TabManager.getCurrentTab()) return;
 
 		searchBar.setTitle(title);
 	}
 
 	@Override
-	public void onTabFullscreenToggle(com.mrboomdev.scrollix.engine.tab.Tab tab, boolean isFullscreen) {
+	public void onTabFullscreenToggle(Tab tab, boolean isFullscreen) {
 		if(tab != TabManager.getCurrentTab()) return;
 		this.isFullscreen = isFullscreen;
 
@@ -378,7 +370,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 				icon = R.drawable.ic_tabs_black;
 
 				button.setOnClickListener(view -> {
-					var menu = new TabsMenu(this, theme);
+					var menu = new TabsMenu(this);
 					menu.showAt(button);
 				});
 			}
@@ -414,69 +406,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		}
 
 		return button;
-	}
-
-	@SuppressLint("ClickableViewAccessibility")
-	public void setCurrentTab(@NonNull Tab tab) {
-		//webView.setOnTouchListener(scrollListener);
-
-		webView.setOnLongClickListener(view -> {
-			var test = webView.getHitTestResult();
-			int type = test.getType();
-
-			if(type != HitTestResult.SRC_ANCHOR_TYPE
-					&& type != HitTestResult.IMAGE_TYPE
-					&& type != HitTestResult.SRC_IMAGE_ANCHOR_TYPE) return false;
-
-			var handler = new Handler();
-			var linkMessage = handler.obtainMessage();
-			var imageMessage = handler.obtainMessage();
-
-			var menu = new ContextMenu.Builder(this)
-					.setDismissOnSelect(true);
-
-			switch(type) {
-				case HitTestResult.IMAGE_TYPE -> webView.requestImageRef(imageMessage);
-
-				case HitTestResult.SRC_ANCHOR_TYPE -> webView.requestFocusNodeHref(linkMessage);
-
-				case HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
-					webView.requestFocusNodeHref(linkMessage);
-					webView.requestImageRef(imageMessage);
-				}
-			}
-
-			var link = linkMessage.getData().getString("url");
-			if(link != null) {
-				menu.addAction("Open link in new tab", () -> TabStore.createTab(link, true));
-				menu.addAction("Open link in background", () -> TabStore.createTab(link, false));
-				menu.addAction("Open link in new incognito tab", () -> {
-					var intent = new Intent(this, IncognitoActivity.class);
-					intent.setData(Uri.parse(link));
-					startActivity(intent);
-				});
-				menu.addAction("Share link", () -> AndroidUtil.share("Share link", link));
-				menu.addAction("Copy link to clipboard", () -> AndroidUtil.copyToClipboard(link));
-			}
-
-			var image = imageMessage.getData().getString("url");
-			if(image != null) {
-				menu.addAction("Open image in new tab", () -> TabStore.createTab(image, true));
-				menu.addAction("Open image in background", () -> TabStore.createTab(image, false));
-				menu.addAction("Open image in new incognito tab", () -> {
-					var intent = new Intent(this, IncognitoActivity.class);
-					intent.setData(Uri.parse(image));
-					startActivity(intent);
-				});
-				//menu.addAction("Download image", () -> {});
-				menu.addAction("Share image", () -> AndroidUtil.share("Share image link", image));
-				menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(image));
-			}
-
-			menu.build();
-
-			return false;
-		});
 	}
 
 	@Override

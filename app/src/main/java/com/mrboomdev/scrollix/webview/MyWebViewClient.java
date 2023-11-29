@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.Objects;
 
+@Deprecated
 public class MyWebViewClient extends WebViewClient {
 	private final Tab tab;
 

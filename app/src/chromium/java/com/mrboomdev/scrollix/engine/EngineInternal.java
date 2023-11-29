@@ -6,7 +6,9 @@ public class EngineInternal {
 	public enum Link {
 		HOME(INTERNAL_LINK_PREFIX + "home.html", "scrollix://home"),
 		SETTINGS(INTERNAL_LINK_PREFIX + "settings.html", "scrollix://settings"),
-		DOWNLOADS("", "scrollix://downloads");
+		DOWNLOADS(INTERNAL_LINK_PREFIX + "downloads.html", "scrollix://downloads"),
+		HISTORY(INTERNAL_LINK_PREFIX + "history.html", "scrollix://history"),
+		BOOKMARKS(INTERNAL_LINK_PREFIX + "bookmarks.html", "scrollix://bookmarks");
 
 		final String realUrl, scrollixUrl;
 
