@@ -59,7 +59,7 @@
                 <h1 class="title">Webpage not available</h1>
             </header>
             
-            <p class="description">The webpage at <span id="url">$url</span> could not be loaded. Try again in a couple of minutes. You may have entered the address incorrectly.</p>
+            <p class="description">The webpage at "<span id="url">$url</span>" could not be loaded. Try again in a couple of minutes. You may have entered the address incorrectly.</p>
             
             <p class="description">Reason: <span id="reason">$reason</span></p>
             
@@ -67,7 +67,12 @@
         </div>
         
         <script>
-            //prompt("", encodeURIComponent("https://www.google.com"))
+            const urlField = document.getElementById("url");
+            const reasonField = document.getElementById("reason");
+
+            const params = new URLSearchParams(window.location.search);
+            urlField.innerText = params.get("url");
+            reasonField.innerText = params.get("reason");
         </script>
     </body>
 </html>

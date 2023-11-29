@@ -21,6 +21,7 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;

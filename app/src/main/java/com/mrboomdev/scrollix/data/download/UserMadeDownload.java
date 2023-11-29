@@ -10,10 +10,10 @@ import androidx.core.app.NotificationManagerCompat;
 
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
-import com.mrboomdev.scrollix.app.MainActivity;
 import com.mrboomdev.scrollix.app.NotificationManager;
 import com.mrboomdev.scrollix.app.permission.Permission;
 import com.mrboomdev.scrollix.app.permission.PermissionManager;
+import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.util.exception.DownloadException;
 
 public class UserMadeDownload extends Download {

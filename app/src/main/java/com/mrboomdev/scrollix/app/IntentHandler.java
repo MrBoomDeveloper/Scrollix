@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import com.mrboomdev.scrollix.data.download.DownloadManager;
 import com.mrboomdev.scrollix.data.download.UserMadeDownload;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
 
 import java.net.URISyntaxException;
@@ -90,7 +91,7 @@ public class IntentHandler {
 		var context = AppManager.getActivityContext();
 
 		try {
-			Intent intent = Intent.parseUri(uri, Intent.URI_INTENT_SCHEME);
+			var intent = Intent.parseUri(uri, Intent.URI_INTENT_SCHEME);
 
 			if(intent == null) {
 				Toast.makeText(context, "Invalid app link", Toast.LENGTH_LONG).show();

@@ -1,4 +1,4 @@
-package com.mrboomdev.scrollix.app;
+package com.mrboomdev.scrollix.ui;
 
 public class IncognitoActivity extends MainActivity {
 

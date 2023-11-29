@@ -1,4 +1,4 @@
-package com.mrboomdev.scrollix.app;
+package com.mrboomdev.scrollix.ui;
 
 import static android.webkit.WebView.HitTestResult;
 
@@ -12,7 +12,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -32,10 +31,11 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.splashscreen.SplashScreen;
-import androidx.transition.TransitionManager;
 
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.app.IntentHandler;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.engine.EngineInternal;
@@ -54,9 +54,9 @@ import com.mrboomdev.scrollix.util.format.Formats;
 import org.jetbrains.annotations.Contract;
 
 public class MainActivity extends AppCompatActivity implements TabListener {
+	private BarsAnimator barsAnimator;
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
-	private ScrollListener scrollListener;
 	private LinearProgressIndicator progressIndicator;
 	private WebView webView;
 	private SearchBarWidget searchBar;
@@ -93,14 +93,13 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		searchLayoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
 		parent.addView(searchLayout, searchLayoutParams);
 
-		scrollListener = new ScrollListener();
-
 		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
+		barsAnimator = new BarsAnimator();
+
 		TabManager.setTabHolder(webViewHolder);
-		TabManager.setBarsAnimator(scrollListener);
+		TabManager.setBarsAnimator(barsAnimator);
 
 		reloadLayout();
-
 		AppManager.postCreate();
 		registerBackHandler();
 	}
@@ -305,7 +304,10 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
 
+		barsAnimator.setBarsExpandable(BarsAnimator.TOPBAR | BarsAnimator.BOTTOMBAR);
+
 		bottombar.setVisibility(!isLandscape ? View.VISIBLE : View.GONE);
+		barsAnimator.setBarsFromActivity(this);
 		applyTheme(theme);
 	}
 
@@ -416,7 +418,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 	@SuppressLint("ClickableViewAccessibility")
 	public void setCurrentTab(@NonNull Tab tab) {
-		webView.setOnTouchListener(scrollListener);
+		//webView.setOnTouchListener(scrollListener);
 
 		webView.setOnLongClickListener(view -> {
 			var test = webView.getHitTestResult();
@@ -514,43 +516,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 					callback.run();
 				}
 			});
-		}
-	}
-
-	private class ScrollListener implements View.OnTouchListener {
-		private boolean isExpanded = true;
-		private float startY;
-
-		@Override
-		public boolean onTouch(View view, @NonNull MotionEvent event) {
-			switch(event.getAction()) {
-				case MotionEvent.ACTION_MOVE -> {
-					boolean shouldExpand = event.getY() > startY;
-
-					if(shouldExpand != isExpanded && Math.abs(startY - event.getY()) > 50) {
-						isExpanded = shouldExpand;
-
-						ConstraintLayout parent = findViewById(R.id.main_screen_parent);
-						TransitionManager.beginDelayedTransition(parent);
-
-						var topbarParams = (ConstraintLayout.LayoutParams)topbar.getLayoutParams();
-						topbarParams.topToTop = isExpanded ? R.id.main_screen_parent : -1;
-						topbarParams.bottomToTop = isExpanded ? -1 : R.id.main_screen_parent;
-						topbar.setLayoutParams(topbarParams);
-
-						/*var bottombarParams = (ConstraintLayout.LayoutParams)bottombar.getLayoutParams();
-						topbarParams.topToTop = isExpanded ? R.id.main_screen_parent : -1;
-						topbarParams.bottomToTop = isExpanded ? -1 : R.id.main_screen_parent;
-						bottombar.setLayoutParams(bottombarParams);*/
-					}
-				}
-
-				case MotionEvent.ACTION_UP -> view.performClick();
-
-				case MotionEvent.ACTION_DOWN -> startY = event.getY();
-			}
-
-			return false;
 		}
 	}
 }

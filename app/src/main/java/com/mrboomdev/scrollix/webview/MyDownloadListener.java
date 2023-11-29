@@ -17,10 +17,10 @@ import com.liulishuo.okdownload.core.breakpoint.BreakpointInfo;
 import com.liulishuo.okdownload.core.cause.EndCause;
 import com.liulishuo.okdownload.core.cause.ResumeFailedCause;
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.app.MainActivity;
 import com.mrboomdev.scrollix.app.NotificationManager;
 import com.mrboomdev.scrollix.app.permission.Permission;
 import com.mrboomdev.scrollix.app.permission.PermissionManager;
+import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.util.ArrayList;

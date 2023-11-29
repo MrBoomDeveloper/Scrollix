@@ -1,13 +1,12 @@
 package com.mrboomdev.scrollix.engine.tab;
 
 import android.annotation.SuppressLint;
-import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.app.AppManager;
-import com.mrboomdev.scrollix.ui.layout.BarsAnimator;
+import com.mrboomdev.scrollix.ui.BarsAnimator;
 
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
@@ -18,15 +17,21 @@ import java.util.List;
 
 public class TabManager {
 	protected static GeckoRuntime runtime;
+	@SuppressLint("StaticFieldLeak")
 	protected static BarsAnimator barsAnimator;
 	private static GeckoView geckoView;
 	private static Tab currentTab;
 	private static List<TabListener> listeners;
 
 	@SuppressLint("ClickableViewAccessibility")
-	public static void setBarsAnimator(View.OnTouchListener animator) {
-		//geckoView.setOnTouchListener(animator);
-		//barsAnimator = animator;
+	public static void setBarsAnimator(@NonNull BarsAnimator animator) {
+		geckoView.setOnTouchListener(animator.getOnTouchListener());
+		barsAnimator = animator;
+	}
+
+	public static void setBarsAreExpanded(boolean isExpanded) {
+		if(barsAnimation == null) return;
+		barsAnimation.setBarsAreExpanded(isExpanded);
 	}
 
 	public static Tab getCurrentTab() {

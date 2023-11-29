@@ -30,7 +30,7 @@
         tools:targetApi="tiramisu">
 
         <activity
-            android:name=".app.MainActivity"
+            android:name=".ui.MainActivity"
             android:windowSoftInputMode="stateAlwaysVisible"
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:launchMode="singleInstance"
@@ -57,7 +57,7 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".app.IncognitoActivity"
+        <activity android:name=".ui.IncognitoActivity"
             android:process=":incognito"
             android:windowSoftInputMode="stateAlwaysVisible"
             android:configChanges="orientation|keyboardHidden|screenSize"

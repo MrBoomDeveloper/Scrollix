@@ -7,7 +7,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.app.AppManager;
-import com.mrboomdev.scrollix.app.IncognitoActivity;
+import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.app.IntentHandler;
 import com.mrboomdev.scrollix.data.download.UserMadeDownload;
 import com.mrboomdev.scrollix.engine.EngineInternal;
@@ -50,6 +50,11 @@ public class TabDelegator {
 				new UserMadeDownload(response.uri)
 						.setHeaders(response.headers)
 						.start();
+			}
+
+			@Override
+			public void onShowDynamicToolbar(@NonNull GeckoSession geckoSession) {
+				TabManager.setBarsAreExpanded(true);
 			}
 
 			@Override
@@ -195,7 +200,27 @@ public class TabDelegator {
 			@Override
 			public GeckoResult<String> onLoadError(@NonNull GeckoSession session, @Nullable String uri, @NonNull WebRequestError error) {
 				//TODO: provide additional data to the error page
-				return GeckoResult.fromValue(EngineInternal.Link.ERROR.getRealUrl());
+				var baseUrl = EngineInternal.Link.ERROR.getRealUrl();
+
+				var errorMessage = switch(error.code) {
+					case WebRequestError.ERROR_CONNECTION_REFUSED -> "Connection refused";
+					case WebRequestError.ERROR_BAD_HSTS_CERT -> "Can't verify certificates";
+					case WebRequestError.ERROR_CONTENT_CRASHED -> "Page has crashed";
+					case WebRequestError.ERROR_UNKNOWN_PROTOCOL -> "Unknown protocol";
+					case WebRequestError.ERROR_REDIRECT_LOOP -> "Page was redirected too much times";
+					case WebRequestError.ERROR_SECURITY_BAD_CERT -> "Untrusted certificates were found";
+					case WebRequestError.ERROR_SECURITY_SSL -> "SSL error has happened";
+					case WebRequestError.ERROR_MALFORMED_URI -> "Invalid url was permitted";
+					case WebRequestError.ERROR_FILE_NOT_FOUND -> "File was not found";
+					case WebRequestError.ERROR_FILE_ACCESS_DENIED -> "File access denied";
+					case WebRequestError.ERROR_CORRUPTED_CONTENT -> "Page content was corrupted";
+					case WebRequestError.ERROR_NET_TIMEOUT -> "Connection timeout has passed";
+					case WebRequestError.ERROR_NET_RESET -> "Connection has been reset";
+					case WebRequestError.ERROR_NET_INTERRUPT -> "Connection was interrupted";
+					default -> "Unknown error";
+				};
+
+				return GeckoResult.fromValue(baseUrl + "?reason=" + errorMessage + "&url=" + uri);
 			}
 
 			@Nullable
