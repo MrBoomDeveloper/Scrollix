@@ -5,6 +5,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
@@ -75,14 +76,17 @@ public class ExtensionDelegator {
 			@Nullable
 			@Override
 			public GeckoResult<Object> onMessage(@NonNull String nativeApp, @NonNull Object message, @NonNull WebExtension.MessageSender sender) {
-				//if(!nativeApp.equals("scrollix")) return null;
-				System.out.println(nativeApp);
+				if(!nativeApp.equals("scrollix")) return null;
 
 				if(message instanceof JSONObject json) {
-					System.out.println(json);
 					try {
 						switch(json.getString("action")) {
 							case "reload" -> TabManager.getCurrentTab().reload();
+							case "open-search" -> {
+								var search = AppManager.getMainActivityContext().searchLayout;
+								search.show();
+								search.editText.setText("");
+							}
 							default -> Log.e(TAG, "Unknown action: " + json.getString("action"));
 						}
 					} catch(JSONException e) {

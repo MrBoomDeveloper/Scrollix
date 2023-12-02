@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.app;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
@@ -22,10 +23,10 @@ import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
+import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
-import com.mrboomdev.scrollix.webview.MyDownloadListener;
 import com.nostra13.universalimageloader.core.DisplayImageOptions;
 import com.nostra13.universalimageloader.core.ImageLoader;
 import com.nostra13.universalimageloader.core.ImageLoaderConfiguration;
@@ -38,14 +39,19 @@ public class AppManager {
 	private static DataProfile profile;
 	private static final String TAG = "AppManager";
 	public static ActivityCallbackLauncher activityCallbackLauncher;
-	private static AppCompatActivity activityContext;
+	@SuppressLint("StaticFieldLeak")
+	private static MainActivity mainActivityContext;
 
 	public static Context getAppContext() {
-		return activityContext.getApplicationContext();
+		return mainActivityContext.getApplicationContext();
 	}
 
 	public static AppCompatActivity getActivityContext() {
-		return activityContext;
+		return mainActivityContext;
+	}
+
+	public static MainActivity getMainActivityContext() {
+		return mainActivityContext;
 	}
 
 	public static void postCreate() {
@@ -87,9 +93,9 @@ public class AppManager {
 		Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> handleException(throwable));
 	}
 
-	public static void startup(AppCompatActivity context) {
+	public static void startup(MainActivity context) {
 		setupCrashHandler();
-		activityContext = context;
+		mainActivityContext = context;
 
 		var displayImageOptions = new DisplayImageOptions.Builder()
 				.showImageOnFail(R.drawable.ic_error_black)
@@ -152,14 +158,10 @@ public class AppManager {
 		activityCallbackLauncher.dispose();
 		activityCallbackLauncher = null;
 
-		activityContext = null;
+		mainActivityContext = null;
 		TabStore.clearTabs();
 		TabManager.dispose();
 		ThemeSettings.ThemeManager.setContext(null);
-
-		for(var download : MyDownloadListener.ProgressListener.activeDownloads.values()) {
-			download.cancel();
-		}
 	}
 
 	public static void closeApp() {

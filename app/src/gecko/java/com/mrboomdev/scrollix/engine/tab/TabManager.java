@@ -27,6 +27,10 @@ public class TabManager {
 	private static Tab currentTab;
 	private static List<TabListener> listeners;
 
+	public static BarsAnimator getBarsAnimator() {
+		return barsAnimator;
+	}
+
 	@SuppressLint("ClickableViewAccessibility")
 	public static void setBarsAnimator(@NonNull BarsAnimator animator) {
 		geckoView.setOnTouchListener(animator.getOnTouchListener());

@@ -37,8 +37,8 @@ import java.util.List;
 import java.util.Objects;
 
 public class SearchLayout extends LinearLayout implements TextView.OnEditorActionListener, TextWatcher {
+	public final EditText editText;
 	private static final List<SearchEngine.SearchSuggestion> EMPTY_SUGGESTIONS_LIST = List.of();
-	private final EditText editText;
 	private final SuggestionsAdapter adapter;
 	private CallbackController searchQueriesCallbackController;
 	private LaunchLinkListener listener;

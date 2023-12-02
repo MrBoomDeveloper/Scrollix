@@ -3,11 +3,8 @@ document.querySelector("html").style.backgroundColor = currentTheme.background;
 
 const search = document.querySelector("#search");
 if(search != null) {
-    search.addEventListener("keypress", event => {
-        if(event.key == "Enter") {
-            window.open(`https://www.google.com/search?q=${search.value}`);
-            return;
-        }
+    search.addEventListener("click", () => {
+        scrollix.openSearch();
     });
 }
 

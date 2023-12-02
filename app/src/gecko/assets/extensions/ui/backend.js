@@ -7,6 +7,12 @@ window.scrollix = {
         return "default";
     },
 
+    openSearch() {
+        browser.runtime.sendNativeMessage("scrollix", {
+            action: "open-search"
+        });
+    },
+
     reload() {
         browser.runtime.sendNativeMessage("scrollix", {
             action: "reload"
