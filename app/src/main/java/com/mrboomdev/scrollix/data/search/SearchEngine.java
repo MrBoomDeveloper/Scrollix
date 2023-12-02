@@ -20,6 +20,8 @@ public interface SearchEngine {
 	String getSearchPrefix();
 
 	default boolean isSearchUrl(String url) {
+		if(url == null) return false;
+
 		var shortenUrl = LinkUtil.removeProtocol(url);
 		return shortenUrl.startsWith(getHome() + getSearchPrefix());
 	}
@@ -69,6 +71,8 @@ public interface SearchEngine {
 	record SearchSuggestion(String title) {}
 
 	static String parseQueryAll(String url) {
+		if(url == null) return null;
+
 		for(var preset : Preset.values()) {
 			var engine = preset.getEngine();
 			if(engine == null) continue;

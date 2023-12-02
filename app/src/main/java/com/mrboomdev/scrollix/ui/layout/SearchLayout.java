@@ -69,6 +69,7 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 		editText.setBackgroundResource(android.R.color.transparent);
 		editText.setSelectAllOnFocus(true);
 		editText.setSingleLine();
+		editText.setTextColor(Color.WHITE);
 		editText.setTextSize(Formats.NORMAL_TEXT);
 		editText.setImeOptions(EditorInfo.IME_ACTION_SEARCH | EditorInfo.IME_FLAG_NO_FULLSCREEN);
 		editText.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -262,6 +263,9 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 
 		public SuggestionView(@NonNull LinearLayout itemView) {
 			super(itemView);
+			itemView.setGravity(Gravity.CENTER_VERTICAL);
+			itemView.setAlpha(.75f);
+			//var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 
 			itemView.setOrientation(HORIZONTAL);
 			itemView.setClickable(true);
@@ -269,7 +273,7 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 			itemView.setBackgroundResource(R.drawable.ripple_square);
 
 			itemView.setPadding(
-					Formats.BIG_PADDING,
+					Formats.NORMAL_PADDING,
 					Formats.LARGE_PADDING - Formats.SMALL_PADDING,
 					Formats.BIG_PADDING,
 					Formats.LARGE_PADDING - Formats.SMALL_PADDING);
@@ -284,8 +288,17 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 				hide();
 			});
 
+			var icon = new ImageView(getContext());
+			icon.setImageDrawable(DrawableUtil.getDrawable(R.drawable.ic_search_black, "#ffffff"));
+			icon.setScaleX(1.1f);
+			icon.setScaleY(1.1f);
+			icon.setPadding(Formats.SMALL_PADDING / 2, Formats.SMALL_PADDING / 2, Formats.SMALL_PADDING, 0);
+			itemView.addView(icon, Formats.NORMAL_ELEMENT, Formats.SMALL_ELEMENT);
+			((LayoutParams)icon.getLayoutParams()).rightMargin = Formats.BIG_PADDING;
+
 			title = new TextView(getContext());
 			title.setTextSize(Formats.NORMAL_TEXT);
+			title.setTextColor(Color.WHITE);
 			itemView.addView(title);
 		}
 

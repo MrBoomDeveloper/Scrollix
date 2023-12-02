@@ -58,7 +58,7 @@ public class TabsMenu {
 		var linear = new LinearLayout(context);
 		linear.setLayoutParams(new WindowManager.LayoutParams(Formats.MATCH_PARENT, Formats.WRAP_CONTENT));
 		linear.setOrientation(LinearLayout.VERTICAL);
-		linear.setBackground(DrawableUtil.createDrawable(theme.popupBackground, isLandscape ? 16 : 0));
+		linear.setBackground(DrawableUtil.createDrawable(theme.popupBackground, isLandscape ? Formats.SMALL_POPUP_RADIUS : 0));
 		FormatUtil.setPadding(linear, Formats.SMALL_PADDING);
 
 		var recycler = new RecyclerView(context);
@@ -86,7 +86,6 @@ public class TabsMenu {
 
 		createButton.setOnClickListener(_view -> {
 			TabStore.createTab(true);
-
 			close();
 		});
 

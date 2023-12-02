@@ -6,11 +6,11 @@ public class UnexpectedBehaviourException extends RuntimeException {
 		super(text);
 	}
 
-	public UnexpectedBehaviourException(Exception e) {
+	public UnexpectedBehaviourException(Throwable e) {
 		super(e);
 	}
 
-	public UnexpectedBehaviourException(String text, Exception e) {
+	public UnexpectedBehaviourException(String text, Throwable e) {
 		super(text, e);
 	}
 }

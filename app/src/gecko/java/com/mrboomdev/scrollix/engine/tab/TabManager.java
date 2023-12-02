@@ -5,7 +5,10 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
+import com.mrboomdev.scrollix.BuildConfig;
 import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.engine.extenison.ExtensionDelegator;
+import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.ui.BarsAnimator;
 
 import org.mozilla.geckoview.GeckoRuntime;
@@ -16,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TabManager {
+	private static final String TAG = "TabManager";
 	protected static GeckoRuntime runtime;
 	@SuppressLint("StaticFieldLeak")
 	protected static BarsAnimator barsAnimator;
@@ -30,8 +34,8 @@ public class TabManager {
 	}
 
 	public static void setBarsAreExpanded(boolean isExpanded) {
-		if(barsAnimation == null) return;
-		barsAnimation.setBarsAreExpanded(isExpanded);
+		if(barsAnimator == null) return;
+		barsAnimator.setBarsAreExpanded(isExpanded);
 	}
 
 	public static Tab getCurrentTab() {
@@ -50,7 +54,8 @@ public class TabManager {
 		setCurrentTab(tab, true);
 	}
 
-	public static void setCurrentTab(@NonNull Tab tab, boolean tryToInit) {
+	public static void setCurrentTab(Tab tab, boolean tryToInit) {
+		if(tab == null) return;
 		currentTab = tab;
 
 		if(tryToInit) tab.init();
@@ -58,6 +63,16 @@ public class TabManager {
 
 		for(var listener : listeners) {
 			listener.onTabFocused(tab);
+		}
+
+		ExtensionDelegator.update();
+		var extensionController = runtime.getWebExtensionController();
+
+		for(var _tab : TabStore.getAllTabs()) {
+			if(_tab.didInit()) continue;
+
+			if(_tab == tab) extensionController.setTabActive(tab.getSession(), true);
+			else extensionController.setTabActive(_tab.getSession(), false);
 		}
 	}
 
@@ -77,21 +92,24 @@ public class TabManager {
 		var runtimeSettings = new GeckoRuntimeSettings.Builder()
 				.aboutConfigEnabled(true)
 				.allowInsecureConnections(GeckoRuntimeSettings.ALLOW_ALL)
-				.consoleOutput(false)
+				.consoleOutput(BuildConfig.DEBUG)
 				.extensionsWebAPIEnabled(true)
-				.remoteDebuggingEnabled(false)
+				.remoteDebuggingEnabled(BuildConfig.DEBUG)
 				.preferredColorScheme(GeckoRuntimeSettings.COLOR_SCHEME_DARK)
 				.forceUserScalableEnabled(true)
 				.extensionsProcessEnabled(true)
 				.build();
 
 		runtime = GeckoRuntime.create(context, runtimeSettings);
+		ExtensionManager.startup(runtime);
 	}
 
 	public static void dispose() {
 		listeners.clear();
 		runtime.shutdown();
+
 		runtime = null;
+		barsAnimator = null;
 	}
 
 	protected static List<TabListener> getTabListeners() {

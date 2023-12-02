@@ -1,6 +1,13 @@
 package com.mrboomdev.scrollix.util.callback;
 
-public interface CallbackController {
+public abstract class CallbackController {
+	private boolean isCanceled;
 
-	default void cancel() {}
+	public boolean isCanceled() {
+		return isCanceled;
+	}
+
+	public void cancel() {
+		isCanceled = true;
+	}
 }

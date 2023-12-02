@@ -68,7 +68,7 @@ public class TabStore {
 
 	private static void selectNearestTab(int index, boolean exitIfEmpty) {
 		if(tabs.isEmpty()) {
-			if(exitIfEmpty) AppManager.dispose();
+			if(exitIfEmpty) AppManager.closeApp();
 			//createTab(true);
 			return;
 		}

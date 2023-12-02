@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.util.format;
 import android.view.ViewGroup;
 
 public class Formats {
+	public static int SMALL_POPUP_RADIUS = 16;
 	public static int LARGE_TEXT = 14, NORMAL_TEXT = 10, SMALL_TEXT = 9;
 	public static int SMALL_PADDING = 4, NORMAL_PADDING = 6, PADDING = 9, BIG_PADDING = 12, LARGE_PADDING = 20;
 	public static int SMALL_ELEMENT = 25, NORMAL_ELEMENT = 40, BIG_ELEMENT = 60;

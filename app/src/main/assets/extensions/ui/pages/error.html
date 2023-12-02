@@ -4,7 +4,7 @@
         <meta http-equiv="content-type" content="text/html; charset=utf-8" />
         <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
         <title>Website failed to load</title>
-        <script src="backend-loader.js"></script>
+        <script src="../backend-loader.js"></script>
         <link rel="stylesheet" href="style.css" />
         
         <style>
@@ -59,20 +59,13 @@
                 <h1 class="title">Webpage not available</h1>
             </header>
             
-            <p class="description">The webpage at "<span id="url">$url</span>" could not be loaded. Try again in a couple of minutes. You may have entered the address incorrectly.</p>
+            <p class="description">The webpage <!--at "<span id="url">$url</span>"--> could not be loaded. Try again in a couple of minutes. You may have entered the address incorrectly.</p>
             
-            <p class="description">Reason: <span id="reason">$reason</span></p>
+<!--            <p class="description">Reason: <span id="reason">$reason</span></p>-->
             
             <a class="button" id="reload">Reload</a>
         </div>
         
-        <script>
-            const urlField = document.getElementById("url");
-            const reasonField = document.getElementById("reason");
-
-            const params = new URLSearchParams(window.location.search);
-            urlField.innerText = params.get("url");
-            reasonField.innerText = params.get("reason");
-        </script>
+        <script src="error.js"></script>
     </body>
 </html>

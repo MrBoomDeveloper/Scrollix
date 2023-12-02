@@ -4,12 +4,13 @@ public class EngineInternal {
 	public static final String INTERNAL_LINK_PREFIX = "resource://android/assets/pages/";
 
 	public enum Link {
-		HOME(INTERNAL_LINK_PREFIX + "home.html", "scrollix://home"),
-		SETTINGS(INTERNAL_LINK_PREFIX + "settings.html", "scrollix://settings"),
-		ERROR(INTERNAL_LINK_PREFIX + "error.html", "scrollix://error"),
-		DOWNLOADS("list.html?page=downloads", "scrollix://downloads"),
-		HISTORY("list.html?page=history", "scrollix://history"),
-		BOOKMARKS("list.html?page=bookmarks", "scrollix://bookmarks");
+		HOME("pages/home.html", "scrollix://home"),
+		SETTINGS("pages/settings.html", "scrollix://settings"),
+		ERROR("pages/error.html", "scrollix://error"),
+		DOWNLOADS("pages/list.html?page=downloads", "scrollix://downloads"),
+		HISTORY("pages/list.html?page=history", "scrollix://history"),
+		BOOKMARKS("pages/list.html?page=bookmarks", "scrollix://bookmarks"),
+		EXTENSIONS("pages/extensions.html", "scrollix://extensions");
 
 		final String realUrl, scrollixUrl;
 

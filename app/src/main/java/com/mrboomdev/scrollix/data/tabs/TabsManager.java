@@ -50,23 +50,8 @@ public class TabsManager {
 	}
 
 	@Deprecated
-	public static Tab getCurrent() {
-		return currentTab;
-	}
-
-	@Deprecated
 	public static void add(Tab tab, int index) {
 		tabs.add(index, tab);
-	}
-
-	@Deprecated
-	public static void move(int fromIndex, int toIndex) {
-		if(fromIndex == toIndex) return;
-
-		var tab = get(fromIndex);
-
-		tabs.add(toIndex, tab);
-		tabs.remove(fromIndex);
 	}
 
 	@Deprecated

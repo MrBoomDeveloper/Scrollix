@@ -21,7 +21,11 @@ public class LinkUtil {
 		if(url == null) return false;
 
 		try {
-			new URL(url.replace("scrollix://", "https://")).toURI();
+			new URL(url.replace("scrollix://", "http://")
+					.replace("resource://", "http://")
+					.replace("moz-extension://", "http://"))
+					.toURI();
+
 			return true;
 		} catch(MalformedURLException | URISyntaxException e) {
 			return isDeeplyValidUrl(url);
@@ -82,6 +86,8 @@ public class LinkUtil {
 	}
 
 	public static String removeProtocol(String url) {
+		if(url == null) return null;
+
 		for(var beginChar : List.of("http", "ftp", "s", "://", "www.")) {
 			if(!url.startsWith(beginChar)) continue;
 			url = url.substring(url.indexOf(beginChar) + beginChar.length());

@@ -72,17 +72,19 @@ public class AppManager {
 		}
 	}
 
-	public static void setupCrashHandler() {
-		Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-			var context = getActivityContext();
+	public static void handleException(Throwable throwable) {
+		var context = getActivityContext();
 
-			context.runOnUiThread(() -> new DialogMenu(context)
-					.setCancelable(false)
-					.setTitle("App just crashed!")
-					.setDescription("Stacktrace: \n\n" + Log.getStackTraceString(throwable))
-					.addAction("Exit app", () -> System.exit(0))
-					.show());
-		});
+		context.runOnUiThread(() -> new DialogMenu(context)
+				.setCancelable(false)
+				.setTitle("App just crashed!")
+				.setDescription("Stacktrace: \n\n" + Log.getStackTraceString(throwable))
+				.addAction("Exit app", AppManager::closeApp)
+				.show());
+	}
+
+	public static void setupCrashHandler() {
+		Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> handleException(throwable));
 	}
 
 	public static void startup(AppCompatActivity context) {
@@ -158,6 +160,13 @@ public class AppManager {
 		for(var download : MyDownloadListener.ProgressListener.activeDownloads.values()) {
 			download.cancel();
 		}
+	}
+
+	public static void closeApp() {
+		var context = getActivityContext();
+		if(context == null) return;
+
+		context.finishAffinity();
 	}
 
 	public static Configuration getConfiguration() {

@@ -86,6 +86,10 @@ public class BarsAnimator {
 
 				case MotionEvent.ACTION_UP -> {
 					currentY = event.getRawY();
+
+					//Don't do anything with bars because user just touched the screen, not scrolled.
+					if(Math.abs(startY - currentY) < 5) return false;
+
 					setBarsAreExpanded(currentY > startY);
 				}
 			}

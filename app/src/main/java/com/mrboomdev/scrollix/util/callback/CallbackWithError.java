@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.util.callback;
 import androidx.annotation.NonNull;
 
 import org.jetbrains.annotations.Contract;
+
 public interface CallbackWithError<T, E> {
 	void onSuccess(T value);
 

@@ -15,7 +15,6 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
@@ -33,11 +32,13 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.IntentHandler;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.EngineInternal;
+import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.layout.SearchLayout;
+import com.mrboomdev.scrollix.ui.popup.ActionsMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
@@ -305,10 +306,10 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 	@Contract("_, _, _ -> param2")
 	private int setUrlAction(@NonNull ImageView button, @DrawableRes int icon, EngineInternal.Link link) {
-		button.setOnClickListener(view -> {
+		button.setOnClickListener(view -> ExtensionManager.getExtensionPageUrl(ExtensionManager.UI_EXTENSION_ID, link.getRealUrl(), url -> {
 			var tab = TabManager.getCurrentTab();
-			tab.loadUrl(link.getRealUrl());
-		});
+			tab.loadUrl(url);
+		}));
 
 		return icon;
 	}
@@ -336,23 +337,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			case "history" -> icon = setUrlAction(button, R.drawable.ic_history_black, EngineInternal.Link.HISTORY);
 			case "bookmarks" -> icon = setUrlAction(button, R.drawable.ic_star_black, EngineInternal.Link.BOOKMARKS);
 
-			case "menu" -> {
-				icon = R.drawable.ic_menu_black;
-
-				button.setOnClickListener(view -> {
-					var a = new ImageView(this);
-					a.setImageResource(R.drawable.ic_google_colorful);
-					a.setOnClickListener(_view -> {
-						var intent = new Intent(this, IncognitoActivity.class);
-						startActivity(intent);
-					});
-
-					var popup = new PopupWindow(a, 100, 100);
-					popup.setFocusable(true);
-					popup.showAsDropDown(button);
-				});
-			}
-
 			case "back" -> {
 				icon = R.drawable.ic_back_black;
 				button.setOnClickListener(view -> TabManager.getCurrentTab().goBack());
@@ -366,13 +350,14 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 				forwardButton = button;
 			}
 
+			case "menu" -> {
+				icon = R.drawable.ic_menu_black;
+				button.setOnClickListener(view -> new ActionsMenu(this).showAt(button));
+			}
+
 			case "tabs" -> {
 				icon = R.drawable.ic_tabs_black;
-
-				button.setOnClickListener(view -> {
-					var menu = new TabsMenu(this);
-					menu.showAt(button);
-				});
+				button.setOnClickListener(view -> new TabsMenu(this).showAt(button));
 			}
 		}
 

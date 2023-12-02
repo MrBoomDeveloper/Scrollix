@@ -2,19 +2,17 @@ package com.mrboomdev.scrollix.engine.tab;
 
 import androidx.annotation.NonNull;
 
-import com.mrboomdev.scrollix.engine.EngineInternal;
+import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.util.LinkUtil;
 
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 
-import java.util.Objects;
-
 public class Tab {
 	private final GeckoSession session;
 	protected boolean canGoBack, canGoForward;
 	protected String url, title;
-	private boolean didInit;
+	private boolean didInit, isError;
 
 	public Tab(String url, boolean lateInit) {
 		this.url = url;
@@ -24,6 +22,14 @@ public class Tab {
 		applyDelegators();
 
 		if(!lateInit) init();
+	}
+
+	public void setIsError(boolean isError) {
+		this.isError = isError;
+	}
+
+	public boolean isError() {
+		return isError;
 	}
 
 	public void setTitle(String title) {
@@ -73,9 +79,9 @@ public class Tab {
 		didInit = true;
 
 		if(session.isOpen()) return;
-
 		session.open(TabManager.runtime);
-		loadUrl(Objects.requireNonNullElse(url, EngineInternal.Link.HOME.getRealUrl()));
+
+		ExtensionManager.getUiExtensionPageUrl("pages/home.html", this::loadUrl);
 	}
 
 	public void loadUrl(String url) {
@@ -87,6 +93,10 @@ public class Tab {
 		return url;
 	}
 
+	public boolean didInit() {
+		return didInit;
+	}
+
 	public String getTitle() {
 		return title;
 	}
@@ -96,6 +106,11 @@ public class Tab {
 	}
 
 	public void reload() {
+		if(isError) {
+			loadUrl(url);
+			return;
+		}
+
 		session.reload();
 	}
 
@@ -119,7 +134,7 @@ public class Tab {
 		session.close();
 	}
 
-	protected GeckoSession getSession() {
+	public GeckoSession getSession() {
 		return session;
 	}
 }

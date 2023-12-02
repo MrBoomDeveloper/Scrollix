@@ -34,14 +34,21 @@ public class GoogleSearch implements SearchEngine {
 		var request = new Request.Builder().url(SEARCH_QUERY_PREFIX + query + SEARCH_QUERY_SUFFIX).build();
 		var call = okhttp.newCall(request);
 
+		var controller = new CallbackController() {
+			@Override
+			public void cancel() {
+				super.cancel();
+				call.cancel();
+			}
+		};
+
 		var moshi = new Moshi.Builder().build();
 		JsonAdapter<List<String>> adapter = moshi.adapter(Types.newParameterizedType(List.class, String.class));
 
 		new Thread(() -> call.enqueue(new Callback() {
 			@Override
 			public void onFailure(@NonNull Call call, @NonNull IOException e) {
-				if(call.isCanceled()) return;
-
+				if(controller.isCanceled()) return;
 				callback.onError(new UnexpectedBehaviourException("Failed to fetch search query results", e));
 			}
 
@@ -69,12 +76,7 @@ public class GoogleSearch implements SearchEngine {
 			}
 		})).start();
 
-		return new CallbackController() {
-			@Override
-			public void cancel() {
-				call.cancel();
-			}
-		};
+		return controller;
 	}
 
 	@Override

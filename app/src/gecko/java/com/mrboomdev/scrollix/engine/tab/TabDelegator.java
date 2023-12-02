@@ -7,10 +7,10 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.app.AppManager;
-import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.app.IntentHandler;
 import com.mrboomdev.scrollix.data.download.UserMadeDownload;
-import com.mrboomdev.scrollix.engine.EngineInternal;
+import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
+import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
 import com.mrboomdev.scrollix.util.AndroidUtil;
@@ -45,6 +45,7 @@ public class TabDelegator {
 		});
 
 		tab.getSession().setContentDelegate(new GeckoSession.ContentDelegate() {
+
 			@Override
 			public void onExternalResponse(@NonNull GeckoSession session, @NonNull WebResponse response) {
 				new UserMadeDownload(response.uri)
@@ -179,6 +180,7 @@ public class TabDelegator {
 
 			@Override
 			public void onPageStart(@NonNull GeckoSession session, @NonNull String url) {
+				tab.setIsError(false);
 				tab.setUrl(url);
 
 				for(var listener : TabManager.getTabListeners()) {
@@ -199,8 +201,7 @@ public class TabDelegator {
 
 			@Override
 			public GeckoResult<String> onLoadError(@NonNull GeckoSession session, @Nullable String uri, @NonNull WebRequestError error) {
-				//TODO: provide additional data to the error page
-				var baseUrl = EngineInternal.Link.ERROR.getRealUrl();
+				tab.setIsError(true);
 
 				var errorMessage = switch(error.code) {
 					case WebRequestError.ERROR_CONNECTION_REFUSED -> "Connection refused";
@@ -220,7 +221,12 @@ public class TabDelegator {
 					default -> "Unknown error";
 				};
 
-				return GeckoResult.fromValue(baseUrl + "?reason=" + errorMessage + "&url=" + uri);
+				var result = new GeckoResult<String>();
+
+				var relativePath = "pages/error.html?reason=" + errorMessage + "&url=" + uri;
+				ExtensionManager.getUiExtensionPageUrl(relativePath, result::complete);
+
+				return result;
 			}
 
 			@Nullable
