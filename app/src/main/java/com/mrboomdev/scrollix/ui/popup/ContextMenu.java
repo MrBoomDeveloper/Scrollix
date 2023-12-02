@@ -32,7 +32,8 @@ public class ContextMenu extends LinearLayout {
 		super(context);
 		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 
-		var background = new DrawableBuilder(theme.popupBackground)
+		var background = new DrawableBuilder.ColorDrawableBuilder()
+				.setColor(theme.popupBackground)
 				.setCornerRadius(16)
 				.setStroke("#000000", 4)
 				.build();

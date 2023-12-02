@@ -4,45 +4,67 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.app.AppManager;
 
 import org.jetbrains.annotations.Contract;
 
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Objects;
 
 public class FileUtil {
 
 	@NonNull
 	public static String readFileString(File file) {
-		try(var reader = new BufferedReader(new FileReader(file))) {
-			var builder = new StringBuilder();
-
-			String line;
-			while((line = reader.readLine()) != null) {
-				builder.append(line);
-			}
-
-			return builder.toString();
-		} catch(IOException e) {
-			throw new RuntimeException("Failed to read a file!", e);
-		}
+		return new String(readFileBytes(file));
 	}
 
 	@NonNull
+	@Contract("_ -> new")
+	public static String readAssetsString(String path) {
+		return new String(readAssetsBytes(path));
+	}
+
+	@Nullable
+	public static byte[] readAssetsBytes(String path) {
+		try(var is = AppManager.getAppContext().getAssets().open(path)) {
+			return readStreamBytes(is);
+		} catch(IOException e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	@Nullable
 	public static byte[] readFileBytes(@NonNull File file) {
 		try(var stream = new FileInputStream(file)) {
-			var array = new byte[(int)file.length()];
-			stream.read(array);
-			return array;
+			return readStreamBytes(stream);
 		} catch(IOException e) {
-			throw new RuntimeException("Failed to read bytes from a file!", e);
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	@Nullable
+	public static byte[] readStreamBytes(@NonNull InputStream stream) {
+		try(var io = new ByteArrayOutputStream()) {
+			var buffer = new byte[1024];
+			int read;
+
+			while((read = stream.read(buffer, 0, buffer.length)) != -1) {
+				io.write(buffer, 0, read);
+			}
+
+			return io.toByteArray();
+		} catch(IOException e) {
+			e.printStackTrace();
+			return null;
 		}
 	}
 

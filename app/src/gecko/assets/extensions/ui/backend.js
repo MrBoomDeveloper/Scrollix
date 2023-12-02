@@ -13,6 +13,12 @@ window.scrollix = {
         });
     },
 
+    getSettings() {
+        return browser.runtime.sendNativeMessage("scrollix", {
+            action: "get-settings"
+        });
+    },
+
     reload() {
         browser.runtime.sendNativeMessage("scrollix", {
             action: "reload"

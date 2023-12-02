@@ -9,6 +9,7 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 
 import org.json.JSONException;
@@ -82,11 +83,19 @@ public class ExtensionDelegator {
 					try {
 						switch(json.getString("action")) {
 							case "reload" -> TabManager.getCurrentTab().reload();
+
 							case "open-search" -> {
 								var search = AppManager.getMainActivityContext().searchLayout;
 								search.show();
 								search.editText.setText("");
 							}
+
+							case "get-settings" -> {
+								System.out.println(FileUtil.readAssetsString("settings.json"));
+								var settings = new JSONObject(FileUtil.readAssetsString("settings.json"));
+								return GeckoResult.fromValue(settings);
+							}
+
 							default -> Log.e(TAG, "Unknown action: " + json.getString("action"));
 						}
 					} catch(JSONException e) {

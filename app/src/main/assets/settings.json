@@ -1,0 +1,34 @@
+{
+	"title": "Settings", "type": "section", "items": {
+		"theme": { "title": "Theme", "type": "section", "items": {
+			"header": { "type": "special", "subtype": "theming-header" },
+			"pick": { "title": "Add from Storage", "id": "pick-theme", "type": "action" }
+		} },
+
+		"customization": { "title": "Customization", "type": "section" },
+
+		"search": { "title": "Search", "type": "section", "items": {
+			"engine": { "title": "Search engine", "type": "ratio", "initial": "google", "items": {
+				"google": { "title": "Google" },
+				"bing": { "title": "Bing" },
+				"duck": { "title": "DuckDuckGo" },
+				"yandex": { "title": "Yandex" },
+				"yahoo": { "title": "Yahoo" }
+			} },
+
+			"autoCompletion": {
+				"title": "Auto completion",
+				"description": "Get quick search query suggestions while typing",
+				"type": "toggle",
+				"initial": true
+			}
+		} },
+
+		"security": { "title": "Security", "type": "section" },
+
+		"about": { "title": "About", "type": "section", "items": {
+			"madeBy": { "title": "Made by", "description": "MrBoomDev in 2023" },
+			"version": { "title": "Version", "description": "1.0.2" }
+		} }
+	}
+}
