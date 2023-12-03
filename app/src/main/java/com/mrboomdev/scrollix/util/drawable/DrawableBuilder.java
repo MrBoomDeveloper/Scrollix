@@ -89,6 +89,18 @@ public abstract class DrawableBuilder {
 			return this;
 		}
 
+		public RippleDrawableBuilder setColor(String color) {
+			backgroundColor = Color.parseColor(color);
+			foregroundColor = Color.parseColor(color);
+			return this;
+		}
+
+		public RippleDrawableBuilder setColor(@ColorInt int color) {
+			backgroundColor = color;
+			foregroundColor = color;
+			return this;
+		}
+
 		public RippleDrawableBuilder setForegroundColor(String color) {
 			foregroundColor = Color.parseColor(color);
 			return this;

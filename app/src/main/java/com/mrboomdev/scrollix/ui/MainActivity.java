@@ -48,7 +48,6 @@ import com.mrboomdev.scrollix.util.format.Formats;
 import org.jetbrains.annotations.Contract;
 
 public class MainActivity extends AppCompatActivity implements TabListener {
-	private BarsAnimator barsAnimator;
 	private TextView tabsCounter;
 	public SearchLayout searchLayout;
 	private LinearProgressIndicator progressIndicator;
@@ -56,6 +55,12 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	private LinearLayout topbar, bottombar, sidebar;
 	private View backButton, forwardButton;
 	private boolean isFullscreen;
+
+	@Override
+	protected void onSaveInstanceState(@NonNull Bundle outState) {
+		super.onSaveInstanceState(outState);
+		AppManager.saveState();
+	}
 
 	@SuppressLint({"ClickableViewAccessibility"})
 	@Override
@@ -67,7 +72,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 		AppManager.startup(this);
 		TabManager.addListener(this);
-		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
 
 		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
 		topbar = findViewById(R.id.top_bar);
@@ -77,7 +81,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 		searchLayout = new SearchLayout(this);
 		searchLayout.setVisibility(View.GONE, false);
-		searchLayout.setLaunchLinkListener(url -> TabManager.getCurrentTab().loadUrl(url));
 
 		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
 		searchLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
@@ -87,14 +90,24 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		parent.addView(searchLayout, searchLayoutParams);
 
 		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
-		barsAnimator = new BarsAnimator();
-
 		TabManager.setTabHolder(webViewHolder);
+		reloadLayout();
+	}
+
+	@Override
+	protected void onStart() {
+		super.onStart();
+
+		BarsAnimator barsAnimator = new BarsAnimator();
+		barsAnimator.setBarsExpandable(BarsAnimator.TOPBAR | BarsAnimator.BOTTOMBAR);
+		barsAnimator.setBarsFromActivity(this);
 		TabManager.setBarsAnimator(barsAnimator);
 
-		reloadLayout();
 		AppManager.postCreate();
 		registerBackHandler();
+
+		searchLayout.setLaunchLinkListener(url -> TabManager.getCurrentTab().loadUrl(url));
+		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
 	}
 
 	@Override
@@ -238,7 +251,9 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		}
 
 		searchLayout.setTheme(theme);
-		progressIndicator.setIndicatorColor(Color.parseColor(theme.primary), Color.parseColor(theme.primary), Color.parseColor(theme.primary));
+
+		var color = Color.parseColor(theme.primary);
+		progressIndicator.setIndicatorColor(color, color, color);
 	}
 
 	public void reloadLayout() {
@@ -297,10 +312,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
 
-		barsAnimator.setBarsExpandable(BarsAnimator.TOPBAR | BarsAnimator.BOTTOMBAR);
-
 		bottombar.setVisibility(!isLandscape ? View.VISIBLE : View.GONE);
-		barsAnimator.setBarsFromActivity(this);
 		applyTheme(theme);
 	}
 

@@ -1,12 +1,14 @@
 package com.mrboomdev.scrollix.engine.tab;
 
 import android.annotation.SuppressLint;
+import android.graphics.Color;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.BuildConfig;
 import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionDelegator;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.ui.BarsAnimator;
@@ -19,17 +21,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TabManager {
-	private static final String TAG = "TabManager";
 	protected static GeckoRuntime runtime;
 	@SuppressLint("StaticFieldLeak")
 	protected static BarsAnimator barsAnimator;
 	private static GeckoView geckoView;
 	private static Tab currentTab;
 	private static List<TabListener> listeners;
-
-	public static BarsAnimator getBarsAnimator() {
-		return barsAnimator;
-	}
 
 	@SuppressLint("ClickableViewAccessibility")
 	public static void setBarsAnimator(@NonNull BarsAnimator animator) {
@@ -82,10 +79,13 @@ public class TabManager {
 
 	public static void setTabHolder(@NonNull ViewGroup view) {
 		var context = AppManager.getActivityContext();
+		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 
 		geckoView = new GeckoView(context);
 		geckoView.setFitsSystemWindows(true);
+		geckoView.coverUntilFirstPaint(Color.parseColor(theme.background));
 
+		view.removeAllViews();
 		view.addView(geckoView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 	}
 

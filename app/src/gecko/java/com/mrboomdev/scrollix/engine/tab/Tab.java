@@ -4,13 +4,14 @@ import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.util.LinkUtil;
+import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 
 public class Tab {
 	private final GeckoSession session;
-	protected boolean canGoBack, canGoForward;
+	protected boolean canGoBack, canGoForward, didRestoreState;
 	protected String url, title;
 	private boolean didInit, isError;
 
@@ -33,6 +34,7 @@ public class Tab {
 	}
 
 	public void setTitle(String title) {
+		if(title == null || title.isBlank()) return;
 		this.title = title;
 	}
 
@@ -81,7 +83,38 @@ public class Tab {
 		if(session.isOpen()) return;
 		session.open(TabManager.runtime);
 
-		ExtensionManager.getUiExtensionPageUrl("pages/home.html", this::loadUrl);
+		if(!didRestoreState) {
+			ExtensionManager.getUiExtensionPageUrl("pages/home.html", this::loadUrl);
+		}
+	}
+
+	public GeckoSession.SessionState getState() {
+		try {
+			var sessionField = GeckoSession.class.getDeclaredField("mStateCache");
+			sessionField.setAccessible(true);
+			return  (GeckoSession.SessionState)sessionField.get(session);
+		} catch(NoSuchFieldException | IllegalAccessException e) {
+			throw new UnexpectedBehaviourException("Required field is missing or inaccessible!", e);
+		}
+	}
+
+	public void restoreState(GeckoSession.SessionState state) {
+		if(state == null) return;
+
+		session.restoreState(state);
+		didRestoreState = true;
+
+		try {
+			var current = state.get(state.getCurrentIndex());
+			setUrl(current.getUri());
+			setTitle(current.getTitle());
+		} catch(IllegalStateException e) {
+			e.printStackTrace();
+
+			if(url != null) {
+				loadUrl(url);
+			}
+		}
 	}
 
 	public void loadUrl(String url) {

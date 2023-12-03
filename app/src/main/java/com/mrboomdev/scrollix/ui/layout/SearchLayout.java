@@ -27,6 +27,7 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
+import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.util.callback.CallbackController;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
@@ -163,6 +164,13 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 	}
 
 	public void setUrl(String url) {
+		var uiExtensionUrl = ExtensionManager.getUiExtensionBaseUrl();
+
+		if(url == null || (uiExtensionUrl != null && url.startsWith(uiExtensionUrl))) {
+			this.url = "";
+			return;
+		}
+
 		this.url = url;
 	}
 

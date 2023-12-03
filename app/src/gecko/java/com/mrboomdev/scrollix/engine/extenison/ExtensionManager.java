@@ -69,6 +69,10 @@ public class ExtensionManager {
 		});
 	}
 
+	public static String getUiExtensionBaseUrl() {
+		return uiExtensionBaseUrl;
+	}
+
 	@Contract(pure = true)
 	public static void startup(@NonNull GeckoRuntime runtime) {
 		ExtensionManager.runtime = runtime;
@@ -90,8 +94,8 @@ public class ExtensionManager {
 		extensionController.ensureBuiltIn(UI_EXTENSION_PATH, UI_EXTENSION_ID)
 				.accept(extension -> {
 					if(extension == null) return;
-					isLoadingExtensions = false;
 					uiExtensionBaseUrl = extension.metaData.baseUrl;
+					isLoadingExtensions = false;
 
 					Log.i(TAG, "Successfully loaded Scrollix ui extension");
 					ExtensionDelegator.setExtensionsDelegators(extension);

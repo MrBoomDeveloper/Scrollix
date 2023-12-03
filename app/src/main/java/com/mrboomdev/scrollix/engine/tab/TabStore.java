@@ -14,6 +14,8 @@ public class TabStore {
 	private static final List<Tab> tabs = new ArrayList<>();
 
 	public static void addTab(Tab tab, int index) {
+		if(tab == null) return;
+
 		tabs.add(index, tab);
 		runModifierListeners();
 	}
@@ -23,6 +25,8 @@ public class TabStore {
 	}
 
 	public static void addTab(Tab tab) {
+		if(tab == null) return;
+
 		tabs.add(tab);
 		runModifierListeners();
 	}

@@ -195,7 +195,7 @@ public class ActionsMenu {
 			this.view = view;
 
 			var background = new DrawableBuilder.RippleDrawableBuilder()
-					.setForegroundColor("#ffffff")
+					.setColor("#55ffffff")
 					.setShape(DrawableBuilder.Shape.OVAL)
 					.build();
 

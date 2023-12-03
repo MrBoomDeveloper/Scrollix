@@ -21,6 +21,7 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
+import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
@@ -132,12 +133,18 @@ public class SearchBarWidget extends LinearLayout {
 
 	public void setUrl(String url) {
 		if(Objects.equals(url, wasUrl)) return;
+		wasUrl = url;
+
+		var uiExtensionUrl = ExtensionManager.getUiExtensionBaseUrl();
+
+		if(url == null || (uiExtensionUrl != null && url.startsWith(uiExtensionUrl))) {
+			titleView.setText(R.string.comment_search_something);
+			return;
+		}
 
 		titleView.setText(AppManager.settings.urlFormatRules.parseSearchQuery ?
 				SearchEngine.parseQueryAll(url)
 				: url);
-
-		wasUrl = url;
 	}
 
 	public void setTitle(String title) {

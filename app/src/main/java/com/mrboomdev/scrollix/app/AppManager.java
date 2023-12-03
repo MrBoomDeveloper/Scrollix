@@ -25,6 +25,7 @@ import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
 import com.nostra13.universalimageloader.core.DisplayImageOptions;
@@ -141,11 +142,16 @@ public class AppManager {
 				TabStore.getTabIndex(TabManager.getCurrentTab()),
 				settings);
 
-		profile.save(profileName);
+		var file = FileUtil.getFile("profiles/" + profileName + ".txt");
+		FileUtil.writeFile(profile.saveAsLocal(), file);
 	}
 
 	public static void restoreState() {
-		profile = DataProfile.load(profileName);
+		var file = FileUtil.getFile("profiles/" + profileName + ".txt");
+
+		profile = file.exists()
+				? DataProfile.restoreAsLocal(FileUtil.readFileString(file))
+				: DataProfile.createDefault();
 
 		settings = profile.settings();
 		TabStore.setTabs(profile.tabs());
