@@ -18,6 +18,8 @@ android {
         versionCode Integer.parseInt(new SimpleDateFormat("DHmmss").format(date))
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        //buildConfigField("String", "BUILD_DATE_YEAR", "\"" + date.year + "\"")
     }
 
     buildFeatures {

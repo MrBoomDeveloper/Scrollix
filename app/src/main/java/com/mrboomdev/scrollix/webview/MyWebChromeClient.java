@@ -1,12 +1,9 @@
 package com.mrboomdev.scrollix.webview;
 
-import android.graphics.Bitmap;
 import android.os.Message;
 import android.webkit.ConsoleMessage;
-import android.webkit.JsPromptResult;
 import android.webkit.JsResult;
 import android.webkit.PermissionRequest;
-import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 
@@ -16,8 +13,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.permission.Permission;
 import com.mrboomdev.scrollix.app.permission.PermissionManager;
-import com.mrboomdev.scrollix.data.tabs.Tab;
-import com.mrboomdev.scrollix.data.tabs.TabsManager;
 import com.mrboomdev.scrollix.util.AndroidUtil;
 
 import java.util.ArrayList;
@@ -27,7 +22,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Deprecated
 public class MyWebChromeClient extends WebChromeClient {
-	private final Tab tab;
 
 	@Override
 	public void onPermissionRequest(@NonNull PermissionRequest request) {
@@ -101,31 +95,6 @@ public class MyWebChromeClient extends WebChromeClient {
 		}
 	}
 
-	public MyWebChromeClient(Tab tab) {
-		this.tab = tab;
-	}
-
-	@Override
-	public void onRequestFocus(WebView view) {
-		var tab = TabsManager.get(view);
-		TabsManager.setCurrent(tab);
-	}
-
-	@Override
-	public void onCloseWindow(WebView window) {
-		var tab = TabsManager.get(window);
-
-		if(tab != null) {
-			TabsManager.remove(tab);
-			tab.dispose();
-		}
-	}
-
-	@Override
-	public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, JsPromptResult result) {
-		return false;
-	}
-
 	@Override
 	public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
 		AppManager.getActivityContext().runOnUiThread(() -> {
@@ -174,27 +143,5 @@ public class MyWebChromeClient extends WebChromeClient {
 	@Override
 	public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
 		return false;
-	}
-
-	@Override
-	public void onReceivedTitle(WebView view, String title) {
-		tab.setTitle(title);
-	}
-
-	@Override
-	public void getVisitedHistory(ValueCallback<String[]> callback) {
-
-	}
-
-	@Override
-	public void onReceivedIcon(WebView view, Bitmap icon) {
-		tab.favicon = icon;
-		tab.runCallbacks(tab.onFaviconCallbacks);
-	}
-
-	@Override
-	public void onProgressChanged(WebView view, int newProgress) {
-		tab.progress = newProgress;
-		tab.runCallbacks(tab.onProgressCallbacks);
 	}
 }

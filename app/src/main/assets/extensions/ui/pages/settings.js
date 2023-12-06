@@ -45,48 +45,45 @@ function setSection(data) {
 
                 el.innerHTML = `
                     <p>${item.title}</p>
-                        ${item.description ? `<p>${item.description}</p>` : ""}
-                    `;
+                    ${item.description ? `<p style="margin-top: .2rem; font-size: .85em">${item.description}</p>` : ""}
+                `;
 
-                    el.onclick = () => setTimeout(() => {
-                        currentSectionPath.push(id);
-                        setSection(item);
-                    }, CALLBACK_DELAY);
-                    break;
+                el.onclick = () => setTimeout(() => {
+                    currentSectionPath.push(id);
+                    setSection(item);
+                }, CALLBACK_DELAY);
+            } break;
+
+            case "toggle": {
+                el.style.display = "flex";
+                el.style.alignItems = "center";
+                el.style.gap = "1rem";
+
+                render();
+
+                function render() {
+                    el.innerHTML = `
+                        <div style="flex-grow: 1; gap: .2rem; display: flex; flex-direction: column">
+                            <p>${item.title}</p>
+                            ${item.description ? `<p style="margin-top: .2rem; font-size: .85em">${item.description}</p>` : ""}
+                        </div>
+
+                        <p>${value}</p>
+                    `;
                 }
 
-                case "toggle": {
-                    el.style.display = "flex";
-                    el.style.alignItems = "center";
-                    el.style.gap = "1rem";
-
-                    render();
-
-                    function render() {
-                        el.innerHTML = `
-                            <div style="flex-grow: 1; gap: .2rem; display: flex; flex-direction: column">
-                                <p>${item.title}</p>
-                                ${item.description ? `<p>${item.description}</p>` : ""}
-                            </div>
-
-                            <p>${value}</p>
-                        `;
-                    }
-
-                    el.onclick = () => {
-                        localStorage.setItem(key, !value);
-                        value = !value;
+                el.onclick = () => {
+                    localStorage.setItem(key, !value);
+                    value = !value;
 
                     setTimeout(() => render(), CALLBACK_DELAY);
                 }
-
-                break;
-            }
+            } break;
 
             default: {
                 el.innerHTML = `
                     <p>${item.title}</p>
-                    ${item.description ? `<p>${item.description}</p>` : ""}
+                    ${item.description ? `<p style="margin-top: .2rem; font-size: .85em">${item.description}</p>` : ""}
                 `;
             }
         }

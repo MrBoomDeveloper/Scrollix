@@ -12,22 +12,22 @@
 				"id": "collapse_bars", "type": "toggle"
 			}, {
 				"title": "Left actions",
-				"descriptions": "If topbar is here, they'll appear in it, or else in the bottombar.",
+				"description": "If topbar is here, they'll appear in it, or else in the bottombar.",
 				"type": "action",
 				"id": "customize_left_actions"
 			}, {
 				"title": "Right actions",
-				"descriptions": "If topbar is here, they'll appear in it, or else in the bottombar.",
+				"description": "If topbar is here, they'll appear in it, or else in the bottombar.",
 				"type": "action",
 				"id": "customize_right_actions"
 			}, {
 				"title": "Side actions",
-				"descriptions": "If sidebar is here, they'll appear in it, or else in the popup menu.",
+				"description": "If sidebar is here, they'll appear in it, or else in the popup menu.",
 				"type": "action",
 				"id": "customize_side_actions"
 			}, {
 				"title": "Popup actions",
-				"descriptions": "They'll appear in the popup menu",
+				"description": "They'll appear in the popup menu",
 				"type": "action",
 				"id": "customize_menu_actions"
 			}

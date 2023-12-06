@@ -32,10 +32,6 @@ public class AppSettings {
 	@Json(name = "url_format_rules")
 	public UrlFormatRules urlFormatRules;
 
-	public AppSettings() {
-
-	}
-
 	public void fillNullValues() {
 		var defaultSettingsJson = FileUtil.readAssetsString(AppSettings.DEFAULT_SETTINGS_PATH);
 		var defaultSettings = AppSettings.fromString(defaultSettingsJson, false);

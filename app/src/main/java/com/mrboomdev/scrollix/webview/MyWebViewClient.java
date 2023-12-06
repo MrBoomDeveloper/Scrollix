@@ -3,7 +3,6 @@ package com.mrboomdev.scrollix.webview;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
 import android.net.http.SslError;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceError;
@@ -18,7 +17,6 @@ import androidx.annotation.Nullable;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.mrboomdev.scrollix.app.AppManager;
-import com.mrboomdev.scrollix.data.tabs.Tab;
 import com.mrboomdev.scrollix.util.LinkUtil;
 
 import java.io.ByteArrayInputStream;
@@ -28,11 +26,6 @@ import java.util.Objects;
 
 @Deprecated
 public class MyWebViewClient extends WebViewClient {
-	private final Tab tab;
-
-	public MyWebViewClient(Tab tab) {
-		this.tab = tab;
-	}
 
 	@Override
 	public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
@@ -49,26 +42,6 @@ public class MyWebViewClient extends WebViewClient {
 	@Override
 	public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
 
-	}
-
-	@Override
-	public void onPageFinished(WebView view, String url) {
-		if(!Objects.equals(url, LinkUtil.ScrollixUrls.ERROR.getFullUrl())) {
-			tab.setUrl(url);
-		}
-
-		tab.runCallbacks(tab.onFinishedCallbacks);
-	}
-
-	@Override
-	public void onPageStarted(WebView view, String url, Bitmap favicon) {
-		if(!Objects.equals(url, LinkUtil.ScrollixUrls.ERROR.getFullUrl())) {
-			tab.setUrl(url);
-		}
-
-		tab.favicon = null;
-		tab.runCallbacks(tab.onStartedCallbacks);
-		tab.runCallbacks(tab.onFaviconCallbacks);
 	}
 
 	@Override

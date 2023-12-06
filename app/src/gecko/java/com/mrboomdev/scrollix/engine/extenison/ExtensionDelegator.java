@@ -5,6 +5,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.mrboomdev.scrollix.BuildConfig;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
@@ -27,7 +28,7 @@ import java.util.Set;
 public class ExtensionDelegator {
 	private static final String TAG = "ExtensionDelegator";
 	private static final Map<WebExtension, Set<Tab>> extensions = new HashMap<>();
-	private static final Map<WebExtension, WebExtension.Port> ports = new HashMap<>();
+	//private static final Map<WebExtension, WebExtension.Port> ports = new HashMap<>();
 
 	public static void update() {
 		for(var entry : extensions.entrySet()) {
@@ -55,52 +56,56 @@ public class ExtensionDelegator {
 		final var extension = (target instanceof WebExtension) ? (WebExtension) target : null;
 		final var session = (target instanceof GeckoSession) ? (GeckoSession) target : null;
 
+		var portDelegate = new WebExtension.PortDelegate() {
+			@Override
+			public void onDisconnect(@NonNull WebExtension.Port port) {
+				//if(extension != null) ports.remove(extension, port);
+				Log.i(TAG, "Disconnected port! " + port.name);
+			}
+
+			@Override
+			public void onPortMessage(@NonNull Object message, @NonNull WebExtension.Port port) {
+				if(!port.name.equals("scrollix")) return;
+
+				try {
+					if(message instanceof JSONObject json) {
+						switch(json.getString("action")) {
+							case "get-settings" -> {
+								var settings = new JSONObject(FileUtil.readAssetsString("settings.json")
+										.replace("$APP_BUILD_YEAR", "2023")
+										.replace("$APP_BUILD_VERSION", BuildConfig.VERSION_NAME));
+
+								var result = new JSONObject()
+										.put("action", "retrieve-settings")
+										.put("value", settings);
+
+								port.postMessage(result);
+							}
+
+							case "get-downloads" -> {
+								var result = new JSONObject()
+										.put("action", "retrieve-downloads")
+										.put("value", new JSONArray());
+
+								port.postMessage(result);
+							}
+
+							default -> Log.e(TAG, "Unknown action! " + json.getString("action"));
+						}
+					}
+				} catch(JSONException e) {
+					e.printStackTrace();
+				}
+			}
+		};
+
 		var messageDelegate = new WebExtension.MessageDelegate() {
 			@Override
 			public void onConnect(@NonNull WebExtension.Port port) {
-				if(extension != null) ports.put(extension, port);
+				//if(extension != null) ports.put(extension, port);
 				Log.i(TAG, "Connected to a port! " + port.name);
 
-				port.setDelegate(new WebExtension.PortDelegate() {
-					@Override
-					public void onDisconnect(@NonNull WebExtension.Port port) {
-						if(extension != null) ports.remove(extension, port);
-						Log.i(TAG, "Disconnected port! " + port.name);
-					}
-
-					@Override
-					public void onPortMessage(@NonNull Object message, @NonNull WebExtension.Port port) {
-						if(!port.name.equals("scrollix")) return;
-
-						try {
-							if(message instanceof JSONObject json) {
-								switch(json.getString("action")) {
-									case "get-settings" -> {
-										var settings = new JSONObject(FileUtil.readAssetsString("settings.json"));
-
-										var result = new JSONObject()
-												.put("action", "retrieve-settings")
-												.put("value", settings);
-
-										port.postMessage(result);
-									}
-
-									case "get-downloads" -> {
-										var result = new JSONObject()
-												.put("action", "retrieve-downloads")
-												.put("value", new JSONArray());
-
-										port.postMessage(result);
-									}
-
-									default -> Log.e(TAG, "Unknown action! " + json.getString("action"));
-								}
-							}
-						} catch(JSONException e) {
-							e.printStackTrace();
-						}
-					}
-				});
+				port.setDelegate(portDelegate);
 			}
 
 			@Nullable
