@@ -9,6 +9,7 @@ import com.mrboomdev.scrollix.util.callback.Callback1;
 import com.mrboomdev.scrollix.util.callback.CallbackController;
 import com.mrboomdev.scrollix.util.callback.CallbackWithError;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
+import com.squareup.moshi.Json;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -85,10 +86,15 @@ public interface SearchEngine {
 	}
 
 	enum Preset {
+		@Json(name = "google")
 		GOOGLE(new GoogleSearch()),
+		@Json(name = "duckduckgo")
 		DUCKDUCKGO(null),
+		@Json(name = "yandex")
 		YANDEX(new YandexSearch()),
+		@Json(name = "bing")
 		BING(null),
+		@Json(name = "startpage")
 		STARTPAGE(null);
 
 		private final SearchEngine engine;

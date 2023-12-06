@@ -142,9 +142,7 @@ public class SearchBarWidget extends LinearLayout {
 			return;
 		}
 
-		titleView.setText(AppManager.settings.urlFormatRules.parseSearchQuery ?
-				SearchEngine.parseQueryAll(url)
-				: url);
+		titleView.setText(SearchEngine.parseQueryAll(url));
 	}
 
 	public void setTitle(String title) {

@@ -5,6 +5,7 @@ import androidx.annotation.NonNull;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabAdapter;
+import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 import com.squareup.moshi.Json;
 import com.squareup.moshi.Moshi;
@@ -21,12 +22,20 @@ public record DataProfile(
 		AppSettings settings
 ) {
 
+	@NonNull
 	public static DataProfile restoreAsLocal(String json) throws UnexpectedBehaviourException {
 		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).build();
 		var adapter = moshi.adapter(DataProfile.class).lenient();
 
 		try {
-			return adapter.fromJson(json);
+			var profile = adapter.fromJson(json);
+
+			if(profile == null) {
+				throw new UnexpectedBehaviourException("Profile is null!");
+			}
+
+			profile.settings.fillNullValues();
+			return profile;
 		} catch(IOException e) {
 			throw new UnexpectedBehaviourException("Failed to load a profile!", e);
 		}
@@ -46,12 +55,20 @@ public record DataProfile(
 		return adapter.toJson(this);
 	}
 
+	@NonNull
 	public static DataProfile restoreAsExternal(String json) throws UnexpectedBehaviourException {
 		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).build();
 		var adapter = moshi.adapter(DataProfile.class).lenient();
 
 		try {
-			return adapter.fromJson(json);
+			var profile = adapter.fromJson(json);
+
+			if(profile == null) {
+				throw new UnexpectedBehaviourException("Profile is null!");
+			}
+
+			profile.settings.fillNullValues();
+			return profile;
 		} catch(IOException e) {
 			throw new UnexpectedBehaviourException("Failed to import a profile!", e);
 		}
@@ -63,7 +80,8 @@ public record DataProfile(
 		List<Tab> tabs = new ArrayList<>();
 		tabs.add(new Tab(true));
 
-		return new DataProfile(tabs, 0, new AppSettings());
+		var settingsJson = FileUtil.readAssetsString(AppSettings.DEFAULT_SETTINGS_PATH);
+		return new DataProfile(tabs, 0, AppSettings.fromString(settingsJson));
 	}
 
 	public record SavedTab(List<SavedHistoryItem> history, int currentHistoryItem, String extra) {}

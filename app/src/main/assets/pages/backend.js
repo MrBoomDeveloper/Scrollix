@@ -21,6 +21,3 @@ window.scrollix = {
         alert("Successfully saved!");
     }
 };
-
-
-

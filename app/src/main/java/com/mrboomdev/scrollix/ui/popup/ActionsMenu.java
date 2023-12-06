@@ -76,7 +76,7 @@ public class ActionsMenu {
 			var additional = new LinearLayout(context);
 			additional.setOrientation(LinearLayout.HORIZONTAL);
 
-			for(var item : AppManager.settings.menuActions) {
+			for(var item : AppManager.settings.sideActions) {
 				var view = createActionButton(item, theme);
 				additional.addView(view, Formats.BIG_ELEMENT, Formats.BIG_ELEMENT);
 			}

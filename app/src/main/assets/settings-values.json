@@ -1,0 +1,33 @@
+{
+	"search_engine_autocompletion": true,
+	"search_history_autocompletion": true,
+	"search_engine": "google",
+
+	"collapse_bars": true,
+	"use_layout_color_from_page": true,
+
+	"keep_tabs": true,
+	"keep_history": true,
+	"open_external_apps": "always",
+
+	"allow_debugging": false,
+	"devtools": false,
+	
+	"left_actions": [ "home" ],
+	"right_actions": [ "back", "next", "tabs", "menu" ],
+	"side_actions": [ "history", "bookmarks", "downloads", "extensions", "settings" ],
+	"menu_actions": [ "find", "desktop", "bookmark", "night", "save", "print", "share" ],
+
+	"context_preview": true,
+	"context_menu": [
+		"link_new_tab", "link_background", "link_incognito", "share_link", "copy_link",
+		"file_new_tab", "file_background", "share_image", "copy_image_link", "file_download", "file_external"
+	],
+
+	"url_format_rules": {
+		"remove_protocol": true,
+		"remove_www": true,
+		"remove_hash": true,
+		"remove_parameters": false
+	}
+}

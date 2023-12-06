@@ -12,6 +12,7 @@ import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.mozilla.geckoview.GeckoResult;
@@ -69,7 +70,35 @@ public class ExtensionDelegator {
 
 					@Override
 					public void onPortMessage(@NonNull Object message, @NonNull WebExtension.Port port) {
-						Log.i(TAG, "Port message: " + message);
+						if(!port.name.equals("scrollix")) return;
+
+						try {
+							if(message instanceof JSONObject json) {
+								switch(json.getString("action")) {
+									case "get-settings" -> {
+										var settings = new JSONObject(FileUtil.readAssetsString("settings.json"));
+
+										var result = new JSONObject()
+												.put("action", "retrieve-settings")
+												.put("value", settings);
+
+										port.postMessage(result);
+									}
+
+									case "get-downloads" -> {
+										var result = new JSONObject()
+												.put("action", "retrieve-downloads")
+												.put("value", new JSONArray());
+
+										port.postMessage(result);
+									}
+
+									default -> Log.e(TAG, "Unknown action! " + json.getString("action"));
+								}
+							}
+						} catch(JSONException e) {
+							e.printStackTrace();
+						}
 					}
 				});
 			}
@@ -88,12 +117,6 @@ public class ExtensionDelegator {
 								var search = AppManager.getMainActivityContext().searchLayout;
 								search.show();
 								search.editText.setText("");
-							}
-
-							case "get-settings" -> {
-								System.out.println(FileUtil.readAssetsString("settings.json"));
-								var settings = new JSONObject(FileUtil.readAssetsString("settings.json"));
-								return GeckoResult.fromValue(settings);
 							}
 
 							default -> Log.e(TAG, "Unknown action: " + json.getString("action"));

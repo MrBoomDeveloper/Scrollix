@@ -10,7 +10,6 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -25,6 +24,8 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.splashscreen.SplashScreen;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mrboomdev.scrollix.R;
@@ -54,7 +55,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
 	private View backButton, forwardButton;
-	private boolean isFullscreen;
+	private boolean isFullscreen, wasPausedDuringFullscreen;
 
 	@Override
 	protected void onSaveInstanceState(@NonNull Bundle outState) {
@@ -108,6 +109,11 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 		searchLayout.setLaunchLinkListener(url -> TabManager.getCurrentTab().loadUrl(url));
 		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
+
+		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+			getWindow().getAttributes().layoutInDisplayCutoutMode =
+					WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+		}
 	}
 
 	@Override
@@ -161,35 +167,35 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		if(tab != TabManager.getCurrentTab()) return;
 		this.isFullscreen = isFullscreen;
 
-		ConstraintLayout parent = findViewById(R.id.main_screen_parent);
-		parent.setFitsSystemWindows(isFullscreen);
+		var insets = new WindowInsetsControllerCompat(getWindow(), findViewById(R.id.main_screen_parent));
+		var toggleableInsets = WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.systemBars();
 
-		//TODO: Fix notch still being shown...
+		if(!isFullscreen) {
+			insets.show(toggleableInsets);
 
-		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-			var insets = getWindow().getInsetsController();
-			var type = WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout();
-
-			if(insets != null) {
-				if(isFullscreen) insets.hide(type);
-				else insets.show(type);
+			if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+				getWindow().clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
 			}
 
-			getWindow().getAttributes().layoutInDisplayCutoutMode = isFullscreen
-					? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-					: WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+			updateBarsVisibility();
 
-			getWindow().setDecorFitsSystemWindows(isFullscreen);
+			if(wasPausedDuringFullscreen) {
+				wasPausedDuringFullscreen = false;
 
+				onTabFullscreenToggle(tab, true);
+				onTabFullscreenToggle(tab, false);
+			}
 
-		} else {
-			var fullscreenFlag = WindowManager.LayoutParams.FLAG_FULLSCREEN;// | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
-			var window = getWindow();
-
-			if(isFullscreen) window.setFlags(fullscreenFlag, fullscreenFlag);
-			else window.clearFlags(fullscreenFlag);
+			return;
 		}
 
+		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+			getWindow().setFlags(
+					WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+					WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+		}
+
+		insets.hide(toggleableInsets);
 		updateBarsVisibility();
 	}
 
@@ -226,7 +232,9 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 
 	@Override
 	protected void onPause() {
+		wasPausedDuringFullscreen = true;
 		AppManager.saveState();
+
 		super.onPause();
 	}
 
@@ -281,10 +289,10 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			(isLandscape ? topbar : bottombar).addView(view, params);
 		}
 
-		if(isLandscape && !AppManager.settings.menuActions.isEmpty()) {
+		if(isLandscape && !AppManager.settings.sideActions.isEmpty()) {
 			sidebar.setVisibility(View.VISIBLE);
 
-			for(var item : AppManager.settings.menuActions) {
+			for(var item : AppManager.settings.sideActions) {
 				var view = createActionButton(item, theme);
 
 				int size = FormatUtil.getDip(34);
@@ -348,6 +356,12 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 			case "downloads" -> icon = setUrlAction(button, R.drawable.ic_download_black, EngineInternal.Link.DOWNLOADS);
 			case "history" -> icon = setUrlAction(button, R.drawable.ic_history_black, EngineInternal.Link.HISTORY);
 			case "bookmarks" -> icon = setUrlAction(button, R.drawable.ic_star_black, EngineInternal.Link.BOOKMARKS);
+
+			case "extensions" -> {
+				icon = R.drawable.ic_extension_black;
+				button.setScaleX(.9f);
+				button.setScaleY(.9f);
+			}
 
 			case "back" -> {
 				icon = R.drawable.ic_back_black;

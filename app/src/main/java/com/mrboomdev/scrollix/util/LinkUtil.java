@@ -2,7 +2,6 @@ package com.mrboomdev.scrollix.util;
 
 import androidx.annotation.NonNull;
 
-import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 
 import org.jetbrains.annotations.Contract;
@@ -111,8 +110,9 @@ public class LinkUtil {
 		return name;
 	}
 
-	public static String formatInputUrl(String url) {
-		if(AppManager.settings.urlFormatRules.replaceScrollix && url.startsWith(SCROLLIX_PAGES)) {
+	@NonNull
+	public static String formatInputUrl(@NonNull String url) {
+		if(url.startsWith(SCROLLIX_PAGES)) {
 			var shortenUrl = url.substring(SCROLLIX_PAGES.length());
 
 			for(var link : ScrollixUrls.values()) {

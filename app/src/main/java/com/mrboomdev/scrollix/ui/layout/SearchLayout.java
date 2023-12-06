@@ -131,10 +131,7 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 	public void show() {
 		setVisibility(VISIBLE, false);
 
-		var url = AppManager.settings.urlFormatRules.parseSearchQuery ?
-				SearchEngine.parseQueryAll(this.url)
-				: this.url;
-
+		var url = SearchEngine.parseQueryAll(this.url);
 		editText.setText(this.url.equals(url) ? LinkUtil.formatInputUrl(url) : url);
 
 		isOpened = true;

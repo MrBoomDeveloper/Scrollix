@@ -83,9 +83,17 @@ public class Tab {
 		if(session.isOpen()) return;
 		session.open(TabManager.runtime);
 
-		if(!didRestoreState) {
-			ExtensionManager.getUiExtensionPageUrl("pages/home.html", this::loadUrl);
-		}
+		openHomePage();
+	}
+
+	private void openHomePage() {
+		if(this.didRestoreState || this.url != null) return;
+
+		ExtensionManager.getUiExtensionPageUrl("pages/home.html", url -> {
+			if(this.didRestoreState || this.url != null) return;
+
+			loadUrl(url);
+		});
 	}
 
 	public GeckoSession.SessionState getState() {

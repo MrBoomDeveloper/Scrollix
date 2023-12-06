@@ -1,34 +1,70 @@
 {
-	"title": "Settings", "type": "section", "items": {
-		"theme": { "title": "Theme", "type": "section", "items": {
-			"header": { "type": "special", "subtype": "theming-header" },
-			"pick": { "title": "Add from Storage", "id": "pick-theme", "type": "action" }
-		} },
+	"title": "Settings", "type": "section", "items": [
+		{ "title": "Theme", "type": "section", "items": [
+			{ "type": "special", "subtype": "theming-header" },
+			{ "title": "Use page color for browser", "type": "toggle", "id": "use_layout_color_from_page" }
+		] },
 
-		"customization": { "title": "Customization", "type": "section" },
-
-		"search": { "title": "Search", "type": "section", "items": {
-			"engine": { "title": "Search engine", "type": "ratio", "initial": "google", "items": {
-				"google": { "title": "Google" },
-				"bing": { "title": "Bing" },
-				"duck": { "title": "DuckDuckGo" },
-				"yandex": { "title": "Yandex" },
-				"yahoo": { "title": "Yahoo" }
-			} },
-
-			"autoCompletion": {
-				"title": "Auto completion",
-				"description": "Get quick search query suggestions while typing",
-				"type": "toggle",
-				"initial": true
+		{ "title": "Customization", "type": "section", "items": [
+			{
+				"title": "Collapse bars",
+				"description": "While scrolling navigation bars will collapse and expand.",
+				"id": "collapse_bars", "type": "toggle"
+			}, {
+				"title": "Left actions",
+				"descriptions": "If topbar is here, they'll appear in it, or else in the bottombar.",
+				"type": "action",
+				"id": "customize_left_actions"
+			}, {
+				"title": "Right actions",
+				"descriptions": "If topbar is here, they'll appear in it, or else in the bottombar.",
+				"type": "action",
+				"id": "customize_right_actions"
+			}, {
+				"title": "Side actions",
+				"descriptions": "If sidebar is here, they'll appear in it, or else in the popup menu.",
+				"type": "action",
+				"id": "customize_side_actions"
+			}, {
+				"title": "Popup actions",
+				"descriptions": "They'll appear in the popup menu",
+				"type": "action",
+				"id": "customize_menu_actions"
 			}
-		} },
+		] },
 
-		"security": { "title": "Security", "type": "section" },
+		{ "title": "Search", "type": "section", "items": [
+			{ "title": "Search engine", "type": "ratio", "id": "search_engine", "items": [
+				{ "title": "Google", "value": "google" },
+				{ "title": "Bing", "value": "bing" },
+				{ "title": "DuckDuckGo", "value": "duckduckgo" },
+				{ "title": "Yandex", "value": "yandex" },
+				{ "title": "Yahoo", "value": "yahoo" }
+			] }, {
+				"title": "Search engine auto completion",
+				"description": "Get quick search query suggestions while typing from a selected search engine.",
+				"id": "search_engine_autocompletion",
+				"type": "toggle"
+			}, {
+				"title": "Search history auto completion",
+				"description": "Get search suggestions from history",
+				"id": "search_history_autocompletion",
+				"type": "toggle"
+			}
+		] },
 
-		"about": { "title": "About", "type": "section", "items": {
-			"madeBy": { "title": "Made by", "description": "MrBoomDev in 2023" },
-			"version": { "title": "Version", "description": "1.0.2" }
-		} }
-	}
+		{ "title": "Security", "type": "section" },
+
+		{ "title": "Saved", "type": "section", "values": [
+			{ "title": "Clear cache", "type": "action", "id": "clear_cache", "description": "$APP_SIZE_CACHE" },
+			{ "title": "Clear history", "type": "action", "id": "clear_history", "description": "$APP_SIZE_HISTORY" },
+			{ "title": "Clear forms data", "type": "action", "id": "clear_forms", "description": "$APP_SIZE_FORMS" },
+			{ "title": "Clear cookies", "type": "action", "id": "clear_cookies", "description": "$APP_SIZE_COOKIES" }
+		] },
+
+		{ "title": "About", "type": "section", "items": [
+			{ "title": "Made by", "description": "MrBoomDev in $APP_BUILD_YEAR" },
+			{ "title": "Version", "description": "$APP_BUILD_VERSION" }
+		] }
+	]
 }
