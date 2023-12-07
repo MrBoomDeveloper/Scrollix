@@ -25,45 +25,6 @@ public class Tab {
 		if(!lateInit) init();
 	}
 
-	public void setIsError(boolean isError) {
-		this.isError = isError;
-	}
-
-	public boolean isError() {
-		return isError;
-	}
-
-	public void setTitle(String title) {
-		if(title == null || title.isBlank()) return;
-		this.title = title;
-	}
-
-	protected void setUrl(@NonNull String url) {
-		if(url.startsWith("intent://")) return;
-
-		if(!url.equals(this.url)) {
-			this.title = url;
-		}
-
-		this.url = url;
-	}
-
-	public void applySettings() {
-		var settings = session.getSettings();
-
-		settings.setAllowJavascript(true);
-		settings.setDisplayMode(GeckoSessionSettings.DISPLAY_MODE_BROWSER);
-		settings.setSuspendMediaWhenInactive(true);
-		settings.setUseTrackingProtection(true);
-
-		settings.setUserAgentOverride(LinkUtil.UserAgent.CHROME_MOBILE.getUserAgentText());
-	}
-
-	public void applyDelegators() {
-		var delegator = new TabDelegator(this);
-		delegator.register();
-	}
-
 	public Tab(String url) {
 		this(url, false);
 	}
@@ -86,14 +47,65 @@ public class Tab {
 		openHomePage();
 	}
 
-	private void openHomePage() {
-		if(this.didRestoreState || this.url != null) return;
+	private void openHomePage(String url) {
+		if((this.didRestoreState || this.url != null) && !"about:blank".equals(this.url)) return;
 
-		ExtensionManager.getUiExtensionPageUrl("pages/home.html", url -> {
-			if(this.didRestoreState || this.url != null) return;
-
+		if(url != null) {
 			loadUrl(url);
-		});
+			return;
+		}
+
+		ExtensionManager.getUiExtensionPageUrl("pages/home.html", this::openHomePage);
+	}
+
+	private void openHomePage() {
+		openHomePage(null);
+	}
+
+	public void setIsError(boolean isError) {
+		this.isError = isError;
+	}
+
+	public boolean isError() {
+		return isError;
+	}
+
+	public void setTitle(String title) {
+		if(title == null || title.isBlank()) return;
+		this.title = title;
+	}
+
+	protected void setUrl(@NonNull String url) {
+		if(url.startsWith("intent://")) {
+			if(this.url == null) {
+				this.title = url;
+				this.url = url;
+			}
+
+			return;
+		}
+
+		if(!url.equals(this.url)) {
+			this.title = url;
+		}
+
+		this.url = url;
+	}
+
+	public void applySettings() {
+		var settings = session.getSettings();
+
+		settings.setAllowJavascript(true);
+		settings.setDisplayMode(GeckoSessionSettings.DISPLAY_MODE_BROWSER);
+		settings.setSuspendMediaWhenInactive(true);
+		settings.setUseTrackingProtection(true);
+
+		settings.setUserAgentOverride(LinkUtil.UserAgent.CHROME_MOBILE.getUserAgentText());
+	}
+
+	public void applyDelegators() {
+		var delegator = new TabDelegator(this);
+		delegator.register();
 	}
 
 	public GeckoSession.SessionState getState() {

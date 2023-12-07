@@ -66,16 +66,13 @@ dependencies {
     implementation "androidx.core:core-splashscreen:1.0.1"
 
     implementation "com.squareup.moshi:moshi:1.15.0"
-
     implementation "com.squareup.okhttp3:okhttp:4.9.2"
-    implementation "com.nostra13.universalimageloader:universal-image-loader:1.9.5"
 
-    implementation "com.liulishuo.okdownload:okdownload:1.0.7"
-    implementation "com.liulishuo.okdownload:sqlite:1.0.7"
-    implementation "com.liulishuo.okdownload:okhttp:1.0.7"
+    implementation "com.nostra13.universalimageloader:universal-image-loader:1.9.5"
+    implementation "jp.wasabeef:recyclerview-animators:4.0.2"
 
     geckoImplementation "org.mozilla.geckoview:geckoview-nightly:121.0.20231112094805"
-    chromiumImplementation "androidx.webkit:webkit:1.8.0"
+    chromiumImplementation "androidx.webkit:webkit:1.9.0"
 
     testImplementation "junit:junit:4.13.2"
     androidTestImplementation "androidx.test.ext:junit:1.1.5"

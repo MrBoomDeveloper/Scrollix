@@ -11,7 +11,7 @@ import java.util.List;
 
 public class FormatUtil {
 
-	public static int getDip(int value) {
+	public static int getDip(float value) {
 		return (int)getResponsiveValue(value, Dimension.DIP);
 	}
 
@@ -20,10 +20,8 @@ public class FormatUtil {
 	}
 
 	@NonNull
-	public static int[] getDip(@NonNull int ...values) {
+	public static int[] getDip(@NonNull float ...values) {
 		var newArray = new int[values.length];
-
-		System.arraycopy(values, 0, newArray, 0, values.length);
 
 		for(int i = 0; i < values.length; i++) {
 			newArray[i] = (int)getResponsiveValue(values[i], Dimension.DIP);
@@ -50,10 +48,8 @@ public class FormatUtil {
 	}
 
 	@NonNull
-	public static int[] getSp(@NonNull int ...values) {
+	public static int[] getSp(@NonNull float ...values) {
 		var newArray = new int[values.length];
-
-		System.arraycopy(values, 0, newArray, 0, values.length);
 
 		for(int i = 0; i < values.length; i++) {
 			newArray[i] = (int)getResponsiveValue(values[i], Dimension.SP);
@@ -62,7 +58,7 @@ public class FormatUtil {
 		return newArray;
 	}
 
-	public static int getSp(int value) {
+	public static int getSp(float value) {
 		return (int)getResponsiveValue(value, Dimension.SP);
 	}
 

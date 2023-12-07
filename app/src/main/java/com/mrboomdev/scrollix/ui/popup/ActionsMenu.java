@@ -23,6 +23,7 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
+import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
@@ -72,7 +73,7 @@ public class ActionsMenu {
 		FormatUtil.setPadding(grid, Formats.NORMAL_PADDING);
 		actionsMenuView.addView(grid, Formats.MATCH_PARENT, Formats.MATCH_PARENT);
 
-		if(!AppManager.isLandscape()) {
+		if(!AppUtils.isLandscape()) {
 			var additional = new LinearLayout(context);
 			additional.setOrientation(LinearLayout.HORIZONTAL);
 
@@ -143,7 +144,7 @@ public class ActionsMenu {
 	}
 
 	public void showAt(View view) {
-		boolean isLandscape = AppManager.isLandscape();
+		boolean isLandscape = AppUtils.isLandscape();
 
 		background.setCornerRadius(isLandscape ? Formats.SMALL_POPUP_RADIUS : 0);
 		actionsMenuView.setBackground(background.build());
@@ -207,11 +208,11 @@ public class ActionsMenu {
 			FormatUtil.setPadding(view, Formats.NORMAL_PADDING);
 
 			icon = new ImageView(context);
-			view.addView(icon, Formats.SMALL_ELEMENT, Formats.SMALL_ELEMENT);
+			view.addView(icon, Formats.TINY_ELEMENT, Formats.TINY_ELEMENT);
 
 			title = new TextView(context);
 			title.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-			title.setTextSize(Formats.SMALL_TEXT);
+			title.setTextSize(Formats.TINY_TEXT);
 			view.addView(title);
 		}
 

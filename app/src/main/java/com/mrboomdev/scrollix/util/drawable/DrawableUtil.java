@@ -10,10 +10,12 @@ import android.graphics.drawable.RippleDrawable;
 import androidx.annotation.ColorInt;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Size;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 
 import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.util.AppUtils;
 
 import org.jetbrains.annotations.Contract;
 
@@ -24,18 +26,26 @@ import java.io.IOException;
 public class DrawableUtil {
 
 	@NonNull
-	public static RippleDrawable createRippleDrawable(@ColorInt int backgroundColor, @ColorInt int foregroundColor, int radius) {
+	public static RippleDrawable createRippleDrawable(
+			@ColorInt int backgroundColor,
+			@ColorInt int foregroundColor,
+			int radius
+	) {
 		var mask = createDrawable(foregroundColor, radius);
 		return new RippleDrawable(ColorStateList.valueOf(backgroundColor), null, mask);
 	}
 
 	@NonNull
-	public static RippleDrawable createRippleDrawable(String backgroundColor, String foregroundColor, int radius) {
+	public static RippleDrawable createRippleDrawable(
+			@Size(min = 3) String backgroundColor,
+			@Size(min = 3) String foregroundColor,
+			int radius
+	) {
 		return createRippleDrawable(Color.parseColor(backgroundColor), Color.parseColor(foregroundColor), radius);
 	}
 
 	@NonNull
-	public static RippleDrawable createRippleDrawable(String color, int radius) {
+	public static RippleDrawable createRippleDrawable(@Size(min = 3) String color, int radius) {
 		int intColor = Color.parseColor(color);
 		return createRippleDrawable(intColor, intColor, radius);
 	}
@@ -51,7 +61,7 @@ public class DrawableUtil {
 	}
 
 	@NonNull
-	public static GradientDrawable createDrawable(String color, int cornerRadius) {
+	public static GradientDrawable createDrawable(@Size(min = 3) String color, int cornerRadius) {
 		return createDrawable(Color.parseColor(color), cornerRadius);
 	}
 
@@ -64,7 +74,7 @@ public class DrawableUtil {
 	@Contract("_ -> new")
 	public static Drawable readDrawable(File file) {
 		try(var stream = new FileInputStream(file)) {
-			return new BitmapDrawable(AppManager.getAppContext().getResources(), stream);
+			return new BitmapDrawable(AppUtils.getResources(), stream);
 		} catch(IOException e) {
 			throw new RuntimeException("Failed to read a bitmap!", e);
 		}
@@ -98,7 +108,7 @@ public class DrawableUtil {
 	}
 
 	@NonNull
-	public static Drawable getDrawable(@DrawableRes int id, String color) {
+	public static Drawable getDrawable(@DrawableRes int id, @Size(min = 3) String color) {
 		return getDrawable(id, Color.parseColor(color));
 	}
 

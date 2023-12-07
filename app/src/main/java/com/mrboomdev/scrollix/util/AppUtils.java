@@ -3,9 +3,29 @@ package com.mrboomdev.scrollix.util;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.os.Handler;
 
 import com.mrboomdev.scrollix.app.AppManager;
-public class AndroidUtil {
+
+public class AppUtils {
+
+	public static Resources getResources() {
+		return AppManager.getActivityContext().getResources();
+	}
+
+	public static void runOnUiThread(Runnable runnable) {
+		AppManager.getActivityContext().runOnUiThread(runnable);
+	}
+
+	public static Configuration getConfiguration() {
+		return AppManager.getAppContext().getResources().getConfiguration();
+	}
+
+	public static boolean isLandscape() {
+		return getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+	}
 
 	public static void copyToClipboard(String text) {
 		var context = AppManager.getAppContext();
@@ -13,6 +33,10 @@ public class AndroidUtil {
 
 		var clipData = ClipData.newPlainText(text, text);
 		manager.setPrimaryClip(clipData);
+	}
+
+	public static void setTimeout(Runnable runnable, long duration) {
+		new Handler().postDelayed(runnable, duration);
 	}
 
 	public static void share(String title, String text) {

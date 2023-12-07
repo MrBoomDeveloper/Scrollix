@@ -42,6 +42,7 @@ import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.popup.ActionsMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
+import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
@@ -128,8 +129,8 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	public void onTabFocused(@NonNull Tab tab) {
 		if(tab != TabManager.getCurrentTab()) return;
 
-		searchBar.setUrl(tab.getUrl());
-		searchLayout.setUrl(tab.getUrl());
+		if(searchBar != null) searchBar.setUrl(tab.getUrl());
+		if(searchLayout != null) searchLayout.setUrl(tab.getUrl());
 	}
 
 	@Override
@@ -276,7 +277,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		bottombar.setBackgroundColor(barsColor);
 		sidebar.setBackgroundColor(barsColor);
 
-		boolean isLandscape = AppManager.isLandscape();
+		boolean isLandscape = AppUtils.isLandscape();
 
 		for(var item : AppManager.settings.leftActions) {
 			var view = createActionButton(item, theme);
@@ -340,14 +341,14 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		var button = new ImageView(this);
 
 		var buttonRipple = DrawableUtil.getDrawable(
-				AppManager.isLandscape() ? R.drawable.ripple_circle : R.drawable.ripple_square);
+				AppUtils.isLandscape() ? R.drawable.ripple_circle : R.drawable.ripple_square);
 
 		button.setOnClickListener(view -> {
 			String message = "Unknown action, please check your settings!";
 			Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
 		});
 
-		int buttonPadding = FormatUtil.getDip(AppManager.isLandscape() ? 6 : 12);
+		int buttonPadding = FormatUtil.getDip(AppUtils.isLandscape() ? 6 : 12);
 		button.setPadding(buttonPadding, buttonPadding, buttonPadding, buttonPadding);
 
 		switch(name) {

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:minWidth="48dp"
+    android:minHeight="48dp"
+    android:resizeMode="horizontal|vertical"
+    android:previewLayout="@layout/search_widget"
+    android:configure="com.mrboomdev.scrollix.app.widgets.SearchWidgetSettings"
+    android:initialLayout="@layout/search_widget"
+    android:widgetFeatures="configuration_optional|reconfigurable"
+    tools:targetApi="s">
+</appwidget-provider>

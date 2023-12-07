@@ -12,6 +12,7 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionDelegator;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.ui.BarsAnimator;
+import com.mrboomdev.scrollix.util.format.Formats;
 
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
@@ -60,6 +61,12 @@ public class TabManager {
 		currentTab = tab;
 
 		if(tryToInit) tab.init();
+		if(geckoView == null) return;
+
+		initForTab(tab);
+	}
+
+	private static void initForTab(@NonNull Tab tab) {
 		geckoView.setSession(tab.getSession());
 
 		for(var listener : listeners) {
@@ -86,7 +93,11 @@ public class TabManager {
 		geckoView.coverUntilFirstPaint(Color.parseColor(theme.background));
 
 		view.removeAllViews();
-		view.addView(geckoView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+		view.addView(geckoView, Formats.MATCH_PARENT, Formats.MATCH_PARENT);
+
+		if(currentTab != null) {
+			initForTab(currentTab);
+		}
 	}
 
 	public static void startup() {

@@ -11,6 +11,7 @@ import com.mrboomdev.scrollix.data.download.UserMadeDownload;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.util.AppUtils;
 
 import java.net.URISyntaxException;
 
@@ -45,8 +46,13 @@ public class IntentHandler {
 				DownloadManager.cancel(id);
 			}
 
+			case "open_search" -> AppUtils.setTimeout(() ->
+					AppManager.getMainActivityContext().searchLayout.show(), 1000);
+
 			case "open_download" -> openDownload(intent.getIntExtra("id", 0));
 		}
+
+		intent.putExtra("type", "");
 	}
 
 	private static void openDownload(int id) {

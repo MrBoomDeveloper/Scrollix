@@ -3,7 +3,6 @@ package com.mrboomdev.scrollix.app;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
-import android.content.res.Configuration;
 import android.os.Build;
 import android.util.Log;
 import android.webkit.WebView;
@@ -25,6 +24,7 @@ import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
@@ -63,6 +63,7 @@ public class AppManager {
 		if(extra != null) {
 			tab = TabStore.createTab(extra, true);
 			intent.setData(null);
+			getActivityContext().setIntent(null);
 		}
 
 		if(tab != null) {
@@ -72,26 +73,9 @@ public class AppManager {
 
 		tab = TabStore.getTab(profile == null ? 0 : profile.currentTab());
 
-		if(tab == null) {
-			TabStore.createTab(true);
-		} else {
+		if(tab != null) {
 			TabManager.setCurrentTab(tab);
 		}
-	}
-
-	public static void handleException(Throwable throwable) {
-		var context = getActivityContext();
-
-		context.runOnUiThread(() -> new DialogMenu(context)
-				.setCancelable(false)
-				.setTitle("App just crashed!")
-				.setDescription("Stacktrace: \n\n" + Log.getStackTraceString(throwable))
-				.addAction("Exit app", AppManager::closeApp)
-				.show());
-	}
-
-	public static void setupCrashHandler() {
-		Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> handleException(throwable));
 	}
 
 	public static void startup(MainActivity context) {
@@ -177,12 +161,19 @@ public class AppManager {
 		context.finishAffinity();
 	}
 
-	public static Configuration getConfiguration() {
-		return getAppContext().getResources().getConfiguration();
+	public static void handleException(Throwable throwable) {
+		var context = getActivityContext();
+
+		AppUtils.runOnUiThread(() -> new DialogMenu(context)
+				.setCancelable(false)
+				.setTitle("App just crashed!")
+				.setDescription("Stacktrace: \n\n" + Log.getStackTraceString(throwable))
+				.addAction("Exit app", AppManager::closeApp)
+				.show());
 	}
 
-	public static boolean isLandscape() {
-		return getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+	public static void setupCrashHandler() {
+		Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> handleException(throwable));
 	}
 
 	public static class ActivityCallbackLauncher {

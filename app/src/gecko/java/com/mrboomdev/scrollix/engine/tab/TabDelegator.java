@@ -13,7 +13,7 @@ import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
-import com.mrboomdev.scrollix.util.AndroidUtil;
+import com.mrboomdev.scrollix.util.AppUtils;
 
 import org.mozilla.geckoview.AllowOrDeny;
 import org.mozilla.geckoview.GeckoResult;
@@ -91,8 +91,8 @@ public class TabDelegator {
 						intent.setData(Uri.parse(element.linkUri));
 						context.startActivity(intent);
 					});
-					menu.addAction("Share link", () -> AndroidUtil.share("Share image link", element.linkUri));
-					menu.addAction("Copy link to clipboard", () -> AndroidUtil.copyToClipboard(element.linkUri));
+					menu.addAction("Share link", () -> AppUtils.share("Share link", element.linkUri));
+					menu.addAction("Copy link to clipboard", () -> AppUtils.copyToClipboard(element.linkUri));
 				}
 
 				switch(element.type) {
@@ -108,8 +108,8 @@ public class TabDelegator {
 							var download = new UserMadeDownload(element.srcUri);
 							download.start();
 						});
-						menu.addAction("Share image link", () -> AndroidUtil.share("Share image link", element.srcUri));
-						menu.addAction("Copy image link to clipboard", () -> AndroidUtil.copyToClipboard(element.srcUri));
+						menu.addAction("Share image link", () -> AppUtils.share("Share image link", element.srcUri));
+						menu.addAction("Copy image link to clipboard", () -> AppUtils.copyToClipboard(element.srcUri));
 					}
 
 					case ContextElement.TYPE_AUDIO -> {
@@ -124,8 +124,8 @@ public class TabDelegator {
 							var download = new UserMadeDownload(element.srcUri);
 							download.start();
 						});
-						menu.addAction("Share audio link", () -> AndroidUtil.share("Share image link", element.srcUri));
-						menu.addAction("Copy audio link to clipboard", () -> AndroidUtil.copyToClipboard(element.srcUri));
+						menu.addAction("Share audio link", () -> AppUtils.share("Share image link", element.srcUri));
+						menu.addAction("Copy audio link to clipboard", () -> AppUtils.copyToClipboard(element.srcUri));
 					}
 
 					case ContextElement.TYPE_VIDEO -> {
@@ -140,8 +140,8 @@ public class TabDelegator {
 							var download = new UserMadeDownload(element.srcUri);
 							download.start();
 						});
-						menu.addAction("Share video link", () -> AndroidUtil.share("Share image link", element.srcUri));
-						menu.addAction("Copy video link to clipboard", () -> AndroidUtil.copyToClipboard(element.srcUri));
+						menu.addAction("Share video link", () -> AppUtils.share("Share image link", element.srcUri));
+						menu.addAction("Copy video link to clipboard", () -> AppUtils.copyToClipboard(element.srcUri));
 					}
 
 					case ContextElement.TYPE_NONE -> {}

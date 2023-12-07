@@ -37,7 +37,7 @@ public class TabStore {
 		addTab(tab);
 
 		if(focus) {
-			TabManager.setCurrentTab(tab);
+			TabManager.setCurrentTab(tab, true);
 		}
 
 		return tab;
@@ -48,46 +48,41 @@ public class TabStore {
 		return createTab(null, focus);
 	}
 
-	public static void removeTab(Tab tab) {
-		boolean wasCurrent = TabManager.getCurrentTab() == tab;
-
-		tabs.remove(tab);
-		runModifierListeners();
-
-		if(wasCurrent) {
-			selectNearestTab(getTabIndex(tab));
-		}
-	}
-
 	public static void removeTab(int index) {
 		boolean wasCurrent = getTabIndex(TabManager.getCurrentTab()) == index;
-
-		tabs.remove(index);
-		runModifierListeners();
 
 		if(wasCurrent) {
 			selectNearestTab(index);
 		}
+
+		tabs.remove(index);
+		runModifierListeners();
+
+		//TODO: Use value from settings if user want to create a new tab or close app
+		doActionIfEmpty(true);
 	}
 
-	private static void selectNearestTab(int index, boolean exitIfEmpty) {
-		if(tabs.isEmpty()) {
+	public static void removeTab(Tab tab) {
+		var index = getTabIndex(tab);
+
+		if(index != -1) {
+			removeTab(index);
+		}
+	}
+
+	public static void doActionIfEmpty(boolean exitIfEmpty) {
+		if(isEmpty()) {
 			if(exitIfEmpty) AppManager.closeApp();
-			//createTab(true);
-			return;
+			else createTab(true);
 		}
-
-		var nearestTab = getNearestTab(index);
-		if(nearestTab != null) {
-			TabManager.setCurrentTab(nearestTab);
-			return;
-		}
-
-		TabManager.setCurrentTab(tabs.get(0));
 	}
 
 	private static void selectNearestTab(int index) {
-		selectNearestTab(index, true);
+		var nearestTab = getNearestTab(index);
+		if(nearestTab == null) nearestTab = getTab(0);
+		if(nearestTab == null) return;
+
+		TabManager.setCurrentTab(nearestTab);
 	}
 
 	public static Tab getNearestTab(int index) {
@@ -100,11 +95,8 @@ public class TabStore {
 	@Nullable
 	@Contract(pure = true)
 	public static Tab getTab(int index) {
-		try {
-			return tabs.get(index);
-		} catch(IndexOutOfBoundsException e) {
-			return null;
-		}
+		if(index >= tabs.size() || index < 0) return null;
+		return tabs.get(index);
 	}
 
 	public static int getTabIndex(Tab tab) {
@@ -124,24 +116,24 @@ public class TabStore {
 		return tabs.isEmpty();
 	}
 
-	public static void clearTabs(boolean exitIfEmpty) {
+	public static void clearTabs() {
 		for(var tab : tabs) {
 			tab.dispose();
 		}
 
 		tabs.clear();
 		runModifierListeners();
-		selectNearestTab(-1, exitIfEmpty);
-	}
-
-	public static void clearTabs() {
-		clearTabs(true);
 	}
 
 	public static void setTabs(List<Tab> newTabs) {
-		clearTabs(false);
+		clearTabs();
 		tabs.addAll(newTabs);
+
+		if(newTabs.isEmpty()) createTab(true);
+		else TabManager.setCurrentTab(newTabs.get(0));
+
 		runModifierListeners();
+		doActionIfEmpty(false);
 	}
 
 	private static void runModifierListeners() {

@@ -18,13 +18,14 @@ import androidx.core.content.res.ResourcesCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
 
 import com.mrboomdev.scrollix.R;
-import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
+import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
+import com.mrboomdev.scrollix.util.format.Formats;
 
 import java.util.Objects;
 
@@ -41,16 +42,12 @@ public class SearchBarWidget extends LinearLayout {
 	public SearchBarWidget(Context context, @NonNull ThemeSettings theme) {
 		super(context);
 
-		var params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT);
+		var params = new LinearLayout.LayoutParams(0, Formats.WRAP_CONTENT);
 		params.weight = 1;
 		setLayoutParams(params);
 
 		primaryColor = Color.parseColor(theme.barsOverlay);
-
-		var circleRipple = ResourcesCompat.getDrawable(
-				getResources(),
-				R.drawable.ripple_circle,
-				context.getTheme());
+		var circleRipple = DrawableUtil.getDrawable(R.drawable.ripple_circle);
 
 		var styledHolder = new LinearLayout(context);
 		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
@@ -59,21 +56,17 @@ public class SearchBarWidget extends LinearLayout {
 		var background = DrawableUtil.getDrawable(R.drawable.search_input_background, theme.barsInner);
 		styledHolder.setBackground(background);
 
-		boolean isLandscape = AppManager.isLandscape();
-		var styledHolderPadding = FormatUtil.getDip(isLandscape ? 10 : 8, isLandscape ? 2 : 4);
-		var styledHolderMargin = FormatUtil.getDip(isLandscape ? 8 : 10, isLandscape ? 6 : 8);
+		boolean isLandscape = AppUtils.isLandscape();
+		var holderPadding = FormatUtil.getDip(isLandscape ? 10 : 8, isLandscape ? 2 : 4);
+		var holderMargin = FormatUtil.getDip(isLandscape ? 8 : 10, isLandscape ? 6 : 8);
 
-		styledHolder.setPadding(styledHolderPadding[0], styledHolderPadding[1], styledHolderPadding[0], styledHolderPadding[1]);
+		styledHolder.setPadding(holderPadding[0], holderPadding[1], holderPadding[0], holderPadding[1]);
 		addView(styledHolder, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(styledHolderMargin[0], styledHolderMargin[1], styledHolderMargin[0], styledHolderMargin[1]);
+		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(holderMargin[0], holderMargin[1], holderMargin[0], holderMargin[1]);
 
 		styledHolder.setClickable(true);
 		styledHolder.setFocusable(true);
-
-		styledHolder.setForeground(ResourcesCompat.getDrawable(
-				getResources(),
-				R.drawable.ripple_search,
-				context.getTheme()));
+		styledHolder.setForeground(DrawableUtil.getDrawable(R.drawable.ripple_search));
 
 		styledHolder.setOnClickListener(view -> {
 			if(clickListener != null) {
@@ -98,7 +91,7 @@ public class SearchBarWidget extends LinearLayout {
 		});
 
 		titleView = new TextView(context);
-		titleView.setTextSize(14);
+		titleView.setTextSize(Formats.SMALL_TEXT);
 		titleView.setTextColor(primaryColor);
 		titleView.setSingleLine(true);
 		titleView.setText(R.string.comment_search_something);

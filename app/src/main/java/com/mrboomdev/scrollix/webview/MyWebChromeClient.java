@@ -13,7 +13,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.permission.Permission;
 import com.mrboomdev.scrollix.app.permission.PermissionManager;
-import com.mrboomdev.scrollix.util.AndroidUtil;
+import com.mrboomdev.scrollix.util.AppUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,7 +43,7 @@ public class MyWebChromeClient extends WebChromeClient {
 					.setMessage("Sorry, but we don't know how to handle these permissions: \n" + unknownPermissions)
 					.setPositiveButton("Continue", (_dialog, _button) -> _dialog.cancel())
 					.setNegativeButton("Copy to clipboard", (_dialog, _button) -> {
-						AndroidUtil.copyToClipboard(unknownPermissions.toString());
+						AppUtils.copyToClipboard(unknownPermissions.toString());
 						_dialog.cancel();
 					})
 					.show();
@@ -97,20 +97,18 @@ public class MyWebChromeClient extends WebChromeClient {
 
 	@Override
 	public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
-		AppManager.getActivityContext().runOnUiThread(() -> {
-			new MaterialAlertDialogBuilder(view.getContext())
-					.setTitle("Url \"" + url + "\" says:")
-					.setMessage(message)
-					.setPositiveButton("Confirm", (_dialog, _button) -> {
-						result.confirm();
-						_dialog.cancel();
-					})
-					.setNegativeButton("Cancel", (_dialog, _button) -> {
-						result.cancel();
-						_dialog.cancel();
-					})
-					.show();
-		});
+		AppUtils.runOnUiThread(() -> new MaterialAlertDialogBuilder(view.getContext())
+				.setTitle("Url \"" + url + "\" says:")
+				.setMessage(message)
+				.setPositiveButton("Confirm", (_dialog, _button) -> {
+					result.confirm();
+					_dialog.cancel();
+				})
+				.setNegativeButton("Cancel", (_dialog, _button) -> {
+					result.cancel();
+					_dialog.cancel();
+				})
+				.show());
 
 		return true;
 	}

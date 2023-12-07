@@ -2,16 +2,17 @@ package com.mrboomdev.scrollix.ui.popup;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -23,8 +24,11 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.Tab;
+import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.util.AppUtils;
+import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
@@ -32,7 +36,9 @@ import com.mrboomdev.scrollix.util.format.Formats;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class TabsMenu {
+import jp.wasabeef.recyclerview.animators.SlideInLeftAnimator;
+
+public class TabsMenu implements TabListener {
 	private static final int LANDSCAPE_WIDTH = 300;
 	private final Context context;
 	private PopupWindow popup;
@@ -45,15 +51,17 @@ public class TabsMenu {
 
 	public void close() {
 		if(popup != null) popup.dismiss();
-		if(bottomSheet != null) bottomSheet.cancel();
+		if(bottomSheet != null) bottomSheet.dismiss();
 
 		popup = null;
 		bottomSheet = null;
+
+		TabManager.removeListener(this);
 	}
 
 	public void showAt(View showAtView) {
 		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
-		boolean isLandscape = AppManager.isLandscape();
+		boolean isLandscape = AppUtils.isLandscape();
 
 		var linear = new LinearLayout(context);
 		linear.setLayoutParams(new WindowManager.LayoutParams(Formats.MATCH_PARENT, Formats.WRAP_CONTENT));
@@ -63,10 +71,11 @@ public class TabsMenu {
 
 		var recycler = new RecyclerView(context);
 		recycler.setLayoutManager(new LinearLayoutManager(context));
-		recycler.setItemAnimator(new Animator());
 
 		adapter = new Adapter();
 		recycler.setAdapter(adapter);
+		recycler.setItemAnimator(new SlideInLeftAnimator(new AccelerateDecelerateInterpolator()));
+		TabManager.addListener(this);
 
 		var touchHelper = new ItemTouchHelper(new SwipeCallback());
 		touchHelper.attachToRecyclerView(recycler);
@@ -89,6 +98,8 @@ public class TabsMenu {
 			close();
 		});
 
+		close();
+
 		if(isLandscape) {
 			popup = new PopupWindow(linear, FormatUtil.getDip(LANDSCAPE_WIDTH), Formats.WRAP_CONTENT);
 			popup.setFocusable(true);
@@ -101,13 +112,28 @@ public class TabsMenu {
 		}
 	}
 
+	@Override
+	public void onTabGotTitle(Tab tab, String title) {
+		adapter.notifyItemChanged(TabStore.getTabIndex(tab));
+	}
+
+	@Override
+	public void onTabLoadingFinished(Tab tab) {
+		adapter.notifyItemChanged(TabStore.getTabIndex(tab));
+	}
+
+	@Override
+	public void onTabLoadingStarted(Tab tab) {
+		adapter.notifyItemChanged(TabStore.getTabIndex(tab));
+	}
+
 	private class Adapter extends RecyclerView.Adapter<Adapter.MyViewHolder> {
 
 		@NonNull
 		@Override
 		public MyViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
 			var linear = new LinearLayout(context);
-			var width = AppManager.isLandscape() ? FormatUtil.getDip(LANDSCAPE_WIDTH) : Formats.MATCH_PARENT;
+			var width = AppUtils.isLandscape() ? FormatUtil.getDip(LANDSCAPE_WIDTH) : Formats.MATCH_PARENT;
 			linear.setLayoutParams(new RecyclerView.LayoutParams(width, Formats.WRAP_CONTENT));
 			return new MyViewHolder(linear);
 		}
@@ -173,27 +199,43 @@ public class TabsMenu {
 		private class MyViewHolder extends RecyclerView.ViewHolder {
 			private final LinearLayout linear;
 			private final TextView title;
+			private final ImageView remove;
 
 			public MyViewHolder(LinearLayout parent) {
 				super(parent);
 
 				linear = new LinearLayout(context);
 				linear.setOrientation(LinearLayout.HORIZONTAL);
+				linear.setGravity(Gravity.CENTER_VERTICAL);
 				linear.setClickable(true);
 				linear.setFocusable(true);
 				linear.setBackgroundResource(R.drawable.ripple_square);
-				FormatUtil.setPadding(linear, Formats.BIG_PADDING);
+				linear.setPadding(Formats.BIG_PADDING, Formats.SMALL_PADDING, Formats.BIG_PADDING, Formats.SMALL_PADDING);
 
 				title = new TextView(context);
 				title.setSingleLine();
 				linear.addView(title);
+				((LinearLayout.LayoutParams)title.getLayoutParams()).weight = 1;
 
-				var width = AppManager.isLandscape() ? FormatUtil.getDip(LANDSCAPE_WIDTH) : Formats.MATCH_PARENT;
+				remove = new ImageView(context);
+				remove.setClickable(true);
+				remove.setFocusable(true);
+
+				remove.setForeground(new DrawableBuilder.RippleDrawableBuilder()
+						.setColor("#55ffffff")
+						.setShape(DrawableBuilder.Shape.OVAL)
+						.build());
+
+				remove.setImageDrawable(DrawableUtil.getDrawable(R.drawable.ic_close_black, "#eeeeee"));
+				linear.addView(remove, Formats.NORMAL_ELEMENT, Formats.NORMAL_ELEMENT);
+				FormatUtil.setPadding(remove, Formats.PADDING);
+
+				var width = AppUtils.isLandscape() ? FormatUtil.getDip(LANDSCAPE_WIDTH) : Formats.MATCH_PARENT;
 				parent.addView(linear, width, ViewGroup.LayoutParams.WRAP_CONTENT);
 			}
 
 			public void setTab(@NonNull Tab tab) {
-				title.setText(tab.getTitle());
+				title.setText(tab.getTitle() != null ? tab.getTitle() : tab.getUrl());
 
 				boolean isCurrent = tab == TabManager.getCurrentTab();
 				title.setTextColor(Color.parseColor(isCurrent ? "#ffffff" : "#bbaacc"));
@@ -202,50 +244,9 @@ public class TabsMenu {
 					TabManager.setCurrentTab(tab);
 					close();
 				});
+
+				remove.setOnClickListener(_view -> adapter.remove(TabStore.getTabIndex(tab)));
 			}
-		}
-	}
-
-	private static class Animator extends RecyclerView.ItemAnimator {
-
-		@Override
-		public boolean animateDisappearance(@NonNull RecyclerView.ViewHolder viewHolder, @NonNull ItemHolderInfo preLayoutInfo, @Nullable ItemHolderInfo postLayoutInfo) {
-			return false;
-		}
-
-		@Override
-		public boolean animateAppearance(@NonNull RecyclerView.ViewHolder viewHolder, @Nullable ItemHolderInfo preLayoutInfo, @NonNull ItemHolderInfo postLayoutInfo) {
-			return false;
-		}
-
-		@Override
-		public boolean animatePersistence(@NonNull RecyclerView.ViewHolder viewHolder, @NonNull ItemHolderInfo preLayoutInfo, @NonNull ItemHolderInfo postLayoutInfo) {
-			return false;
-		}
-
-		@Override
-		public boolean animateChange(@NonNull RecyclerView.ViewHolder oldHolder, @NonNull RecyclerView.ViewHolder newHolder, @NonNull ItemHolderInfo preLayoutInfo, @NonNull ItemHolderInfo postLayoutInfo) {
-			return false;
-		}
-
-		@Override
-		public void runPendingAnimations() {
-
-		}
-
-		@Override
-		public void endAnimation(@NonNull RecyclerView.ViewHolder item) {
-
-		}
-
-		@Override
-		public void endAnimations() {
-
-		}
-
-		@Override
-		public boolean isRunning() {
-			return false;
 		}
 	}
 

@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 
 import androidx.annotation.ColorInt;
+import androidx.annotation.Size;
 
 public abstract class DrawableBuilder {
 	protected int cornerRadius, strokeWidth, strokeColor;
@@ -31,7 +32,7 @@ public abstract class DrawableBuilder {
 		return this;
 	}
 
-	public DrawableBuilder setStroke(String color, int width) {
+	public DrawableBuilder setStroke(@Size(min = 3) String color, int width) {
 		this.strokeColor = Color.parseColor(color);
 		this.strokeWidth = width;
 		return this;
@@ -48,11 +49,11 @@ public abstract class DrawableBuilder {
 			this.color = color;
 		}
 
-		public ColorDrawableBuilder(String color) {
+		public ColorDrawableBuilder(@Size(min = 3) String color) {
 			this.color = Color.parseColor(color);
 		}
 
-		public ColorDrawableBuilder setColor(String color) {
+		public ColorDrawableBuilder setColor(@Size(min = 3) String color) {
 			this.color = Color.parseColor(color);
 			return this;
 		}
@@ -84,12 +85,12 @@ public abstract class DrawableBuilder {
 			return this;
 		}
 
-		public RippleDrawableBuilder setBackgroundColor(String color) {
+		public RippleDrawableBuilder setBackgroundColor(@Size(min = 3) String color) {
 			backgroundColor = Color.parseColor(color);
 			return this;
 		}
 
-		public RippleDrawableBuilder setColor(String color) {
+		public RippleDrawableBuilder setColor(@Size(min = 3) String color) {
 			backgroundColor = Color.parseColor(color);
 			foregroundColor = Color.parseColor(color);
 			return this;
@@ -101,7 +102,7 @@ public abstract class DrawableBuilder {
 			return this;
 		}
 
-		public RippleDrawableBuilder setForegroundColor(String color) {
+		public RippleDrawableBuilder setForegroundColor(@Size(min = 3) String color) {
 			foregroundColor = Color.parseColor(color);
 			return this;
 		}
