@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.Handler;
+import android.widget.Toast;
 
 import com.mrboomdev.scrollix.app.AppManager;
 
@@ -33,6 +34,15 @@ public class AppUtils {
 
 		var clipData = ClipData.newPlainText(text, text);
 		manager.setPrimaryClip(clipData);
+	}
+
+	public static void toast(String text, boolean isLong) {
+		var context = AppManager.getActivityContext();
+
+		context.runOnUiThread(() -> {
+			var length = isLong ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT;
+			Toast.makeText(context, text, length).show();
+		});
 	}
 
 	public static void setTimeout(Runnable runnable, long duration) {

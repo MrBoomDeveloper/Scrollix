@@ -48,6 +48,11 @@ public class TabStore {
 		return createTab(null, focus);
 	}
 
+	@NonNull
+	public static Tab createTab() {
+		return createTab(true);
+	}
+
 	public static void removeTab(int index) {
 		boolean wasCurrent = getTabIndex(TabManager.getCurrentTab()) == index;
 
@@ -129,11 +134,11 @@ public class TabStore {
 		clearTabs();
 		tabs.addAll(newTabs);
 
-		if(newTabs.isEmpty()) createTab(true);
-		else TabManager.setCurrentTab(newTabs.get(0));
+		if(!newTabs.isEmpty()) {
+			TabManager.setCurrentTab(newTabs.get(0));
+		}
 
 		runModifierListeners();
-		doActionIfEmpty(false);
 	}
 
 	private static void runModifierListeners() {

@@ -9,20 +9,23 @@ import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 
+import java.util.Objects;
+
 public class Tab {
 	private final GeckoSession session;
 	protected boolean canGoBack, canGoForward, didRestoreState;
 	protected String url, title;
-	private boolean didInit, isError;
+	private boolean didInit, isError, isCrash;
 
 	public Tab(String url, boolean lateInit) {
 		this.url = url;
+		this.session = new GeckoSession();
 
-		session = new GeckoSession();
 		applySettings();
 		applyDelegators();
 
 		if(!lateInit) init();
+		if(url != null) loadUrl(url);
 	}
 
 	public Tab(String url) {
@@ -44,22 +47,22 @@ public class Tab {
 		if(session.isOpen()) return;
 		session.open(TabManager.runtime);
 
-		openHomePage();
+		openDefaultPage();
 	}
 
-	private void openHomePage(String url) {
-		if((this.didRestoreState || this.url != null) && !"about:blank".equals(this.url)) return;
+	private void openDefaultPage(String url) {
+		if((this.didRestoreState || this.url != null) && !Objects.equals("about:blank", this.url)) return;
 
 		if(url != null) {
 			loadUrl(url);
 			return;
 		}
 
-		ExtensionManager.getUiExtensionPageUrl("pages/home.html", this::openHomePage);
+		ExtensionManager.getUiExtensionPageUrl("pages/home.html", this::openDefaultPage);
 	}
 
-	private void openHomePage() {
-		openHomePage(null);
+	private void openDefaultPage() {
+		openDefaultPage(null);
 	}
 
 	public void setIsError(boolean isError) {
@@ -68,6 +71,14 @@ public class Tab {
 
 	public boolean isError() {
 		return isError;
+	}
+
+	public void setIsCrash(boolean isCrash) {
+		this.isCrash = isCrash;
+	}
+
+	public boolean isCrash() {
+		return isCrash;
 	}
 
 	public void setTitle(String title) {

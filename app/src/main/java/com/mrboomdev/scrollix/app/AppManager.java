@@ -18,7 +18,6 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.DataProfile;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
-import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
@@ -56,25 +55,11 @@ public class AppManager {
 	}
 
 	public static void postCreate() {
-		var intent = getActivityContext().getIntent();
-		var extra = intent.getDataString();
-		Tab tab = null;
+		if(TabManager.getCurrentTab() == null) {
+			var tab = TabStore.getTab(profile != null ? profile.currentTab() : 0);
 
-		if(extra != null) {
-			tab = TabStore.createTab(extra, true);
-			intent.setData(null);
-			getActivityContext().setIntent(null);
-		}
-
-		if(tab != null) {
-			TabManager.setCurrentTab(tab);
-			return;
-		}
-
-		tab = TabStore.getTab(profile == null ? 0 : profile.currentTab());
-
-		if(tab != null) {
-			TabManager.setCurrentTab(tab);
+			if(tab != null) TabManager.setCurrentTab(tab);
+			else TabStore.createTab();
 		}
 	}
 
@@ -139,6 +124,12 @@ public class AppManager {
 
 		settings = profile.settings();
 		TabStore.setTabs(profile.tabs());
+
+		var context = getActivityContext();
+		var intent = context.getIntent();
+
+		IntentHandler.handleIntent(intent);
+		context.setIntent(null);
 	}
 
 	public static void dispose() {

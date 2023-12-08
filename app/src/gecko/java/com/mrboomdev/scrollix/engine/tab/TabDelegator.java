@@ -33,14 +33,16 @@ public class TabDelegator {
 
 			@Override
 			public GeckoResult<PromptResponse> onAlertPrompt(@NonNull GeckoSession session, @NonNull AlertPrompt prompt) {
+				var result = new GeckoResult<PromptResponse>();
+
 				new DialogMenu(AppManager.getActivityContext())
 						.setTitle(prompt.title)
 						.setDescription(prompt.message)
 						.addAction("Continue")
-						.setOnCloseCallback(prompt::dismiss)
+						.setOnCloseCallback(() -> result.complete(prompt.dismiss()))
 						.show();
 
-				return null;
+				return result;
 			}
 		});
 
@@ -99,15 +101,18 @@ public class TabDelegator {
 					case ContextElement.TYPE_IMAGE -> {
 						menu.addAction("Open image in new tab", () -> TabStore.createTab(element.srcUri, true));
 						menu.addAction("Open image in background", () -> TabStore.createTab(element.srcUri, false));
+
 						menu.addAction("Open image in new incognito tab", () -> {
 							var intent = new Intent(context, IncognitoActivity.class);
 							intent.setData(Uri.parse(element.srcUri));
 							context.startActivity(intent);
 						});
+
 						menu.addAction("Download image", () -> {
 							var download = new UserMadeDownload(element.srcUri);
 							download.start();
 						});
+
 						menu.addAction("Share image link", () -> AppUtils.share("Share image link", element.srcUri));
 						menu.addAction("Copy image link to clipboard", () -> AppUtils.copyToClipboard(element.srcUri));
 					}
@@ -120,10 +125,12 @@ public class TabDelegator {
 							intent.setData(Uri.parse(element.srcUri));
 							context.startActivity(intent);
 						});
+
 						menu.addAction("Download audio", () -> {
 							var download = new UserMadeDownload(element.srcUri);
 							download.start();
 						});
+
 						menu.addAction("Share audio link", () -> AppUtils.share("Share image link", element.srcUri));
 						menu.addAction("Copy audio link to clipboard", () -> AppUtils.copyToClipboard(element.srcUri));
 					}
@@ -136,10 +143,12 @@ public class TabDelegator {
 							intent.setData(Uri.parse(element.srcUri));
 							context.startActivity(intent);
 						});
+
 						menu.addAction("Download video", () -> {
 							var download = new UserMadeDownload(element.srcUri);
 							download.start();
 						});
+
 						menu.addAction("Share video link", () -> AppUtils.share("Share image link", element.srcUri));
 						menu.addAction("Copy video link to clipboard", () -> AppUtils.copyToClipboard(element.srcUri));
 					}

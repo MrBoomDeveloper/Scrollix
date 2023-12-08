@@ -1,10 +1,12 @@
 package com.mrboomdev.scrollix.app;
 
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.data.download.DownloadManager;
 import com.mrboomdev.scrollix.data.download.UserMadeDownload;
@@ -17,11 +19,12 @@ import java.net.URISyntaxException;
 
 public class IntentHandler {
 
-	public static void handleIntent(@NonNull Intent intent) {
+	public static void handleIntent(@Nullable Intent intent) {
+		if(intent == null) return;
+
 		var url = intent.getDataString();
 		if(url != null) {
 			TabStore.createTab(url, true);
-			intent.setData(null);
 			return;
 		}
 
@@ -32,7 +35,7 @@ public class IntentHandler {
 	}
 
 	private static void handleCustomIntent(@NonNull String type, Intent intent) {
-		var context = AppManager.getActivityContext();
+		var context = AppManager.getMainActivityContext();
 
 		switch(type) {
 			case "update_theme" -> {
@@ -46,8 +49,21 @@ public class IntentHandler {
 				DownloadManager.cancel(id);
 			}
 
-			case "open_search" -> AppUtils.setTimeout(() ->
-					AppManager.getMainActivityContext().searchLayout.show(), 1000);
+			case "open_search" -> {
+				var timeoutCallback = new Runnable() {
+					@Override
+					public void run() {
+						if(context.searchLayout != null) {
+							context.searchLayout.show();
+							return;
+						}
+
+						AppUtils.setTimeout(this, 100);
+					}
+				};
+
+				timeoutCallback.run();
+			}
 
 			case "open_download" -> openDownload(intent.getIntExtra("id", 0));
 		}
@@ -108,7 +124,11 @@ public class IntentHandler {
 			var info = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
 
 			if(info != null) {
-				context.startActivity(intent);
+				try {
+					context.startActivity(intent);
+				} catch(ActivityNotFoundException e) {
+					Toast.makeText(context, "No apps were found to handle action", Toast.LENGTH_LONG).show();
+				}
 			}
 		} catch(URISyntaxException e) {
 			e.printStackTrace();
