@@ -5,7 +5,7 @@ const titleEl = document.querySelector("#title");
 const backEl = document.querySelector("#back");
 
 let currentSectionPath = [];
-let settings;
+let settings, values;
 
 backEl.onclick = () => {
     if(currentSectionPath.length == 0) return;
@@ -32,20 +32,15 @@ function setSection(data) {
 
     for(const [id, item] of Object.entries(data.items)) {
         const el = document.createElement("div");
-        el.className = "";
-
-        const key = JSON.stringify(currentSectionPath) + id;
-        let value = Boolean(localStorage.getItem(key));
+        el.className = "list-item";
 
         switch(item.type ?? "info") {
             case "section": {
-                el.style.display = "flex";
-                el.style.flexDirection = "column";
-                el.style.gap = ".2rem";
-
                 el.innerHTML = `
-                    <p>${item.title}</p>
-                    ${item.description ? `<p style="margin-top: .2rem; font-size: .85em">${item.description}</p>` : ""}
+                    <div class="list-item-info">
+                        <p class="list-item-title">${item.title}</p>
+                        ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
+                    </div>
                 `;
 
                 el.onclick = () => setTimeout(() => {
@@ -55,37 +50,66 @@ function setSection(data) {
             } break;
 
             case "toggle": {
-                el.style.display = "flex";
-                el.style.alignItems = "center";
-                el.style.gap = "1rem";
-
                 render();
 
                 function render() {
                     el.innerHTML = `
-                        <div style="flex-grow: 1; gap: .2rem; display: flex; flex-direction: column">
-                            <p>${item.title}</p>
-                            ${item.description ? `<p style="margin-top: .2rem; font-size: .85em">${item.description}</p>` : ""}
+                        <div class="list-item-info">
+                            <p class="list-item-title">${item.title}</p>
+                            ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
                         </div>
 
-                        <p>${value}</p>
+                        <p>${values[item.id]}</p>
                     `;
                 }
 
                 el.onclick = () => {
-                    localStorage.setItem(key, !value);
-                    value = !value;
-
+                    values[item.id] = !values[item.id];
+                    scrollix.updateSettings(values);
                     setTimeout(() => render(), CALLBACK_DELAY);
+                }
+            } break;
+
+            case "ratio": {
+                render();
+
+                function render() {
+                    el.innerHTML = `
+                        <div class="list-item-info">
+                            <p class="list-item-title">${item.title}</p>
+                            ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
+                        </div>
+
+                        <p>${values[item.id]}</p>
+                    `;
+                }
+
+                el.onclick = () => {
+                    setTimeout(() => render(), CALLBACK_DELAY);
+                }
+            } break;
+
+            case "action": {
+                el.innerHTML = `
+                    <div class="list-item-info">
+                        <p class="list-item-title">${item.title}</p>
+                        ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
+                    </div>
+                `;
+
+                el.onclick = () => {
+                    alert("not available currently!");
                 }
             } break;
 
             default: {
                 el.innerHTML = `
-                    <p>${item.title}</p>
-                    ${item.description ? `<p style="margin-top: .2rem; font-size: .85em">${item.description}</p>` : ""}
+                    <div class="list-item-info">
+                        <p class="list-item-title">${item.title}</p>
+                        ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
+                    </div>
                 `;
-            }
+            } break;
         }
 
         sectionsEl.appendChild(el);
@@ -96,7 +120,9 @@ const port = browser.runtime.connectNative("scrollix");
 port.onMessage.addListener(response => {
     switch(response.action) {
         case "retrieve-settings": {
-            settings = response.value;
+            const [newSettingsInfo, newSettingsValues] = response.values;
+            settings = newSettingsInfo;
+            values = newSettingsValues;
             setSection(settings);
         } break;
     }

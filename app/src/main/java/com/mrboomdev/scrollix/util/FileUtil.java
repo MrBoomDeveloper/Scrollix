@@ -41,6 +41,23 @@ public class FileUtil {
 		}
 	}
 
+	public static long getFileSize(@NonNull File file) {
+		long size = 0;
+
+		if(file.isFile()) {
+			size += file.length();
+		} if(file.isDirectory()) {
+			var kids = file.listFiles();
+			if(kids == null) return 0;
+
+			for(var childFile : kids) {
+				size += getFileSize(childFile);
+			}
+		}
+
+		return size;
+	}
+
 	@Nullable
 	public static byte[] readFileBytes(@NonNull File file) {
 		try(var stream = new FileInputStream(file)) {

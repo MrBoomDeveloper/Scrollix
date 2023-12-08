@@ -101,7 +101,6 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		super.onStart();
 
 		BarsAnimator barsAnimator = new BarsAnimator();
-		barsAnimator.setBarsExpandable(BarsAnimator.TOPBAR | BarsAnimator.BOTTOMBAR);
 		barsAnimator.setBarsFromActivity(this);
 		TabManager.setBarsAnimator(barsAnimator);
 

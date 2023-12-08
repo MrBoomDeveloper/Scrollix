@@ -7,6 +7,13 @@ window.scrollix = {
         return "default";
     },
 
+    updateSettings(settings) {
+        browser.runtime.sendNativeMessage("scrollix", {
+            action: "update-settings",
+            value: settings
+        });
+    },
+
     openSearch() {
         browser.runtime.sendNativeMessage("scrollix", {
             action: "open-search"

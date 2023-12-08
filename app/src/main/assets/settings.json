@@ -55,16 +55,16 @@
 
 		{ "title": "Security", "type": "section" },
 
-		{ "title": "Saved", "type": "section", "values": [
-			{ "title": "Clear cache", "type": "action", "id": "clear_cache", "description": "$APP_SIZE_CACHE" },
-			{ "title": "Clear history", "type": "action", "id": "clear_history", "description": "$APP_SIZE_HISTORY" },
-			{ "title": "Clear forms data", "type": "action", "id": "clear_forms", "description": "$APP_SIZE_FORMS" },
-			{ "title": "Clear cookies", "type": "action", "id": "clear_cookies", "description": "$APP_SIZE_COOKIES" }
+		{ "title": "Saved", "type": "section", "items": [
+			{ "title": "Clear cache", "type": "action", "id": "clear_cache", "description": "$[APP_SIZE_CACHE]" },
+			{ "title": "Clear history", "type": "action", "id": "clear_history", "description": "$[APP_SIZE_HISTORY]" },
+			{ "title": "Clear forms data", "type": "action", "id": "clear_forms", "description": "$[APP_SIZE_FORMS]" },
+			{ "title": "Clear cookies", "type": "action", "id": "clear_cookies", "description": "$[APP_SIZE_COOKIES]" }
 		] },
 
 		{ "title": "About", "type": "section", "items": [
 			{ "title": "Made by", "description": "MrBoomDev in $APP_BUILD_YEAR" },
-			{ "title": "Version", "description": "$APP_BUILD_VERSION" }
+			{ "title": "Version", "description": "$[APP_BUILD_VERSION]" }
 		] }
 	]
 }

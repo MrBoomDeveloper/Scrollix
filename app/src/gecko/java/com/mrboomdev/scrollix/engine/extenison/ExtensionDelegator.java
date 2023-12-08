@@ -20,15 +20,17 @@ import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.WebExtension;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class ExtensionDelegator {
 	private static final String TAG = "ExtensionDelegator";
 	private static final Map<WebExtension, Set<Tab>> extensions = new HashMap<>();
-	//private static final Map<WebExtension, WebExtension.Port> ports = new HashMap<>();
+	private static final List<WebExtension.Port> ports = new ArrayList<>();
 
 	public static void update() {
 		for(var entry : extensions.entrySet()) {
@@ -39,6 +41,31 @@ public class ExtensionDelegator {
 					entry.getValue().add(tab);
 					setSessionDelegators(tab);
 				}
+			}
+		}
+	}
+
+	public static void updateSettingsForExtensions() {
+		for(var port : ports) {
+			try {
+				var cacheDir = AppManager.getActivityContext().getCacheDir();
+
+				var settingsInfo = new JSONObject(FileUtil.readAssetsString("settings.json")
+						.replace("$[APP_BUILD_YEAR]", "2023")
+						.replace("$[APP_BUILD_VERSION]", BuildConfig.VERSION_NAME)
+						.replace("$[APP_SIZE_CACHE]", String.valueOf(FileUtil.getFileSize(cacheDir))));
+
+				var entry = new JSONArray()
+						.put(settingsInfo)
+						.put(new JSONObject(AppManager.settings.toString()));
+
+				var result = new JSONObject()
+						.put("action", "retrieve-settings")
+						.put("values", entry);
+
+				port.postMessage(result);
+			} catch(JSONException e) {
+				throw new UnexpectedBehaviourException(e);
 			}
 		}
 	}
@@ -59,7 +86,7 @@ public class ExtensionDelegator {
 		var portDelegate = new WebExtension.PortDelegate() {
 			@Override
 			public void onDisconnect(@NonNull WebExtension.Port port) {
-				//if(extension != null) ports.remove(extension, port);
+				ports.remove(port);
 				Log.i(TAG, "Disconnected port! " + port.name);
 			}
 
@@ -70,17 +97,7 @@ public class ExtensionDelegator {
 				try {
 					if(message instanceof JSONObject json) {
 						switch(json.getString("action")) {
-							case "get-settings" -> {
-								var settings = new JSONObject(FileUtil.readAssetsString("settings.json")
-										.replace("$APP_BUILD_YEAR", "2023")
-										.replace("$APP_BUILD_VERSION", BuildConfig.VERSION_NAME));
-
-								var result = new JSONObject()
-										.put("action", "retrieve-settings")
-										.put("value", settings);
-
-								port.postMessage(result);
-							}
+							case "get-settings" -> updateSettingsForExtensions();
 
 							case "get-downloads" -> {
 								var result = new JSONObject()
@@ -102,7 +119,7 @@ public class ExtensionDelegator {
 		var messageDelegate = new WebExtension.MessageDelegate() {
 			@Override
 			public void onConnect(@NonNull WebExtension.Port port) {
-				//if(extension != null) ports.put(extension, port);
+				ports.add(port);
 				Log.i(TAG, "Connected to a port! " + port.name);
 
 				port.setDelegate(portDelegate);
@@ -123,6 +140,8 @@ public class ExtensionDelegator {
 								search.show();
 								search.editText.setText("");
 							}
+
+							case "update-settings" -> AppManager.settings.merge(json.get("value").toString());
 
 							default -> Log.e(TAG, "Unknown action: " + json.getString("action"));
 						}

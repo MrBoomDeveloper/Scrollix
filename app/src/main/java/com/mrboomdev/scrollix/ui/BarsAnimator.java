@@ -10,15 +10,16 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.transition.TransitionManager;
 
 import com.mrboomdev.scrollix.R;
+import com.mrboomdev.scrollix.app.AppManager;
 
 public class BarsAnimator {
-	public static final short TOPBAR = 1, BOTTOMBAR = 2;
 	private final View.OnTouchListener touchListener;
 	private ConstraintLayout parent;
 	private View topbar, bottombar, contentHolder;
 	private View bottomHelper;
 	private float startY, currentY, offset;
-	private boolean topbarExpandable = true, bottombarExpandable = true;
+	private boolean barsExpandable;
+	private Runnable changeSettingListener;
 
 	public BarsAnimator() {
 		this.touchListener = new TouchListener();
@@ -30,17 +31,18 @@ public class BarsAnimator {
 
 		topbar = activity.findViewById(R.id.top_bar);
 		bottombar = activity.findViewById(R.id.bottom_bar);
-
 		bottomHelper = activity.findViewById(R.id.bottomHelper);
+
+		AppManager.settings.removeChangeListener("collapseBars", changeSettingListener);
+
+		changeSettingListener = () -> setBarsAreExpandable(AppManager.settings.collapseBars);
+		changeSettingListener.run();
+
+		AppManager.settings.addChangeListener("collapseBars", changeSettingListener);
 	}
 
 	public View.OnTouchListener getOnTouchListener() {
 		return touchListener;
-	}
-
-	public void setBarsExpandable(int flags) {
-		//topbarExpandable = ((flags & TOPBAR) == TOPBAR);
-		//bottombarExpandable = ((flags & BOTTOMBAR) == BOTTOMBAR);
 	}
 
 	public void setBarsAreExpanded(boolean areExpanded) {
@@ -52,16 +54,27 @@ public class BarsAnimator {
 		doALittleUpdate();
 	}
 
+	public void setBarsAreExpandable(boolean areExpandable) {
+		barsExpandable = areExpandable;
+		if(!areExpandable) offset = 0;
+
+		if(parent != null) {
+			TransitionManager.beginDelayedTransition(parent);
+		}
+
+		doALittleUpdate();
+	}
+
 	public void doALittleUpdate() {
 		var difference = Math.round(offset);
 
-		if(topbar != null && topbarExpandable) {
+		if(topbar != null) {
 			var topbarParams = (ConstraintLayout.LayoutParams)topbar.getLayoutParams();
 			topbarParams.topMargin = -difference;
 			topbar.requestLayout();
 		}
 
-		if(bottombar != null && bottombarExpandable) {
+		if(bottombar != null) {
 			var bottombarParams = (ConstraintLayout.LayoutParams)bottombar.getLayoutParams();
 			bottombarParams.bottomMargin = -difference;
 			bottombar.requestLayout();
@@ -79,10 +92,10 @@ public class BarsAnimator {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouch(View v, @NonNull MotionEvent event) {
+			if(!barsExpandable) return false;
+
 			switch(event.getAction()) {
-				case MotionEvent.ACTION_DOWN -> {
-					startY = event.getRawY();
-				}
+				case MotionEvent.ACTION_DOWN -> startY = event.getRawY();
 
 				case MotionEvent.ACTION_UP -> {
 					currentY = event.getRawY();

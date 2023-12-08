@@ -79,6 +79,29 @@ header {
     }
 }
 
+.list-item {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+
+    .list-item-info {
+        display: flex;
+        gap: .2rem;
+        flex-grow: 1;
+        flex-direction: column;
+    }
+
+    .list-item-title {
+        color: white;
+    }
+
+    .list-item-description {
+        margin-top: .2rem;
+        font-size: .85em;
+        color: #ccc;
+    }
+}
+
 .sections > div {
     padding-block: 1.2rem;
     padding-inline: 2.5rem;
