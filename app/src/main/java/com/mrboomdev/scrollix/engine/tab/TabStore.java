@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.ui.AppUi;
 
 import org.jetbrains.annotations.Contract;
 
@@ -142,8 +143,6 @@ public class TabStore {
 	}
 
 	private static void runModifierListeners() {
-		for(var listener : TabManager.getTabListeners()) {
-			listener.onTabListModified();
-		}
+		AppUi.updateTabsListState();
 	}
 }

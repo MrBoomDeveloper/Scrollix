@@ -21,10 +21,9 @@ public record DataProfile(
 		@Json(name = "current_tab") int currentTab,
 		AppSettings settings
 ) {
-
 	@NonNull
 	public static DataProfile restoreAsLocal(String json) throws UnexpectedBehaviourException {
-		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).build();
+		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).add(new Action.Adapter()).build();
 		var adapter = moshi.adapter(DataProfile.class).lenient();
 
 		try {
@@ -43,21 +42,21 @@ public record DataProfile(
 
 	@NonNull
 	public String saveAsLocal() {
-		var moshi = new Moshi.Builder().add(new TabAdapter()).build();
+		var moshi = new Moshi.Builder().add(new TabAdapter()).add(new Action.Adapter()).build();
 		var adapter = moshi.adapter(DataProfile.class).lenient();
 		return adapter.toJson(this);
 	}
 
 	@NonNull
 	public String saveAsExternal() {
-		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).build();
+		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).add(new Action.Adapter()).build();
 		var adapter = moshi.adapter(DataProfile.class).lenient();
 		return adapter.toJson(this);
 	}
 
 	@NonNull
 	public static DataProfile restoreAsExternal(String json) throws UnexpectedBehaviourException {
-		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).build();
+		var moshi = new Moshi.Builder().add(new TabAdapter.ExportAdapter()).add(new Action.Adapter()).build();
 		var adapter = moshi.adapter(DataProfile.class).lenient();
 
 		try {

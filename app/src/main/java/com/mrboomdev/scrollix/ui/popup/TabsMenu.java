@@ -24,7 +24,6 @@ import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.Tab;
-import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.AppUi;
@@ -39,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import jp.wasabeef.recyclerview.animators.SlideInLeftAnimator;
 
-public class TabsMenu implements TabListener {
+public class TabsMenu {
 	private static final int LANDSCAPE_WIDTH = 300;
 	private final Context context;
 	private PopupWindow popup;
@@ -57,8 +56,6 @@ public class TabsMenu implements TabListener {
 
 		popup = null;
 		bottomSheet = null;
-
-		TabManager.removeListener(this);
 	}
 
 	public void showAt(View showAtView) {
@@ -77,7 +74,6 @@ public class TabsMenu implements TabListener {
 		adapter = new Adapter();
 		recycler.setAdapter(adapter);
 		recycler.setItemAnimator(new SlideInLeftAnimator(new AccelerateDecelerateInterpolator()));
-		TabManager.addListener(this);
 
 		var touchHelper = new ItemTouchHelper(new SwipeCallback());
 		touchHelper.attachToRecyclerView(recycler);
@@ -112,21 +108,6 @@ public class TabsMenu implements TabListener {
 			bottomSheet.setCanceledOnTouchOutside(true);
 			bottomSheet.show();
 		}
-	}
-
-	@Override
-	public void onTabGotTitle(Tab tab, String title) {
-		adapter.notifyItemChanged(TabStore.getTabIndex(tab));
-	}
-
-	@Override
-	public void onTabLoadingFinished(Tab tab) {
-		adapter.notifyItemChanged(TabStore.getTabIndex(tab));
-	}
-
-	@Override
-	public void onTabLoadingStarted(Tab tab) {
-		adapter.notifyItemChanged(TabStore.getTabIndex(tab));
 	}
 
 	private class Adapter extends RecyclerView.Adapter<Adapter.MyViewHolder> {

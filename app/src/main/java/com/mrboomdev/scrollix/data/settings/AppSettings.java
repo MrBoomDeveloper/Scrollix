@@ -5,6 +5,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.mrboomdev.scrollix.data.Action;
 import com.mrboomdev.scrollix.data.search.SearchEngine;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
@@ -23,13 +24,13 @@ public class AppSettings {
 	public static final String DEFAULT_SETTINGS_PATH = "settings-values.json";
 	public static final String TAG = "AppSettings";
 	@Json(name = "left_actions")
-	public List<String> leftActions;
+	public List<Action> leftActions;
 	@Json(name = "right_actions")
-	public List<String> rightActions;
+	public List<Action> rightActions;
 	@Json(name = "side_actions")
-	public List<String> sideActions;
+	public List<Action> sideActions;
 	@Json(name = "menu_actions")
-	public List<String> menuActions;
+	public List<Action> menuActions;
 	@Json(name = "search_engine")
 	public SearchEngine.Preset searchEngine;
 	@Json(name = "search_engine_autocompletion")
@@ -47,7 +48,7 @@ public class AppSettings {
 
 	public void fillNullValues() {
 		var defaultSettingsJson = FileUtil.readAssetsString(AppSettings.DEFAULT_SETTINGS_PATH);
-		var defaultSettings = AppSettings.fromString(defaultSettingsJson, false);
+		var defaultSettings = fromString(defaultSettingsJson, false);
 
 		try {
 			for(var field : AppSettings.class.getFields()) {
@@ -104,14 +105,7 @@ public class AppSettings {
 	}
 
 	public void merge(String json) {
-		var moshi = new Moshi.Builder().build();
-		var adapter = moshi.adapter(AppSettings.class);
-
-		try {
-			merge(adapter.fromJson(json));
-		} catch(IOException e) {
-			throw new UnexpectedBehaviourException(e);
-		}
+		merge(fromString(json, false));
 	}
 
 	public void merge(AppSettings settings) {
@@ -148,7 +142,7 @@ public class AppSettings {
 
 	@NonNull
 	private static AppSettings fromString(String json, boolean fillNull) {
-		var moshi = new Moshi.Builder().build();
+		var moshi = new Moshi.Builder().add(new Action.Adapter()).build();
 		var adapter = moshi.adapter(AppSettings.class);
 
 		try {
@@ -171,7 +165,7 @@ public class AppSettings {
 	@NonNull
 	@Override
 	public String toString() {
-		var moshi = new Moshi.Builder().build();
+		var moshi = new Moshi.Builder().add(new Action.Adapter()).build();
 		var adapter = moshi.adapter(AppSettings.class);
 		return adapter.toJson(this);
 	}

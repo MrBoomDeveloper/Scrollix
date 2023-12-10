@@ -16,6 +16,7 @@ public class Tab {
 	protected boolean canGoBack, canGoForward, didRestoreState;
 	protected String url, title;
 	private boolean didInit, isError, isCrash;
+	protected int progress;
 
 	public Tab(String url, boolean lateInit) {
 		this.url = url;
@@ -48,6 +49,10 @@ public class Tab {
 		session.open(TabManager.runtime);
 
 		openDefaultPage();
+	}
+
+	public int getProgress() {
+		return progress;
 	}
 
 	private void openDefaultPage(String url) {

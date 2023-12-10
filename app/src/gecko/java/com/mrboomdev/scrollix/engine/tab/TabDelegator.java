@@ -10,6 +10,7 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.app.IntentHandler;
 import com.mrboomdev.scrollix.data.download.UserMadeDownload;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
+import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
@@ -62,9 +63,7 @@ public class TabDelegator {
 
 			@Override
 			public void onFullScreen(@NonNull GeckoSession session, boolean fullScreen) {
-				for(var listener : TabManager.getTabListeners()) {
-					listener.onTabFullscreenToggle(tab, fullScreen);
-				}
+				AppUi.toggleFullscreen(tab, fullScreen);
 			}
 
 			@Override
@@ -166,8 +165,8 @@ public class TabDelegator {
 			public void onTitleChange(@NonNull GeckoSession session, @Nullable String title) {
 				tab.title = title;
 
-				for(var listener : TabManager.getTabListeners()) {
-					listener.onTabGotTitle(tab, title);
+				if(TabManager.getCurrentTab() == tab) {
+					AppUi.searchBar.setTitle(title);
 				}
 			}
 		});
@@ -175,16 +174,14 @@ public class TabDelegator {
 		tab.getSession().setProgressDelegate(new GeckoSession.ProgressDelegate() {
 			@Override
 			public void onPageStop(@NonNull GeckoSession session, boolean success) {
-				for(var listener : TabManager.getTabListeners()) {
-					listener.onTabLoadingFinished(tab);
-				}
+				tab.progress = 100;
+				AppUi.finishTabLoading(tab);
 			}
 
 			@Override
 			public void onProgressChange(@NonNull GeckoSession session, int progress) {
-				for(var listener : TabManager.getTabListeners()) {
-					listener.onTabLoadingProgress(tab, progress);
-				}
+				tab.progress = progress;
+				AppUi.updateTabLoading(tab);
 			}
 
 			@Override
@@ -192,9 +189,8 @@ public class TabDelegator {
 				tab.setIsError(false);
 				tab.setUrl(url);
 
-				for(var listener : TabManager.getTabListeners()) {
-					listener.onTabLoadingStarted(tab);
-				}
+				tab.progress = 0;
+				AppUi.startTabLoading(tab);
 			}
 		});
 
@@ -252,11 +248,13 @@ public class TabDelegator {
 			@Override
 			public void onCanGoForward(@NonNull GeckoSession session, boolean canGoForward) {
 				tab.canGoForward = canGoForward;
+				AppUi.updateBackForwardState();
 			}
 
 			@Override
 			public void onCanGoBack(@NonNull GeckoSession session, boolean canGoBack) {
 				tab.canGoBack = canGoBack;
+				AppUi.updateBackForwardState();
 			}
 		});
 	}

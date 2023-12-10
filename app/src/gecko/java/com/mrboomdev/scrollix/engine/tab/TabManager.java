@@ -11,6 +11,7 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionDelegator;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
+import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.ui.BarsAnimator;
 import com.mrboomdev.scrollix.util.format.Formats;
 
@@ -18,16 +19,12 @@ import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoView;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class TabManager {
 	protected static GeckoRuntime runtime;
 	@SuppressLint("StaticFieldLeak")
 	protected static BarsAnimator barsAnimator;
 	private static GeckoView geckoView;
 	private static Tab currentTab;
-	private static List<TabListener> listeners;
 
 	@SuppressLint("ClickableViewAccessibility")
 	public static void setBarsAnimator(@NonNull BarsAnimator animator) {
@@ -44,14 +41,6 @@ public class TabManager {
 		return currentTab;
 	}
 
-	public static void addListener(TabListener listener) {
-		listeners.add(listener);
-	}
-
-	public static void removeListener(TabListener listener) {
-		listeners.remove(listener);
-	}
-
 	public static void setCurrentTab(@NonNull Tab tab) {
 		setCurrentTab(tab, true);
 	}
@@ -64,14 +53,15 @@ public class TabManager {
 		if(geckoView == null) return;
 
 		initForTab(tab);
+
+		AppUi.updateBackForwardState();
+		AppUi.updateTabLoading(tab);
+		AppUi.searchBar.setTitle(tab.getTitle());
 	}
 
 	private static void initForTab(@NonNull Tab tab) {
 		geckoView.setSession(tab.getSession());
-
-		for(var listener : listeners) {
-			listener.onTabFocused(tab);
-		}
+		AppUi.focusTab(tab);
 
 		ExtensionDelegator.update();
 		var extensionController = runtime.getWebExtensionController();
@@ -102,7 +92,6 @@ public class TabManager {
 
 	public static void startup() {
 		var context = AppManager.getActivityContext();
-		listeners = new ArrayList<>();
 
 		var runtimeSettings = new GeckoRuntimeSettings.Builder()
 				.aboutConfigEnabled(true)
@@ -120,14 +109,9 @@ public class TabManager {
 	}
 
 	public static void dispose() {
-		listeners.clear();
 		runtime.shutdown();
 
 		runtime = null;
 		barsAnimator = null;
-	}
-
-	protected static List<TabListener> getTabListeners() {
-		return listeners;
 	}
 }
