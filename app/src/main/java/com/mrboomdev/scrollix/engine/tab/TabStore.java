@@ -44,6 +44,22 @@ public class TabStore {
 		return tab;
 	}
 
+	public static boolean hasTab(Tab tab) {
+		for(var _tab : tabs) {
+			if(tab == _tab) return true;
+		}
+
+		return false;
+	}
+
+	public static void move(int from, int to) {
+		if(from == to) return;
+		var tab = getTab(from);
+
+		removeTab(tab, false);
+		addTab(tab, to);
+	}
+
 	@NonNull
 	public static Tab createTab(boolean focus) {
 		return createTab(null, focus);
@@ -54,26 +70,38 @@ public class TabStore {
 		return createTab(true);
 	}
 
-	public static void removeTab(int index) {
-		boolean wasCurrent = getTabIndex(TabManager.getCurrentTab()) == index;
+	public static void removeTab(int index, boolean sideEffects) {
+		if(sideEffects) {
+			boolean wasCurrent = getTabIndex(TabManager.getCurrentTab()) == index;
 
-		if(wasCurrent) {
-			selectNearestTab(index);
+			if(wasCurrent) {
+				selectNearestTab(index);
+			}
 		}
 
 		tabs.remove(index);
 		runModifierListeners();
 
-		//TODO: Use value from settings if user want to create a new tab or close app
-		doActionIfEmpty(true);
+		if(sideEffects) {
+			//TODO: Use value from settings if user want to create a new tab or close app
+			doActionIfEmpty(true);
+		}
 	}
 
-	public static void removeTab(Tab tab) {
+	public static void removeTab(int index) {
+		removeTab(index, true);
+	}
+
+	public static void removeTab(Tab tab, boolean sideEffects) {
 		var index = getTabIndex(tab);
 
 		if(index != -1) {
-			removeTab(index);
+			removeTab(index, sideEffects);
 		}
+	}
+
+	public static void removeTab(Tab tab) {
+		removeTab(tab, true);
 	}
 
 	public static void doActionIfEmpty(boolean exitIfEmpty) {

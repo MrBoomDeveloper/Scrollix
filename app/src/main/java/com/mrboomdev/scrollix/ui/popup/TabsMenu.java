@@ -75,7 +75,7 @@ public class TabsMenu {
 		recycler.setAdapter(adapter);
 		recycler.setItemAnimator(new SlideInLeftAnimator(new AccelerateDecelerateInterpolator()));
 
-		var touchHelper = new ItemTouchHelper(new SwipeCallback());
+		var touchHelper = new ItemTouchHelper(new TouchCallback());
 		touchHelper.attachToRecyclerView(recycler);
 
 		linear.addView(recycler, Formats.MATCH_PARENT, Formats.WRAP_CONTENT);
@@ -160,8 +160,8 @@ public class TabsMenu {
 		}
 
 		public void move(int fromIndex, int toIndex) {
-			//TabsManager.move(fromIndex, toIndex);
-			//notifyItemMoved(fromIndex, toIndex);
+			TabStore.move(fromIndex, toIndex);
+			notifyItemMoved(fromIndex, toIndex);
 		}
 
 		public void restore(Tab tab, int index) {
@@ -233,7 +233,7 @@ public class TabsMenu {
 		}
 	}
 
-	private class SwipeCallback extends ItemTouchHelper.Callback {
+	private class TouchCallback extends ItemTouchHelper.Callback {
 
 		@Override
 		public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
@@ -252,13 +252,9 @@ public class TabsMenu {
 		}
 
 		@Override
-		public void onMoved(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder, int fromPos, @NonNull RecyclerView.ViewHolder target, int toPos, int x, int y) {
-			adapter.move(fromPos, toPos);
-		}
-
-		@Override
 		public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder, @NonNull RecyclerView.ViewHolder target) {
-			return false;
+			adapter.move(viewHolder.getAdapterPosition(), target.getAdapterPosition());
+			return true;
 		}
 	}
 }

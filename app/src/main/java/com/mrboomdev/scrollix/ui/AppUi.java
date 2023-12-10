@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.ui;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.os.Build;
 import android.view.View;
 import android.view.WindowManager;
