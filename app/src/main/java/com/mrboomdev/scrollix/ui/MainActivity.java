@@ -56,7 +56,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 	private SearchBarWidget searchBar;
 	private LinearLayout topbar, bottombar, sidebar;
 	private View backButton, forwardButton;
-	private boolean isFullscreen, wasPausedDuringFullscreen;
+	private boolean isFullscreen, wasPausedDuringFullscreen, barsWereExpanded, barsWereExpandable;
 
 	@Override
 	protected void onSaveInstanceState(@NonNull Bundle outState) {
@@ -101,6 +101,7 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 		super.onStart();
 
 		BarsAnimator barsAnimator = new BarsAnimator();
+		AppUi.barsAnimator = barsAnimator;
 		barsAnimator.setBarsFromActivity(this);
 		TabManager.setBarsAnimator(barsAnimator);
 
@@ -177,26 +178,34 @@ public class MainActivity extends AppCompatActivity implements TabListener {
 				getWindow().clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
 			}
 
-			updateBarsVisibility();
-
 			if(wasPausedDuringFullscreen) {
 				wasPausedDuringFullscreen = false;
 
 				onTabFullscreenToggle(tab, true);
 				onTabFullscreenToggle(tab, false);
 			}
+		} else {
+			if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+				getWindow().setFlags(
+						WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+						WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+			}
 
-			return;
+			insets.hide(toggleableInsets);
 		}
 
-		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-			getWindow().setFlags(
-					WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-					WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
-		}
-
-		insets.hide(toggleableInsets);
 		updateBarsVisibility();
+
+		if(isFullscreen) {
+			barsWereExpanded = AppUi.barsAnimator.isExpanded();
+			barsWereExpandable = AppUi.barsAnimator.isExpandable();
+
+			AppUi.barsAnimator.setIsExpandedImmediately(false);
+			AppUi.barsAnimator.setIsExpandable(false);
+		} else {
+			AppUi.barsAnimator.setIsExpandable(barsWereExpandable);
+			AppUi.barsAnimator.setIsExpandedImmediately(barsWereExpanded);
+		}
 	}
 
 	private void updateBarsVisibility() {

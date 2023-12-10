@@ -15,10 +15,9 @@ import com.mrboomdev.scrollix.app.AppManager;
 public class BarsAnimator {
 	private final View.OnTouchListener touchListener;
 	private ConstraintLayout parent;
-	private View topbar, bottombar, contentHolder;
-	private View bottomHelper;
+	private View topbar, bottombar,  bottomHelper;
 	private float startY, currentY, offset;
-	private boolean barsExpandable;
+	private boolean isExpandable, isExpanded;
 	private Runnable changeSettingListener;
 
 	public BarsAnimator() {
@@ -27,7 +26,6 @@ public class BarsAnimator {
 
 	public void setBarsFromActivity(@NonNull Activity activity) {
 		parent = activity.findViewById(R.id.main_screen_parent);
-		contentHolder = activity.findViewById(R.id.webViewHolder);
 
 		topbar = activity.findViewById(R.id.top_bar);
 		bottombar = activity.findViewById(R.id.bottom_bar);
@@ -35,7 +33,7 @@ public class BarsAnimator {
 
 		AppManager.settings.removeChangeListener("collapseBars", changeSettingListener);
 
-		changeSettingListener = () -> setBarsAreExpandable(AppManager.settings.collapseBars);
+		changeSettingListener = () -> setIsExpandable(AppManager.settings.collapseBars);
 		changeSettingListener.run();
 
 		AppManager.settings.addChangeListener("collapseBars", changeSettingListener);
@@ -45,18 +43,17 @@ public class BarsAnimator {
 		return touchListener;
 	}
 
-	public void setBarsAreExpanded(boolean areExpanded) {
+	public void setIsExpanded(boolean isExpanded) {
 		if(parent != null) {
 			TransitionManager.beginDelayedTransition(parent);
 		}
 
-		offset = areExpanded ? 0 : topbar.getHeight();
-		doALittleUpdate();
+		setIsExpandedImmediately(isExpanded);
 	}
 
-	public void setBarsAreExpandable(boolean areExpandable) {
-		barsExpandable = areExpandable;
-		if(!areExpandable) offset = 0;
+	public void setIsExpandable(boolean isExpandable) {
+		this.isExpandable = isExpandable;
+		if(!isExpandable) offset = 0;
 
 		if(parent != null) {
 			TransitionManager.beginDelayedTransition(parent);
@@ -65,7 +62,21 @@ public class BarsAnimator {
 		doALittleUpdate();
 	}
 
-	public void doALittleUpdate() {
+	public void setIsExpandedImmediately(boolean isExpanded) {
+		this.offset = isExpanded ? 0 : topbar.getHeight();
+		this.isExpanded = isExpanded;
+		this.doALittleUpdate();
+	}
+
+	public boolean isExpanded() {
+		return isExpanded;
+	}
+
+	public boolean isExpandable() {
+		return isExpandable;
+	}
+
+	private void doALittleUpdate() {
 		var difference = Math.round(offset);
 
 		if(topbar != null) {
@@ -92,7 +103,7 @@ public class BarsAnimator {
 		@SuppressLint("ClickableViewAccessibility")
 		@Override
 		public boolean onTouch(View v, @NonNull MotionEvent event) {
-			if(!barsExpandable) return false;
+			if(!isExpandable) return false;
 
 			switch(event.getAction()) {
 				case MotionEvent.ACTION_DOWN -> startY = event.getRawY();
@@ -101,9 +112,9 @@ public class BarsAnimator {
 					currentY = event.getRawY();
 
 					//Don't do anything with bars because user just touched the screen, not scrolled.
-					if(Math.abs(startY - currentY) < 5) return false;
+					if(Math.abs(startY - currentY) < 10) return false;
 
-					setBarsAreExpanded(currentY > startY);
+					setIsExpanded(currentY > startY);
 				}
 			}
 

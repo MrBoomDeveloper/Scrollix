@@ -20,6 +20,7 @@ import com.mrboomdev.scrollix.data.settings.AppSettings;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.MainActivity;
 import com.mrboomdev.scrollix.ui.popup.DialogMenu;
@@ -141,6 +142,7 @@ public class AppManager {
 
 		mainActivityContext = null;
 		TabStore.clearTabs();
+		AppUi.dispose();
 		TabManager.dispose();
 		ThemeSettings.ThemeManager.setContext(null);
 	}

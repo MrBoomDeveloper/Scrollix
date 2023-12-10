@@ -55,6 +55,7 @@ public class IntentHandler {
 					public void run() {
 						if(context.searchLayout != null) {
 							context.searchLayout.show();
+							context.searchLayout.editText.setText("");
 							return;
 						}
 

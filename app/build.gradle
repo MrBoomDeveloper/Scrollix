@@ -14,12 +14,12 @@ android {
         targetSdk 34
 
         var date = new Date()
-        versionName "1.0.1." + new SimpleDateFormat("DHmmss").format(date)
+        versionName "1.0.2." + new SimpleDateFormat("DHmmss").format(date)
         versionCode Integer.parseInt(new SimpleDateFormat("DHmmss").format(date))
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
-        //buildConfigField("String", "BUILD_DATE_YEAR", "\"" + date.year + "\"")
+        buildConfigField("String", "BUILD_DATE_YEAR", "\"" + new SimpleDateFormat("YYYY").format(date) + "\"")
     }
 
     buildFeatures {

@@ -100,6 +100,45 @@ header {
         font-size: .85em;
         color: #ccc;
     }
+
+    .list-item-toggle {
+        display: block;
+        width: 3.5rem;
+        height: 1.6rem;
+        transition: .15s;
+        position: relative;
+        border-radius: 1.5rem;
+
+        &::after {
+            display: block;
+            content: "";
+            position: absolute;
+            width: 1.3rem;
+            aspect-ratio: 1;
+            border-radius: 1.5rem;
+            top: .15rem;
+            transition: .15s;
+        }
+
+        &.list-item-toggle-active {
+            background-color: #eee;
+
+            &::after {
+                background-color: #222;
+                left: 2rem;
+            }
+        }
+
+        &.list-item-toggle-inactive {
+            background-color: #222;
+            outline: solid white 1.5px;
+
+            &::after {
+                background-color: #eee;
+                left: .25rem;
+            }
+        }
+    }
 }
 
 .sections > div {

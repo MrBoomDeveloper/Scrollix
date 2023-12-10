@@ -63,7 +63,7 @@
 		] },
 
 		{ "title": "About", "type": "section", "items": [
-			{ "title": "Made by", "description": "MrBoomDev in $APP_BUILD_YEAR" },
+			{ "title": "Made by", "description": "MrBoomDev in $[APP_BUILD_YEAR]" },
 			{ "title": "Version", "description": "$[APP_BUILD_VERSION]" }
 		] }
 	]

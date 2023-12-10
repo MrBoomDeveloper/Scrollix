@@ -37,7 +37,7 @@ public class TabManager {
 
 	public static void setBarsAreExpanded(boolean isExpanded) {
 		if(barsAnimator == null) return;
-		barsAnimator.setBarsAreExpanded(isExpanded);
+		barsAnimator.setIsExpanded(isExpanded);
 	}
 
 	public static Tab getCurrentTab() {

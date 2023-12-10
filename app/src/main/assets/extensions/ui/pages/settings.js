@@ -34,15 +34,20 @@ function setSection(data) {
         const el = document.createElement("div");
         el.className = "list-item";
 
+        const info = document.createElement("div");
+        info.className = "list-item-info";
+        el.appendChild(info);
+
+        info.innerHTML = `
+            <p class="list-item-title">${item.title}</p>
+            ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
+        `;
+
+        const action = document.createElement("div");
+        el.appendChild(action);
+
         switch(item.type ?? "info") {
             case "section": {
-                el.innerHTML = `
-                    <div class="list-item-info">
-                        <p class="list-item-title">${item.title}</p>
-                        ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
-                    </div>
-                `;
-
                 el.onclick = () => setTimeout(() => {
                     currentSectionPath.push(id);
                     setSection(item);
@@ -50,65 +55,36 @@ function setSection(data) {
             } break;
 
             case "toggle": {
-                render();
-
-                function render() {
-                    el.innerHTML = `
-                        <div class="list-item-info">
-                            <p class="list-item-title">${item.title}</p>
-                            ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
-                        </div>
-
-                        <p>${values[item.id]}</p>
-                    `;
+                function updateState() {
+                    action.className = "list-item-toggle";
+                    action.classList.add(values[item.id] ? "list-item-toggle-active" : "list-item-toggle-inactive");
                 }
+
+                updateState();
 
                 el.onclick = () => {
                     values[item.id] = !values[item.id];
                     scrollix.updateSettings(values);
-                    setTimeout(() => render(), CALLBACK_DELAY);
+                    setTimeout(() => updateState(), CALLBACK_DELAY);
                 }
             } break;
 
             case "ratio": {
-                render();
+                function updateState() {
 
-                function render() {
-                    el.innerHTML = `
-                        <div class="list-item-info">
-                            <p class="list-item-title">${item.title}</p>
-                            ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
-                        </div>
-
-                        <p>${values[item.id]}</p>
-                    `;
                 }
 
+                updateState();
+
                 el.onclick = () => {
-                    setTimeout(() => render(), CALLBACK_DELAY);
+                    setTimeout(() => updateState(), CALLBACK_DELAY);
                 }
             } break;
 
             case "action": {
-                el.innerHTML = `
-                    <div class="list-item-info">
-                        <p class="list-item-title">${item.title}</p>
-                        ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
-                    </div>
-                `;
-
                 el.onclick = () => {
                     alert("not available currently!");
                 }
-            } break;
-
-            default: {
-                el.innerHTML = `
-                    <div class="list-item-info">
-                        <p class="list-item-title">${item.title}</p>
-                        ${item.description ? `<p class="list-item-description">${item.description}</p>` : ""}
-                    </div>
-                `;
             } break;
         }
 

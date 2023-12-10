@@ -13,6 +13,7 @@ import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 
+import org.jetbrains.annotations.Contract;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -51,7 +52,7 @@ public class ExtensionDelegator {
 				var cacheDir = AppManager.getActivityContext().getCacheDir();
 
 				var settingsInfo = new JSONObject(FileUtil.readAssetsString("settings.json")
-						.replace("$[APP_BUILD_YEAR]", "2023")
+						.replace("$[APP_BUILD_YEAR]", BuildConfig.BUILD_DATE_YEAR)
 						.replace("$[APP_BUILD_VERSION]", BuildConfig.VERSION_NAME)
 						.replace("$[APP_SIZE_CACHE]", String.valueOf(FileUtil.getFileSize(cacheDir))));
 

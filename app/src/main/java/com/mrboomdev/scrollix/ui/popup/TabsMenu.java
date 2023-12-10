@@ -27,6 +27,7 @@ import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabListener;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
@@ -47,6 +48,7 @@ public class TabsMenu implements TabListener {
 
 	public TabsMenu(Context context) {
 		this.context = context;
+		AppUi.tabsMenu = this;
 	}
 
 	public void close() {

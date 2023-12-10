@@ -23,6 +23,7 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.EngineInternal;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
+import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
@@ -42,6 +43,7 @@ public class ActionsMenu {
 
 	public ActionsMenu(Context context) {
 		this.context = context;
+		AppUi.actionsMenu = this;
 		var theme = ThemeSettings.ThemeManager.getCurrentValidTheme();
 
 		background = new DrawableBuilder.ColorDrawableBuilder()
