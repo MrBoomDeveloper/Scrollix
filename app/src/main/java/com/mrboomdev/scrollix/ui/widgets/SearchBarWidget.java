@@ -10,7 +10,6 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -23,6 +22,7 @@ import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.util.AppUtils;
+import com.mrboomdev.scrollix.util.callback.ViewUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
@@ -53,16 +53,16 @@ public class SearchBarWidget extends LinearLayout {
 		styledHolder.setOrientation(LinearLayout.HORIZONTAL);
 		styledHolder.setGravity(Gravity.CENTER_VERTICAL);
 
-		var background = DrawableUtil.getDrawable(R.drawable.search_input_background, theme.barsInner);
-		styledHolder.setBackground(background);
+		styledHolder.setBackground(DrawableUtil.getDrawable(
+				R.drawable.search_input_background, theme.barsInner));
 
 		boolean isLandscape = AppUtils.isLandscape();
 		var holderPadding = FormatUtil.getDip(isLandscape ? 10 : 8, isLandscape ? 2 : 4);
 		var holderMargin = FormatUtil.getDip(isLandscape ? 8 : 10, isLandscape ? 6 : 8);
 
-		styledHolder.setPadding(holderPadding[0], holderPadding[1], holderPadding[0], holderPadding[1]);
 		addView(styledHolder, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-		((LinearLayout.LayoutParams)styledHolder.getLayoutParams()).setMargins(holderMargin[0], holderMargin[1], holderMargin[0], holderMargin[1]);
+		ViewUtil.setMargin(styledHolder, holderMargin[0], holderMargin[1]);
+		ViewUtil.setPadding(styledHolder, holderPadding[0], holderPadding[1]);
 
 		styledHolder.setClickable(true);
 		styledHolder.setFocusable(true);
@@ -79,16 +79,15 @@ public class SearchBarWidget extends LinearLayout {
 		securityIconImage = DrawableUtil.getDrawable(R.drawable.ic_lock_black, primaryColor);
 		securityIcon = new ImageView(context);
 		securityIcon.setImageDrawable(securityIconImage);
-		securityIcon.setPadding(11, 11, 11, 11);
 		securityIcon.setBackground(circleRipple);
 		securityIcon.setClickable(true);
 		securityIcon.setFocusable(true);
 		styledHolder.addView(securityIcon, size, size);
-		((LayoutParams)securityIcon.getLayoutParams()).rightMargin = 10;
+		ViewUtil.setRightMargin(securityIcon, 10);
+		ViewUtil.setPadding(securityIcon, 11);
 
-		securityIcon.setOnClickListener(view -> {
-			Toast.makeText(context, "Not available currently!", Toast.LENGTH_SHORT).show();
-		});
+		securityIcon.setOnClickListener(view ->
+				AppUtils.toast("Not available currently!", false));
 
 		titleView = new TextView(context);
 		titleView.setTextSize(Formats.SMALL_TEXT);
@@ -96,16 +95,16 @@ public class SearchBarWidget extends LinearLayout {
 		titleView.setSingleLine(true);
 		titleView.setText(R.string.comment_search_something);
 		styledHolder.addView(titleView);
-		((LayoutParams)titleView.getLayoutParams()).weight = 1;
+		ViewUtil.setWeight(titleView, 1);
 
 		refreshButton = new ImageView(context);
 		refreshButton.setBackground(DrawableUtil.copyDrawable(circleRipple));
 
 		refreshButton.setClickable(true);
 		refreshButton.setFocusable(true);
-		refreshButton.setPadding(10, 10, 10, 10);
 		styledHolder.addView(refreshButton, size, size);
-		((LayoutParams)refreshButton.getLayoutParams()).setMargins(20, 0, 0, 0);
+		ViewUtil.setRightMargin(refreshButton, 20);
+		ViewUtil.setPadding(refreshButton, 10);
 
 		refreshButton.setOnClickListener(view -> {
 			var tab = TabManager.getCurrentTab();

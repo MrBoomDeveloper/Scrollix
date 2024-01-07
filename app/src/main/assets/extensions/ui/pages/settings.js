@@ -5,7 +5,7 @@ const titleEl = document.querySelector("#title");
 const backEl = document.querySelector("#back");
 
 let currentSectionPath = [];
-let settings, values;
+let settings, values, wasCurrent;
 
 backEl.onclick = () => {
     if(currentSectionPath.length == 0) return;
@@ -26,6 +26,7 @@ function openBackRecursively(state, index) {
 }
 
 function setSection(data) {
+    wasCurrent = data;
     sectionsEl.innerHTML = "";
     titleEl.innerText = data.title ?? "Settings";
     backEl.style.display = (data == settings) ? "none" : "block";
@@ -83,7 +84,7 @@ function setSection(data) {
 
             case "action": {
                 el.onclick = () => {
-                    alert("not available currently!");
+                    scrollix.useCustomAction(item.id);
                 }
             } break;
         }

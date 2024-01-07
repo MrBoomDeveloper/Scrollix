@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -24,6 +23,7 @@ import com.mrboomdev.scrollix.ui.popup.ActionsMenu;
 import com.mrboomdev.scrollix.ui.popup.TabsMenu;
 import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.callback.ValueReturner1;
+import com.mrboomdev.scrollix.util.callback.ViewUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
@@ -185,13 +185,10 @@ public abstract class Action {
 		view.setFocusable(true);
 		FormatUtil.setPadding(view, padding);
 
-		if(view instanceof ViewGroup viewGroup) {
-			for(int i = 0; i < viewGroup.getChildCount(); i++) {
-				var child = viewGroup.getChildAt(i);
-				child.setOnClickListener(null);
-				child.setClickable(false);
-				child.setFocusable(false);
-			}
+		for(var child : ViewUtil.getChildIterable(view)) {
+			child.setOnClickListener(null);
+			child.setClickable(false);
+			child.setFocusable(false);
 		}
 	}
 

@@ -16,6 +16,7 @@ import com.google.android.material.divider.MaterialDivider;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.util.FileUtil;
+import com.mrboomdev.scrollix.util.callback.ViewUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
@@ -44,7 +45,7 @@ public class ContextMenu extends LinearLayout {
 
 		var header = new LinearLayout(context);
 		header.setOrientation(HORIZONTAL);
-		header.setPadding(Formats.LARGE_PADDING, Formats.BIG_PADDING, Formats.LARGE_PADDING, Formats.BIG_PADDING);
+		ViewUtil.setPadding(header, Formats.LARGE_PADDING, Formats.BIG_PADDING);
 		addView(header);
 
 		if(builder.image != null) {
@@ -76,7 +77,7 @@ public class ContextMenu extends LinearLayout {
 			title.setText(builder.title);
 			title.setMaxLines(2);
 			headerText.addView(title);
-			((LayoutParams)title.getLayoutParams()).bottomMargin = Formats.NORMAL_PADDING;
+			ViewUtil.setBottomMargin(title, Formats.NORMAL_PADDING);
 		}
 
 		if(!builder.isBase64Image && (builder.url != null || builder.image != null)) {
@@ -89,7 +90,7 @@ public class ContextMenu extends LinearLayout {
 
 		var divider = new MaterialDivider(context);
 		addView(divider);
-		((LayoutParams)divider.getLayoutParams()).bottomMargin = Formats.NORMAL_PADDING;
+		ViewUtil.setBottomMargin(divider, Formats.NORMAL_PADDING);
 
 		for(var action : builder.actions) {
 			var linear = new LinearLayout(context);

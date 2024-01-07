@@ -11,8 +11,9 @@ import androidx.annotation.Nullable;
 import com.mrboomdev.scrollix.data.download.DownloadManager;
 import com.mrboomdev.scrollix.data.download.UserMadeDownload;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.ui.MainActivity;
-import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.ui.popup.dialog.DialogMenu;
 import com.mrboomdev.scrollix.util.AppUtils;
 
 import java.net.URISyntaxException;
@@ -53,9 +54,9 @@ public class IntentHandler {
 				var timeoutCallback = new Runnable() {
 					@Override
 					public void run() {
-						if(context.searchLayout != null) {
-							context.searchLayout.show();
-							context.searchLayout.editText.setText("");
+						if(AppUi.searchLayout != null) {
+							AppUi.searchLayout.show();
+							AppUi.searchLayout.editText.setText("");
 							return;
 						}
 

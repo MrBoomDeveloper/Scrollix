@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.engine.tab;
 import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
+import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 
@@ -16,6 +17,7 @@ public class Tab {
 	protected boolean canGoBack, canGoForward, didRestoreState;
 	protected String url, title;
 	private boolean didInit, isError, isCrash;
+	protected GeckoSession.SessionState sessionState;
 	protected int progress;
 
 	public Tab(String url, boolean lateInit) {
@@ -80,6 +82,7 @@ public class Tab {
 
 	public void setIsCrash(boolean isCrash) {
 		this.isCrash = isCrash;
+		AppUi.setTabCrashed(this);
 	}
 
 	public boolean isCrash() {
@@ -125,6 +128,10 @@ public class Tab {
 	}
 
 	public GeckoSession.SessionState getState() {
+		if(sessionState != null) {
+			return sessionState;
+		}
+
 		try {
 			var sessionField = GeckoSession.class.getDeclaredField("mStateCache");
 			sessionField.setAccessible(true);
@@ -175,7 +182,15 @@ public class Tab {
 	}
 
 	public void reload() {
+		if(isCrash) {
+			didInit = false;
+			setIsCrash(false);
+			init();
+			return;
+		}
+
 		if(isError) {
+			setIsError(false);
 			loadUrl(url);
 			return;
 		}

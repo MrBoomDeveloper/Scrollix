@@ -11,6 +11,7 @@ import androidx.transition.TransitionManager;
 
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.app.AppManager;
+import com.mrboomdev.scrollix.util.callback.ViewUtil;
 
 public class BarsAnimator {
 	private final View.OnTouchListener touchListener;
@@ -79,23 +80,9 @@ public class BarsAnimator {
 	private void doALittleUpdate() {
 		var difference = Math.round(offset);
 
-		if(topbar != null) {
-			var topbarParams = (ConstraintLayout.LayoutParams)topbar.getLayoutParams();
-			topbarParams.topMargin = -difference;
-			topbar.requestLayout();
-		}
-
-		if(bottombar != null) {
-			var bottombarParams = (ConstraintLayout.LayoutParams)bottombar.getLayoutParams();
-			bottombarParams.bottomMargin = -difference;
-			bottombar.requestLayout();
-		}
-
-		if(bottomHelper != null) {
-			var bottomHelperParams = (ConstraintLayout.LayoutParams)bottomHelper.getLayoutParams();
-			bottomHelperParams.topMargin = -difference;
-			bottomHelper.requestLayout();
-		}
+		if(topbar != null) ViewUtil.setTopMargin(topbar, -difference);
+		if(bottombar != null) ViewUtil.setBottomMargin(bottombar, -difference);
+		if(bottomHelper != null) ViewUtil.setTopMargin(bottomHelper, -difference);
 	}
 
 	private class TouchListener implements View.OnTouchListener {

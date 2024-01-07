@@ -11,25 +11,10 @@
 				"description": "While scrolling navigation bars will collapse and expand.",
 				"id": "collapse_bars", "type": "toggle"
 			}, {
-				"title": "Left actions",
-				"description": "If topbar is here, they'll appear in it, or else in the bottombar.",
+				"title": "Quick actions",
+				"description": "Change their locations on all around of interface.",
 				"type": "action",
-				"id": "customize_left_actions"
-			}, {
-				"title": "Right actions",
-				"description": "If topbar is here, they'll appear in it, or else in the bottombar.",
-				"type": "action",
-				"id": "customize_right_actions"
-			}, {
-				"title": "Side actions",
-				"description": "If sidebar is here, they'll appear in it, or else in the popup menu.",
-				"type": "action",
-				"id": "customize_side_actions"
-			}, {
-				"title": "Popup actions",
-				"description": "They'll appear in the popup menu",
-				"type": "action",
-				"id": "customize_menu_actions"
+				"id": "customize_actions"
 			}
 		] },
 

@@ -6,7 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.mrboomdev.scrollix.app.AppManager;
-import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.ui.popup.dialog.DialogMenu;
 import com.mrboomdev.scrollix.util.callback.Callback1;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
 

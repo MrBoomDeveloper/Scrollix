@@ -28,6 +28,7 @@ import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.util.AppUtils;
+import com.mrboomdev.scrollix.util.callback.ViewUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableBuilder;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
@@ -193,12 +194,12 @@ public class TabsMenu {
 				linear.setClickable(true);
 				linear.setFocusable(true);
 				linear.setBackgroundResource(R.drawable.ripple_square);
-				linear.setPadding(Formats.BIG_PADDING, Formats.SMALL_PADDING, Formats.BIG_PADDING, Formats.SMALL_PADDING);
+				ViewUtil.setPadding(linear, Formats.BIG_PADDING, Formats.SMALL_PADDING);
 
 				title = new TextView(context);
 				title.setSingleLine();
 				linear.addView(title);
-				((LinearLayout.LayoutParams)title.getLayoutParams()).weight = 1;
+				ViewUtil.setWeight(title, 1);
 
 				remove = new ImageView(context);
 				remove.setClickable(true);
@@ -252,7 +253,11 @@ public class TabsMenu {
 		}
 
 		@Override
-		public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder, @NonNull RecyclerView.ViewHolder target) {
+		public boolean onMove(
+				@NonNull RecyclerView recyclerView,
+				@NonNull RecyclerView.ViewHolder viewHolder,
+				@NonNull RecyclerView.ViewHolder target
+		) {
 			adapter.move(viewHolder.getAdapterPosition(), target.getAdapterPosition());
 			return true;
 		}

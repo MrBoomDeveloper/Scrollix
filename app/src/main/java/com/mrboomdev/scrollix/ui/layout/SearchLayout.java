@@ -31,6 +31,7 @@ import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.LinkUtil;
 import com.mrboomdev.scrollix.util.callback.CallbackController;
+import com.mrboomdev.scrollix.util.callback.ViewUtil;
 import com.mrboomdev.scrollix.util.drawable.DrawableUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
@@ -77,10 +78,8 @@ public class SearchLayout extends LinearLayout implements TextView.OnEditorActio
 		editText.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
 		inputBar.addView(editText, 0, ViewGroup.LayoutParams.MATCH_PARENT);
 
-		var editTextParams = (LayoutParams)editText.getLayoutParams();
-		editTextParams.weight = 1;
-		editTextParams.leftMargin = Formats.BIG_PADDING;
-		editText.setLayoutParams(editTextParams);
+		ViewUtil.setWeight(editText, 1);
+		ViewUtil.setLeftMargin(editText, Formats.BIG_PADDING);
 		editText.setOnEditorActionListener(this);
 		editText.addTextChangedListener(this);
 

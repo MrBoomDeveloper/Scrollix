@@ -26,14 +26,12 @@ import com.mrboomdev.scrollix.data.Action;
 import com.mrboomdev.scrollix.data.settings.ThemeSettings;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
-import com.mrboomdev.scrollix.ui.layout.SearchLayout;
 import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
 import com.mrboomdev.scrollix.util.format.Formats;
 
 public class MainActivity extends AppCompatActivity {
-	public SearchLayout searchLayout;
 	private LinearLayout topbar, bottombar, sidebar;
 
 	@Override
@@ -61,21 +59,9 @@ public class MainActivity extends AppCompatActivity {
 		AppUi.sidebar = sidebar;
 		AppUi.bottombar = bottombar;
 
-		AppUi.progressIndicator = findViewById(R.id.progressIndicator);
-
-		searchLayout = new SearchLayout(this);
-		searchLayout.setVisibility(View.GONE, false);
-		AppUi.searchLayout = searchLayout;
-
-		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
-		searchLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
-		searchLayoutParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID;
-		searchLayoutParams.leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID;
-		searchLayoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
-		parent.addView(searchLayout, searchLayoutParams);
-
-		LinearLayout webViewHolder = findViewById(R.id.webViewHolder);
-		TabManager.setTabHolder(webViewHolder);
+		AppUi.startup(this);
+		AppUi.webHolder = findViewById(R.id.webViewHolder);
+		TabManager.setTabHolder(AppUi.webHolder);
 		reloadLayout();
 	}
 
@@ -91,7 +77,7 @@ public class MainActivity extends AppCompatActivity {
 		AppManager.postCreate();
 		registerBackHandler();
 
-		searchLayout.setLaunchLinkListener(url -> TabManager.getCurrentTab().loadUrl(url));
+		AppUi.searchLayout.setLaunchLinkListener(url -> TabManager.getCurrentTab().loadUrl(url));
 		ThemeSettings.ThemeManager.addUpdateListener(() -> runOnUiThread(this::reloadLayout));
 
 		if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -139,7 +125,7 @@ public class MainActivity extends AppCompatActivity {
 			window.setAttributes(attrs);
 		}
 
-		searchLayout.setTheme(theme);
+		AppUi.searchLayout.setTheme(theme);
 
 		var color = Color.parseColor(theme.primary);
 		AppUi.progressIndicator.setIndicatorColor(color, color, color);
@@ -189,7 +175,7 @@ public class MainActivity extends AppCompatActivity {
 		}
 
 		SearchBarWidget searchBar = new SearchBarWidget(this, theme);
-		searchBar.setOnClickListener(view -> searchLayout.show());
+		searchBar.setOnClickListener(view -> AppUi.searchLayout.show());
 		topbar.addView(searchBar);
 		AppUi.searchBar = searchBar;
 
@@ -223,8 +209,8 @@ public class MainActivity extends AppCompatActivity {
 
 	private void registerBackHandler() {
 		Runnable callback = () -> {
-			if(searchLayout.isOpened()) {
-				searchLayout.hide();
+			if(AppUi.searchLayout.isOpened()) {
+				AppUi.searchLayout.hide();
 				return;
 			}
 

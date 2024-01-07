@@ -20,6 +20,19 @@ import java.util.Objects;
 
 public class FileUtil {
 
+	public static boolean deleteFile(@NonNull File file) {
+		if(file.isDirectory()) {
+			var children = file.listFiles();
+			if(children == null) return false;
+
+			for(var child : children) {
+				deleteFile(child);
+			}
+		}
+
+		return file.delete();
+	}
+
 	@NonNull
 	public static String readFileString(File file) {
 		return new String(readFileBytes(file));

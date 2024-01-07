@@ -10,8 +10,11 @@ import com.mrboomdev.scrollix.app.AppManager;
 import com.mrboomdev.scrollix.engine.tab.Tab;
 import com.mrboomdev.scrollix.engine.tab.TabManager;
 import com.mrboomdev.scrollix.engine.tab.TabStore;
+import com.mrboomdev.scrollix.ui.AppUi;
+import com.mrboomdev.scrollix.ui.layout.LayoutDragAndDrop;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.exception.UnexpectedBehaviourException;
+import com.mrboomdev.scrollix.util.format.FormatUtil;
 
 import org.jetbrains.annotations.Contract;
 import org.json.JSONArray;
@@ -54,7 +57,7 @@ public class ExtensionDelegator {
 				var settingsInfo = new JSONObject(FileUtil.readAssetsString("settings.json")
 						.replace("$[APP_BUILD_YEAR]", BuildConfig.BUILD_DATE_YEAR)
 						.replace("$[APP_BUILD_VERSION]", BuildConfig.VERSION_NAME)
-						.replace("$[APP_SIZE_CACHE]", String.valueOf(FileUtil.getFileSize(cacheDir))));
+						.replace("$[APP_SIZE_CACHE]", FormatUtil.formatFileSize(FileUtil.getFileSize(cacheDir))));
 
 				var entry = new JSONArray()
 						.put(settingsInfo)
@@ -78,6 +81,19 @@ public class ExtensionDelegator {
 
 	public static void setSessionDelegators(@NonNull Tab tab) {
 		createDelegatorsFor(tab.getSession());
+	}
+
+	@Contract(pure = true)
+	private static void useCustomAction(@NonNull String actionName) {
+		switch(actionName) {
+			case "customize_actions" -> LayoutDragAndDrop.start();
+
+			case "clear_cache" -> new Thread(() -> {
+				var cacheDir = AppManager.getActivityContext().getCacheDir();
+				FileUtil.deleteFile(cacheDir);
+				updateSettingsForExtensions();
+			}).start();
+		}
 	}
 
 	private static void createDelegatorsFor(Object target) {
@@ -137,10 +153,11 @@ public class ExtensionDelegator {
 							case "reload" -> TabManager.getCurrentTab().reload();
 
 							case "open-search" -> {
-								var search = AppManager.getMainActivityContext().searchLayout;
-								search.show();
-								search.editText.setText("");
+								AppUi.searchLayout.show();
+								AppUi.searchLayout.editText.setText("");
 							}
+
+							case "use-custom-action" -> useCustomAction(json.getString("value"));
 
 							case "update-settings" -> AppManager.settings.merge(json.get("value").toString());
 

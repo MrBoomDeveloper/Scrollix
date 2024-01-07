@@ -14,6 +14,13 @@ window.scrollix = {
         });
     },
 
+    useCustomAction(action) {
+        browser.runtime.sendNativeMessage("scrollix", {
+            action: "use-custom-action",
+            value: action
+        });
+    },
+
     openSearch() {
         browser.runtime.sendNativeMessage("scrollix", {
             action: "open-search"

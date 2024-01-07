@@ -7,6 +7,8 @@ import androidx.annotation.NonNull;
 
 import com.mrboomdev.scrollix.app.AppManager;
 
+import org.jetbrains.annotations.Contract;
+
 import java.util.List;
 
 public class FormatUtil {
@@ -36,6 +38,25 @@ public class FormatUtil {
 
 	public static int getBytesFromKilobytes(int kb) {
 		return kb * 1024;
+	}
+
+	@NonNull
+	@Contract(pure = true)
+	public static String formatFileSize(long bytes) {
+		var kb = bytes / 1024;
+
+		if(kb >= 1000) {
+			var mb = kb / 1024;
+
+			if(mb >= 1000) {
+				var gb = mb / 1024;
+				return gb + "gb";
+			}
+
+			return mb + "mb";
+		}
+
+		return kb + "kb";
 	}
 
 	public static String removeBase64ImagePrefix(String string) {

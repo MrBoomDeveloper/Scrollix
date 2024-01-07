@@ -14,6 +14,14 @@ public abstract class DrawableBuilder {
 	protected int cornerRadius, strokeWidth, strokeColor;
 	protected Shape shape = Shape.RECTANGLE;
 
+	public static Drawable ofColor(String color) {
+		return new ColorDrawableBuilder(color).build();
+	}
+
+	public static Drawable ofColor(@ColorInt int color) {
+		return new ColorDrawableBuilder(color).build();
+	}
+
 	public DrawableBuilder() {}
 
 	public DrawableBuilder setCornerRadius(int cornerRadius) {

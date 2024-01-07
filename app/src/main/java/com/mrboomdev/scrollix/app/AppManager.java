@@ -23,7 +23,7 @@ import com.mrboomdev.scrollix.engine.tab.TabStore;
 import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.MainActivity;
-import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.ui.popup.dialog.DialogMenu;
 import com.mrboomdev.scrollix.util.AppUtils;
 import com.mrboomdev.scrollix.util.FileUtil;
 import com.mrboomdev.scrollix.util.format.FormatUtil;
@@ -147,6 +147,17 @@ public class AppManager {
 		ThemeSettings.ThemeManager.setContext(null);
 	}
 
+	public static void restart() {
+		saveState();
+
+		var pm = mainActivityContext.getPackageManager();
+		var intent = pm.getLaunchIntentForPackage(mainActivityContext.getPackageName());
+		mainActivityContext.finishAffinity();
+		mainActivityContext.startActivity(intent);
+
+		System.exit(0);
+	}
+
 	public static void closeApp() {
 		var context = getActivityContext();
 		if(context == null) return;
@@ -161,6 +172,7 @@ public class AppManager {
 				.setCancelable(false)
 				.setTitle("App just crashed!")
 				.setDescription("Stacktrace: \n\n" + Log.getStackTraceString(throwable))
+				.addAction("Restart", AppManager::restart)
 				.addAction("Exit app", AppManager::closeApp)
 				.show());
 	}

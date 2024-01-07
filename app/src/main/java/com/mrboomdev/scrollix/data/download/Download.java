@@ -18,7 +18,7 @@ public class Download {
 	private File file;
 	private String base64data;
 	private Map<String, String> headers;
-	private boolean isBase64;
+	private boolean isBase64, isMultiRange;
 	private DownloadException exception;
 	private int id = -1;
 
@@ -43,6 +43,14 @@ public class Download {
 
 	public URL getUrl() {
 		return url;
+	}
+
+	public void setIsMultiRange(boolean isMultiRange) {
+		this.isMultiRange = isMultiRange;
+	}
+
+	public boolean isMultiRange() {
+		return isMultiRange;
 	}
 
 	public File getFile() {

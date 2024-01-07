@@ -13,7 +13,8 @@ import com.mrboomdev.scrollix.engine.extenison.ExtensionManager;
 import com.mrboomdev.scrollix.ui.AppUi;
 import com.mrboomdev.scrollix.ui.IncognitoActivity;
 import com.mrboomdev.scrollix.ui.popup.ContextMenu;
-import com.mrboomdev.scrollix.ui.popup.DialogMenu;
+import com.mrboomdev.scrollix.ui.popup.dialog.DialogMenu;
+import com.mrboomdev.scrollix.ui.popup.dialog.DialogTextInput;
 import com.mrboomdev.scrollix.util.AppUtils;
 
 import org.mozilla.geckoview.AllowOrDeny;
@@ -33,6 +34,48 @@ public class TabDelegator {
 		tab.getSession().setPromptDelegate(new GeckoSession.PromptDelegate() {
 
 			@Override
+			public GeckoResult<PromptResponse> onButtonPrompt(@NonNull GeckoSession session, @NonNull ButtonPrompt prompt) {
+				/*var result = new GeckoResult<PromptResponse>();
+
+				new DialogMenu(AppManager.getActivityContext())
+						.setTitle(prompt.title)
+						.setDescription(prompt.message)
+						.addAction("Cancel", () -> result.complete(prompt.dismiss()))
+						.setCancelable(false)
+						.show();
+
+				return result;*/
+
+				return null;
+			}
+
+			@NonNull
+			@Override
+			public GeckoResult<PromptResponse> onTextPrompt(@NonNull GeckoSession session, @NonNull TextPrompt prompt) {
+				var result = new GeckoResult<PromptResponse>();
+
+				var input = new DialogTextInput();
+				input.setPlaceholder(prompt.defaultValue);
+				input.setFocusOnShow(true);
+
+				var dialog = new DialogMenu(AppManager.getActivityContext())
+						.setTitle(prompt.title)
+						.setDescription(prompt.message)
+						.addElement(input)
+						.addAction("Cancel", () -> result.complete(prompt.dismiss()))
+						.addAction("Confirm", () -> result.complete(prompt.confirm(input.getText())))
+						.setCancelable(false)
+						.show();
+
+				input.setDoneListener(text -> {
+					result.complete(prompt.confirm(text));
+					dialog.dismiss();
+				});
+
+				return result;
+			}
+
+			@Override
 			public GeckoResult<PromptResponse> onAlertPrompt(@NonNull GeckoSession session, @NonNull AlertPrompt prompt) {
 				var result = new GeckoResult<PromptResponse>();
 
@@ -50,6 +93,11 @@ public class TabDelegator {
 		tab.getSession().setContentDelegate(new GeckoSession.ContentDelegate() {
 
 			@Override
+			public void onCrash(@NonNull GeckoSession session) {
+				tab.setIsCrash(true);
+			}
+
+			@Override
 			public void onExternalResponse(@NonNull GeckoSession session, @NonNull WebResponse response) {
 				new UserMadeDownload(response.uri)
 						.setHeaders(response.headers)
@@ -58,7 +106,7 @@ public class TabDelegator {
 
 			@Override
 			public void onShowDynamicToolbar(@NonNull GeckoSession geckoSession) {
-				TabManager.setBarsAreExpanded(true);
+				AppUi.barsAnimator.setIsExpanded(true);
 			}
 
 			@Override
@@ -176,6 +224,11 @@ public class TabDelegator {
 			public void onPageStop(@NonNull GeckoSession session, boolean success) {
 				tab.progress = 100;
 				AppUi.finishTabLoading(tab);
+			}
+
+			@Override
+			public void onSessionStateChange(@NonNull GeckoSession session, @NonNull GeckoSession.SessionState sessionState) {
+				tab.sessionState = sessionState;
 			}
 
 			@Override

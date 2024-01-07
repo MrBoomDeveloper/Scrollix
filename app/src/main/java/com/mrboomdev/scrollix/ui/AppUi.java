@@ -2,9 +2,11 @@ package com.mrboomdev.scrollix.ui;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.graphics.Color;
 import android.os.Build;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -26,7 +28,7 @@ import com.mrboomdev.scrollix.ui.widgets.SearchBarWidget;
 
 @SuppressLint("StaticFieldLeak")
 public class AppUi {
-	public static LinearLayout topbar, sidebar, bottombar;
+	public static LinearLayout topbar, sidebar, bottombar, webHolder;
 	public static ConstraintLayout parent;
 	public static TabsMenu tabsMenu;
 	public static ActionsMenu actionsMenu;
@@ -37,6 +39,20 @@ public class AppUi {
 	public static TextView tabsCounter;
 	public static LinearProgressIndicator progressIndicator;
 	public static boolean isFullscreen, wasPausedDuringFullscreen, barsWereExpanded, barsWereExpandable;
+
+	public static void startup(@NonNull Activity context) {
+		progressIndicator = context.findViewById(R.id.progressIndicator);
+
+		searchLayout = new SearchLayout(context);
+		searchLayout.setVisibility(View.GONE, false);
+
+		var searchLayoutParams = new ConstraintLayout.LayoutParams(0, 0);
+		searchLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
+		searchLayoutParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID;
+		searchLayoutParams.leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID;
+		searchLayoutParams.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
+		parent.addView(searchLayout, searchLayoutParams);
+	}
 
 	public static void updateBackForwardState() {
 		var currentTab = TabManager.getCurrentTab();
@@ -49,6 +65,25 @@ public class AppUi {
 		if(forwardButton != null) {
 			forwardButton.setAlpha(currentTab.canGoForward() ? 1 : .6f);
 		}
+	}
+
+	public static void setTabCrashed(Tab tab) {
+		if(tab != TabManager.getCurrentTab()) return;
+		var context = AppManager.getActivityContext();
+
+		var replacer = TabManager.getReplacer();
+		replacer.removeAllViews();
+		replacer.setVisibility(View.VISIBLE);
+
+		var textView = new TextView(context);
+		textView.setTextColor(Color.WHITE);
+		textView.setText("Tab crashed!");
+		replacer.addView(textView);
+
+		var button = new Button(context);
+		button.setText("Refresh tab");
+		button.setOnClickListener(_view -> tab.reload());
+		replacer.addView(button);
 	}
 
 	public static void toggleFullscreen(Tab tab, boolean isFullscreen) {
