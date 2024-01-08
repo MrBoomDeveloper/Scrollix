@@ -104,15 +104,38 @@ public class FileUtil {
 		return new File(AppManager.getAppContext().getExternalFilesDir(null), path);
 	}
 
-	public static void writeFile(@NonNull String text, @NonNull File file) {
+	public static void writeFile(@NonNull String text, @NonNull File file, boolean append) {
 		Objects.requireNonNull(file.getParentFile()).mkdirs();
 
-		try(var stream = new FileOutputStream(file)) {
+		try(var stream = new FileOutputStream(file, append)) {
 			var bytes = text.getBytes();
 			stream.write(bytes);
 		} catch(IOException e) {
 			throw new RuntimeException("Failed to write a file!", e);
 		}
+	}
+
+	public static void writeFile(@NonNull String text, @NonNull File file) {
+		writeFile(text, file, false);
+	}
+
+	public static void writeFile(File from, File to, boolean append) {
+		try(var in = new FileInputStream(from)) {
+			try(var out = new FileOutputStream(to, append)) {
+				var buffer = new byte[1024];
+				int read;
+
+				while((read = in.read(buffer)) != -1) {
+					out.write(buffer, 0, read);
+				}
+			}
+		} catch(IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public static void writeFile(File from, File to) {
+		writeFile(from, to, false);
 	}
 
 	public static void writeBitmap(@NonNull Bitmap bitmap, File file) {

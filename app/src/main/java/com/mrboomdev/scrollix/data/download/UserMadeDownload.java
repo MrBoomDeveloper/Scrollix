@@ -111,8 +111,8 @@ public class UserMadeDownload extends Download {
 
 	public void start() {
 		PermissionManager.checkAndRequestPermission(Permission.NOTIFICATION, isSuccess -> {
-			this.hasNotificationPermission = isSuccess;
 			super.start();
+			this.hasNotificationPermission = isSuccess;
 
 			if(!hasNotificationPermission) return;
 			notificationId = NotificationManager.getUniqueNotificationId();

@@ -3,17 +3,35 @@ package com.mrboomdev.scrollix.util.exception;
 public class DownloadException extends Exception {
 	private int responseCode = -1;
 	private String responseMessage;
+	private final boolean isCancelled;
+
+	public DownloadException(String text, Exception e, boolean isCancelled) {
+		super(text, e);
+		this.isCancelled = isCancelled;
+	}
+
+	public DownloadException(Exception e, boolean isCancelled) {
+		this(null, e, isCancelled);
+	}
 
 	public DownloadException(Exception e) {
-		super(e);
+		this(e, false);
 	}
 
 	public DownloadException(String text, Exception e) {
-		super(text, e);
+		this(text, e, false);
+	}
+
+	public DownloadException(String text, boolean isCancelled) {
+		this(text, null, isCancelled);
 	}
 
 	public DownloadException(String text) {
-		super(text);
+		this(text, null, false);
+	}
+
+	public boolean isCancelled() {
+		return isCancelled;
 	}
 
 	public void setResponseCode(int code) {

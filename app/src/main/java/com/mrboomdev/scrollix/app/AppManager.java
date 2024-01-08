@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.StrictMode;
 import android.util.Log;
 import android.webkit.WebView;
 import android.widget.Toast;
@@ -14,6 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.color.DynamicColors;
+import com.mrboomdev.scrollix.BuildConfig;
 import com.mrboomdev.scrollix.R;
 import com.mrboomdev.scrollix.data.DataProfile;
 import com.mrboomdev.scrollix.data.settings.AppSettings;
@@ -64,8 +66,22 @@ public class AppManager {
 		}
 	}
 
+	private static void setupStrictMode() {
+		var policy = new StrictMode.ThreadPolicy.Builder()
+				.detectNetwork();
+
+		if(BuildConfig.DEBUG) {
+			policy.penaltyDialog();
+		} else {
+			policy.penaltyLog();
+		}
+
+		StrictMode.setThreadPolicy(policy.build());
+	}
+
 	public static void startup(MainActivity context) {
 		setupCrashHandler();
+		setupStrictMode();
 		mainActivityContext = context;
 
 		var displayImageOptions = new DisplayImageOptions.Builder()
