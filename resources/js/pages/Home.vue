@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import AppWrapper from '@/layouts/AppWrapper.vue';
+import { Link } from '@inertiajs/vue3';
 import { Ref, ref } from 'vue';
+import { formatDistance, subDays } from "date-fns";
+
+interface Props {
+    tab: "accepted" | "not_decided" | "not_accepted"
+}
+
+withDefaults(defineProps<Props>(), {
+    tab: "accepted"
+});
 
 const posts: Ref<RedditPost[]> = ref([]);
 
@@ -8,6 +18,10 @@ interface RedditPost {
     author: string,
     title: string,
     selftext: string,
+    score: number,
+    created: number,
+    permalink: string,
+    num_comments: number,
     preview: {
         images: RedditPostImageWrapper[]
     }
@@ -25,7 +39,7 @@ interface RedditPostImage {
 }
 
 async function fetchRedditPosts() {
-    const response = await (await fetch("https://www.reddit.com/r/AnimeART/hot.json?limit=10")).json();
+    const response = await (await fetch("https://www.reddit.com/r/AnimeART/top.json?limit=100&t=all")).json();
     for(const post of response.data.children) {
         posts.value.push(post.data);
     }
@@ -40,9 +54,17 @@ fetchRedditPosts();
     <AppWrapper :selectedTab="'home'">
         <div class="feed-wrapper">
             <div class="filters">
-                <span class="selected">Accepted</span>
-                <span>Not decided</span>
-                <span>Not accepted</span>
+                <Link href="/home/accepted">
+                    <span :class="tab == 'accepted' ? 'selected' : ''">Accepted</span>
+                </Link>
+
+                <Link href="/home/not_decided">
+                    <span :class="tab == 'not_decided' ? 'selected' : ''">Not decided</span>
+                </Link>
+
+                <Link href="/home/not_accepted">
+                    <span :class="tab == 'not_accepted' ? 'selected' : ''">Not accepted</span>
+                </Link>
             </div>
 
             <div class="feed">
@@ -55,14 +77,48 @@ fetchRedditPosts();
                     </div>
                 </div>
 
-                <div class="post" v-for="post in posts" :key="post.title">
-                    <h5>u/{{ post.author }}</h5>
-                    <h1>{{ post.title }}</h1>
-                    <p>{{ post.selftext }}</p>
+                <div class="post-wrapper" v-for="post in posts" :key="post.title">
+                    <a :href="'https://reddit.com' + post.permalink" target="_blank" class="post">
+                        <h5>
+                            <a href="https://reddit.com/r/AnimeART" target="_blank">r/AnimeART</a> 
+                            by <a :href="'https://reddit.com/u/' + post.author" target="_blank">u/{{ post.author }}</a> 
+                            {{ formatDistance(new Date(post.created * 1000), new Date(), { addSuffix: true }) }}
+                        </h5>
 
-                    <div class="gallery" v-for="image in post.preview.images" :key="image.source.url" v-if="post.preview != null">
-                        <img class="gallery-item" :src="image.source.url.replaceAll('amp;', '')" />
-                    </div>
+                        <h1>{{ post.title }}</h1>
+                        <p>{{ post.selftext }}</p>
+
+                        <div class="gallery" v-for="image in post.preview.images" :key="image.source.url" v-if="post.preview != null">
+                            <img class="gallery-item" :src="image.source.url.replaceAll('amp;', '')" />
+                        </div>
+
+                        <div class="actions">
+                            <a class="action" @click="" href="target:blank">
+                                <img src="/ic_like_outlined.svg" />
+                            </a>
+
+                            <span>{{ post.score }}</span>
+
+                            <a class="action" @click="" href="target:blank">
+                                <img src="/ic_dislike_outlined.svg" />
+                            </a>
+
+                            <span class="actions-spacing"></span>
+
+                            <div class="action">
+                                <img src="/ic_comment_outlined.svg" />
+                                <span>{{ post.num_comments }}</span>
+                            </div>
+
+                            <a class="action" @click="" href="target:blank">
+                                <img src="/ic_favorite_outlined.svg" />
+                            </a>
+
+                            <a class="action" @click="" href="target:blank">
+                                <img src="/ic_more.svg" />
+                            </a>
+                        </div>
+                    </a>
                 </div>
             </div>
         </div>
@@ -81,7 +137,6 @@ fetchRedditPosts();
         padding-top: 1rem;
         padding-inline: 2rem;
         display: flex;
-        overflow: scroll;
         gap: 1rem;
 
         span {
@@ -146,8 +201,13 @@ fetchRedditPosts();
             }
 
             h5 {
+                font-size: .9em;
                 color: rgb(207, 172, 210);
                 font-family: "Google Sans Flex", sans-serif;
+
+                a:hover {
+                    text-decoration: underline;
+                }
             }
 
             p {
@@ -171,6 +231,75 @@ fetchRedditPosts();
                 .gallery-item {
                     max-height: 40rem;
                     border-radius: 1rem;
+                }
+            }
+
+            .actions {
+                margin-top: .8rem;
+                margin-bottom: 1rem;
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+
+                > span {
+                    font-family: "Google Sans Flex", sans-serif;
+                }
+
+                .actions-spacing {
+                    flex-grow: 1;
+                }
+
+                .action {
+                    display: flex;
+                    align-items: center;
+                    cursor: pointer;
+                    gap: .6rem;
+                    transition: .1s, scale .05s;
+                    position: relative;
+                    z-index: 1;
+
+                    img {
+                        height: 1.6rem;
+                        transition: .1s;
+                    }
+
+                    span {
+                        font-family: "Google Sans Flex", sans-serif;
+                        transition: .1s;
+                    }
+
+                    &::before {
+                        content: "";
+                        display: block;
+                        position: absolute;
+                        background-color: rgb(221, 135, 255);
+                        width: calc(100% + 1.6rem);
+                        height: calc(100% + 1.2rem);
+                        top: -.6rem;
+                        left: -.8rem;
+                        z-index: -1;
+                        opacity: 0;
+                        border-radius: 2rem;
+                        transition: .1s;
+                    }
+
+                    &:hover {
+                        &::before {
+                            opacity: 1;
+                        }
+
+                        img {
+                            filter: brightness(0) saturate(100%)
+                        }
+
+                        span {
+                            color: black;
+                        }
+                    }
+
+                    &:active {
+                        scale: .95;
+                    }
                 }
             }
         }

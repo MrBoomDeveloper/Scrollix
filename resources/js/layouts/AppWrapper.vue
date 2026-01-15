@@ -22,32 +22,32 @@ const user = page.props.auth.user;
 
     <div class="app">
         <div class="sidebar">
-            <Link :href="'/'">
+            <Link href="/">
                 <span class="logo">Scrollix</span>
             </Link>
 
-            <Link :href="'/'">
+            <Link href="/home">
                 <div class="sidebar-item" :class="{'sidebar-item-selected': selectedTab == 'home'}">
                     <img :src="selectedTab == 'home' ? '/ic_home_filled.svg' : '/ic_home_outlined.svg'" />
                     <span>Home</span>
                 </div>
             </Link>
 
-            <Link :href="'/search'">
+            <Link href="/search">
                 <div class="sidebar-item" :class="{'sidebar-item-selected': selectedTab == 'search'}">
                     <img src="/ic_search.svg" />
                     <span>Search</span>
                 </div>
             </Link>
 
-            <Link :href="'/favourites'">
+            <Link href="/favourites">
                 <div class="sidebar-item" :class="{'sidebar-item-selected': selectedTab == 'favourites'}">
-                    <img :src="selectedTab == 'favourites' ? '/ic_star_filled.svg' : '/ic_star_outlined.svg'" />
+                    <img :src="selectedTab == 'favourites' ? '/ic_favorite_filled.svg' : '/ic_favorite_outlined.svg'" />
                     <span>Favourites</span>
                 </div>
             </Link>
 
-            <Link :href="'/history'">
+            <Link href="/history">
                 <div class="sidebar-item" :class="{'sidebar-item-selected': selectedTab == 'history'}">
                     <img src="/ic_history.svg" />
                     <span>History</span>
@@ -56,7 +56,7 @@ const user = page.props.auth.user;
 
             <span class="sidebar-spacing"></span>
 
-            <Link :href="'/settings/profile'">
+            <Link href="/settings/profile">
                 <div class="sidebar-item" :class="{'sidebar-item-selected': selectedTab == 'account'}">
                     <img src="/ic_account_outlined.svg" />
                     <span>{{ user?.name ?? "Login" }}</span>
