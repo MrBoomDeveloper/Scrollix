@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 
 interface Props {
     selectedTab: "home" | "search" | "favourites" | "history" | "account"

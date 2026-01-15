@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import AppWrapper from '@/layouts/AppWrapper.vue';
+import { Head } from '@inertiajs/vue3';
 </script>
 
 <template>
-    <Head title="Favourites"></Head>
+    <Head title="Favourites - Scrollix" />
 
     <AppWrapper :selectedTab="'favourites'">
         <h1>Favourites screen</h1>
