@@ -1,0 +1,16 @@
+product: android/app
+
+dependencies:
+  - //shared
+  - $libs.androidx.activity.compose
+  - $compose.preview
+  - $compose.uiTooling
+
+settings:
+  compose: enabled
+  android:
+    namespace: com.mrboomdev.scrollix
+    applicationId: com.mrboomdev.scrollix
+    compileSdk: 37
+    targetSdk: 37
+    minSdk: 30
