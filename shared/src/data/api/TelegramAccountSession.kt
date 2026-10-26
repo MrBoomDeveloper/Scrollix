@@ -8,11 +8,13 @@ import com.mrboomdev.scrollix.data.model.AuthField
 import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
+import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.generated.BuildConfig
 import com.mrboomdev.scrollix.getPlatform
 import dev.g000sha256.tdl.TdlClient
@@ -24,8 +26,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -53,6 +59,10 @@ class TelegramAccountSession(
     private val _dialogs = MutableStateFlow<List<Dialog>>(emptyList())
     override val dialogs: StateFlow<List<Dialog>> = _dialogs.asStateFlow()
 
+    private val messagesByChat = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
+    private val avatarCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
+    private val avatarRequests = MutableStateFlow<Set<Int>>(emptySet())
+
     private val stateMutex = Mutex()
     private val _chats = MutableStateFlow<Map<Long, ChatEntry>>(emptyMap())
     private val _users = MutableStateFlow<Map<Long, User>>(emptyMap())
@@ -64,6 +74,112 @@ class TelegramAccountSession(
     private var closed = false
     private var currentChallenge: AuthChallenge? = null
     private var currentUserId: Long? = null
+
+    override fun messages(providerDialogId: String): StateFlow<List<ChatMessage>> {
+        return messagesByChat
+            .map { it[providerDialogId].orEmpty() }
+            .distinctUntilChanged()
+            .stateIn(
+                scope = scope,
+                started = SharingStarted.Eagerly,
+                initialValue = messagesByChat.value[providerDialogId].orEmpty()
+            )
+    }
+
+    override suspend fun loadMessages(providerDialogId: String, limit: Int): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.getChatHistory(
+                chatId = chatId,
+                fromMessageId = 0,
+                offset = 0,
+                limit = limit.coerceIn(1, 100),
+                onlyLocal = false
+            )) {
+                is TdlResult.Success -> {
+                    val messages = result.result.messages
+                        .filterNotNull()
+                        .map(::mapMessage)
+
+                    messagesByChat.update { existing ->
+                        existing + (
+                            providerDialogId to mergeMessages(
+                                existing[providerDialogId].orEmpty() + messages
+                            )
+                        )
+                    }
+
+                    if (messages.isNotEmpty()) {
+                        markMessagesRead(
+                            providerDialogId = providerDialogId,
+                            messageIds = messages.map { it.messageId }.toLongArray()
+                        )
+                    }
+
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun sendMessage(providerDialogId: String, text: String): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Message is empty"))
+        }
+
+        return try {
+            when (val result = client.sendMessage(
+                chatId = chatId,
+                inputMessageContent = InputMessageText(
+                    text = FormattedText(
+                        text = trimmed,
+                        entities = emptyArray<TextEntity>()
+                    ),
+                    linkPreviewOptions = null,
+                    clearDraft = true
+                )
+            )) {
+                is TdlResult.Success -> {
+                    upsertMessage(result.result)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray) {
+        val chatId = providerDialogId.toLongOrNull() ?: return
+        if (messageIds.isEmpty()) return
+
+        try {
+            client.viewMessages(
+                chatId = chatId,
+                messageIds = messageIds,
+                forceRead = true
+            )
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Exception) {
+        }
+    }
 
     override suspend fun start() {
         if (started || closed) return
@@ -355,6 +471,30 @@ class TelegramAccountSession(
 
                 emitDialogs()
             }
+
+            is UpdateNewMessage -> upsertMessage(update.message)
+
+            is UpdateMessageContent -> updateMessageContent(
+                chatId = update.chatId,
+                messageId = update.messageId,
+                content = update.newContent
+            )
+
+            is UpdateMessageSendSucceeded -> replaceMessage(
+                chatId = update.message.chatId,
+                oldMessageId = update.oldMessageId,
+                message = update.message
+            )
+
+            is UpdateMessageSendFailed -> removeMessages(
+                chatId = update.message.chatId,
+                messageIds = longArrayOf(update.oldMessageId)
+            )
+
+            is UpdateDeleteMessages -> removeMessages(
+                chatId = update.chatId,
+                messageIds = update.messageIds
+            )
 
             else -> Unit
         }
@@ -686,17 +826,17 @@ class TelegramAccountSession(
     }
 
     private fun updateProfile(user: User) {
-        val displayName = listOf(user.firstName, user.lastName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { "Telegram account" }
-
+        val displayName = userDisplayName(user)
         val nickname = user.usernames?.activeUsernames?.firstOrNull()
-        val avatar = user.profilePhoto?.minithumbnail?.data?.let { image ->
+        val photo = user.profilePhoto
+        val image = photo?.small?.let(::avatarBytes)
+            ?: photo?.minithumbnail?.data
+
+        val avatar = image?.let { bytes ->
             Avatar(
                 initials = Avatar.fromName(displayName).initials,
                 colorSeed = displayName.hashCode(),
-                image = image
+                image = bytes
             )
         } ?: Avatar.fromName(displayName)
 
@@ -705,6 +845,106 @@ class TelegramAccountSession(
             nickname = nickname,
             avatar = avatar
         )
+    }
+
+    private fun userDisplayName(user: User): String {
+        return listOf(user.firstName, user.lastName)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .ifBlank { "Telegram account" }
+    }
+
+    private fun mapMessage(message: Message): ChatMessage {
+        val senderName = if (message.isOutgoing) {
+            null
+        } else {
+            when (val sender = message.senderId) {
+                is MessageSenderUser -> _users.value[sender.userId]?.let(::userDisplayName)
+                is MessageSenderChat -> _chats.value[sender.chatId]?.title
+            }
+        }
+
+        return ChatMessage(
+            providerId = providerId,
+            accountId = accountId,
+            providerDialogId = message.chatId.toString(),
+            messageId = message.id,
+            senderName = senderName,
+            text = messageBody(message.content),
+            timestamp = message.date.toLong() * 1000L,
+            isOutgoing = message.isOutgoing
+        )
+    }
+
+    private fun upsertMessage(message: Message) {
+        val dialogId = message.chatId.toString()
+        val mapped = mapMessage(message)
+
+        messagesByChat.update { existing ->
+            if (dialogId !in existing) return@update existing
+
+            existing + (
+                dialogId to mergeMessages(existing[dialogId].orEmpty() + mapped)
+            )
+        }
+    }
+
+    private fun replaceMessage(chatId: Long, oldMessageId: Long, message: Message) {
+        val dialogId = chatId.toString()
+        val mapped = mapMessage(message)
+
+        messagesByChat.update { existing ->
+            if (dialogId !in existing) return@update existing
+
+            existing + (
+                dialogId to mergeMessages(
+                    existing[dialogId].orEmpty().filterNot {
+                        it.messageId == oldMessageId || it.messageId == mapped.messageId
+                    } + mapped
+                )
+            )
+        }
+    }
+
+    private fun updateMessageContent(chatId: Long, messageId: Long, content: MessageContent) {
+        val dialogId = chatId.toString()
+
+        messagesByChat.update { existing ->
+            if (dialogId !in existing) return@update existing
+
+            existing + (
+                dialogId to existing[dialogId].orEmpty().map { message ->
+                    if (message.messageId == messageId) {
+                        message.copy(text = messageBody(content))
+                    } else {
+                        message
+                    }
+                }
+            )
+        }
+    }
+
+    private fun removeMessages(chatId: Long, messageIds: LongArray) {
+        val dialogId = chatId.toString()
+        val ids = messageIds.toSet()
+
+        messagesByChat.update { existing ->
+            if (dialogId !in existing) return@update existing
+
+            existing + (
+                dialogId to existing[dialogId].orEmpty().filterNot { it.messageId in ids }
+            )
+        }
+    }
+
+    private fun mergeMessages(messages: List<ChatMessage>): List<ChatMessage> {
+        return messages
+            .associateBy { it.messageId }
+            .values
+            .sortedWith(
+                compareBy<ChatMessage> { it.timestamp }
+                    .thenBy { it.messageId }
+            )
     }
 
     private suspend fun loadAllChats() {
@@ -748,6 +988,54 @@ class TelegramAccountSession(
         } catch (exception: Exception) {
             if (!closed) {
                 println("Failed to load Telegram dialogs: ${exception.message}")
+            }
+        }
+    }
+
+    private fun avatarBytes(file: File?): ByteArray? {
+        if (file == null || file.id == 0) return null
+
+        avatarCache.value[file.id]?.let { return it }
+        requestAvatar(file)
+        return null
+    }
+
+    private fun requestAvatar(file: File) {
+        var shouldLoad = false
+
+        avatarRequests.update { requested ->
+            if (file.id in requested || avatarCache.value.containsKey(file.id)) {
+                requested
+            } else {
+                shouldLoad = true
+                requested + file.id
+            }
+        }
+
+        if (!shouldLoad) return
+
+        scope.launch {
+            val result = try {
+                client.downloadFile(
+                    fileId = file.id,
+                    priority = 16,
+                    offset = 0,
+                    limit = 0,
+                    synchronous = true
+                )
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+                null
+            }
+
+            if (result is TdlResult.Success && result.result.local.isDownloadingCompleted) {
+                val bytes = readFileBytes(result.result.local.path)
+                if (bytes != null && bytes.isNotEmpty()) {
+                    avatarCache.update { it + (file.id to bytes) }
+                    emitDialogs()
+                    _users.value[currentUserId]?.let(::updateProfile)
+                }
             }
         }
     }
@@ -850,7 +1138,9 @@ class TelegramAccountSession(
                 )
             }
 
-            val avatarBytes = entry.photo?.minithumbnail?.data
+            val photoFile = entry.photo?.small ?: user?.profilePhoto?.small
+            val imageBytes = photoFile?.let(::avatarBytes)
+                ?: entry.photo?.minithumbnail?.data
                 ?: user?.profilePhoto?.minithumbnail?.data
 
             Dialog(
@@ -866,7 +1156,7 @@ class TelegramAccountSession(
                 isPinned = mainPosition.isPinned,
                 isMarkedAsUnread = entry.isMarkedAsUnread,
                 order = mainPosition.order,
-                avatar = avatarBytes?.let { image ->
+                avatar = imageBytes?.let { image ->
                     Avatar(
                         initials = Avatar.fromName(entry.title).initials,
                         colorSeed = entry.title.hashCode(),
@@ -888,7 +1178,16 @@ class TelegramAccountSession(
     private fun messagePreview(message: Message?): String {
         if (message == null) return "No messages yet"
 
-        val preview = when (val content = message.content) {
+        val preview = messageBody(message.content)
+            .replace('\n', ' ')
+            .trim()
+            .ifBlank { "Message" }
+
+        return if (message.isOutgoing) "You: $preview" else preview
+    }
+
+    private fun messageBody(content: MessageContent): String {
+        return when (content) {
             is MessageText -> content.text.text
             is MessagePhoto -> "Photo"
             is MessageVideo -> "Video"
@@ -903,9 +1202,7 @@ class TelegramAccountSession(
             is MessageContact -> "Contact"
             is MessageCall -> "Call"
             else -> content::class.simpleName?.removePrefix("Message") ?: "Message"
-        }.replace('\n', ' ').trim().ifBlank { "Message" }
-
-        return if (message.isOutgoing) "You: $preview" else preview
+        }
     }
 
     private data class ChatEntry(

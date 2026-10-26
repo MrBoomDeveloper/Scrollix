@@ -57,7 +57,8 @@ private const val TAB_BOTS = 4
 
 @Composable
 fun HomeScreen(
-    onOpenAccountsScreen: () -> Unit
+    onOpenAccountsScreen: () -> Unit,
+    onOpenDialog: (AccountDialogEntry) -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(TAB_ALL) }
     val accountState by ApiManager.accountState.collectAsState()
@@ -178,7 +179,10 @@ fun HomeScreen(
                         "${entry.account.id}:${entry.dialog.providerDialogId}"
                     }
                 ) { entry ->
-                    DialogItem(entry)
+                    DialogItem(
+                        entry = entry,
+                        onClick = { onOpenDialog(entry) }
+                    )
                 }
 
                 if (visibleEntries.isEmpty()) {
@@ -223,12 +227,13 @@ private fun HomeTab(
 }
 
 @Composable
-private fun DialogItem(entry: AccountDialogEntry) {
+private fun DialogItem(entry: AccountDialogEntry, onClick: () -> Unit) {
     val dialog = entry.dialog
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = androidx.compose.ui.graphics.Color.Transparent
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier.padding(8.dp)

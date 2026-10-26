@@ -8,6 +8,7 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.features.accounts.AccountsScreen
+import com.mrboomdev.scrollix.features.dialog.DialogScreen
 import com.mrboomdev.scrollix.features.home.HomeScreen
 import com.mrboomdev.scrollix.features.login.LoginScreen
 import kotlinx.coroutines.launch
@@ -21,6 +22,12 @@ fun rememberAppEntryProvider(
             HomeScreen(
                 onOpenAccountsScreen = {
                     backStack += Route.Accounts
+                },
+                onOpenDialog = { entry ->
+                    backStack += Route.Dialog(
+                        accountId = entry.account.id,
+                        providerDialogId = entry.dialog.providerDialogId
+                    )
                 }
             )
         }
@@ -32,6 +39,16 @@ fun rememberAppEntryProvider(
                 },
                 onOpenLogin = { accountId ->
                     backStack += Route.Login(accountId)
+                }
+            )
+        }
+
+        entry<Route.Dialog> { route ->
+            DialogScreen(
+                accountId = route.accountId,
+                providerDialogId = route.providerDialogId,
+                onBack = {
+                    backStack.removeLastOrNull()
                 }
             )
         }

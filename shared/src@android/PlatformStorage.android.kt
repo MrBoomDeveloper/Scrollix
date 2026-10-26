@@ -51,6 +51,12 @@ private class AndroidPlatformStorage : PlatformStorage {
 
 actual fun createPlatformStorage(): PlatformStorage = AndroidPlatformStorage()
 
+actual fun readFileBytes(path: String): ByteArray? {
+    return runCatching {
+        File(path).takeIf { it.isFile }?.readBytes()
+    }.getOrNull()
+}
+
 actual fun randomId(): String = UUID.randomUUID().toString()
 
 actual fun currentTimeMillis(): Long = System.currentTimeMillis()

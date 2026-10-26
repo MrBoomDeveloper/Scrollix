@@ -59,6 +59,7 @@ fun App() {
     }
     
     val currentRoute = backStack.lastOrNull()
+    val isHomeTab = currentRoute is Route.Home || currentRoute is Route.Dialog
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -113,7 +114,7 @@ fun App() {
                     )
 
                     ShortNavigationBarItem(
-                        selected = currentRoute is Route.Home,
+                        selected = isHomeTab,
                         onClick = {
                             if (backStack.lastOrNull() != Route.Home) {
                                 backStack.clear()
@@ -124,7 +125,7 @@ fun App() {
 
                         icon = {
                             Icon(
-                                imageVector = if (currentRoute is Route.Home) {
+                                imageVector = if (isHomeTab) {
                                     home_icon_filled
                                 } else {
                                     home_icon

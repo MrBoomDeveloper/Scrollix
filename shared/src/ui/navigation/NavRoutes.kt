@@ -13,4 +13,10 @@ sealed interface Route: NavKey {
 
     @Serializable
     data class Login(val accountId: String) : Route
+
+    @Serializable
+    data class Dialog(
+        val accountId: String,
+        val providerDialogId: String
+    ) : Route
 }
