@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
+import androidx.compose.material3.ToggleFloatingActionButtonDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -97,7 +98,7 @@ fun HomeScreen(
 
                     Text(
                         text = "Scrollix",
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleLarge
                     )
 
                     Box(
@@ -213,9 +214,14 @@ fun HomeScreen(
                 button = {
                     ToggleFloatingActionButton(
                         checked = expandCreationMenu,
-                        onCheckedChange = { expandCreationMenu = !expandCreationMenu }
+                        onCheckedChange = { expandCreationMenu = !expandCreationMenu },
+                        containerColor = ToggleFloatingActionButtonDefaults.containerColor(
+                            initialColor = MaterialTheme.colorScheme.primary,
+                            finalColor = MaterialTheme.colorScheme.primary
+                        )
                     ) {
                         Icon(
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             imageVector = add_icon,
                             contentDescription = null
                         )

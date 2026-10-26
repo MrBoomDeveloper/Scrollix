@@ -3,7 +3,7 @@ product:
   platforms: [android, jvm]
 
 dependencies:
-  - $libs.serialization.json
+  - $kotlin.reflect
   - $compose.runtime
   - $compose.foundation
   - $compose.material3
@@ -16,6 +16,7 @@ dependencies:
   - $libs.jetbrains.navigation3.ui
   - $libs.jetbrains.lifecycle.viewmodelNavigation3
   - $libs.jetbrains.material3.adaptiveNavigation3
+  - $libs.tdlib
 
 dependencies@android:
   - $compose.uiTooling
