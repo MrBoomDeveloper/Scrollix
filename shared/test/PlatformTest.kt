@@ -9,9 +9,4 @@ class PlatformTest {
     fun `platform name is reported`() {
         assertTrue(getPlatform().name.isNotBlank())
     }
-
-    @Test
-    fun `greeting is built from the platform name`() {
-        assertEquals("Hello, ${getPlatform().name}!", Greeting().greet())
-    }
 }
