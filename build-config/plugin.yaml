@@ -1,0 +1,10 @@
+tasks:
+  generate:
+    action: !com.mrboomdev.scrollix.buildconfig.generateBuildConfig
+      propertiesFile: ${project.rootDir}/local.properties
+      generatedSourceDir: ${taskOutputDir}
+
+generated:
+  sources:
+    - language: kotlin
+      directory: ${tasks.generate.action.generatedSourceDir}

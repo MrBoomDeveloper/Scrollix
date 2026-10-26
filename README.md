@@ -14,6 +14,27 @@ The `kotlin` (macOS/Linux) and `kotlin.bat` (Windows) scripts in the project roo
 the Kotlin Toolchain: they download the pinned toolchain version on first use, so no separate installation is required.
 Build the whole project with `./kotlin build`.
 
+### Configuration
+
+Telegram API credentials are read from `local.properties` at build time and generated into
+`com.mrboomdev.scrollix.generated.BuildConfig`. This file is gitignored. Create it from the example and fill in your
+credentials from [my.telegram.org/apps](https://my.telegram.org/apps):
+
+```sh
+cp local.properties.example local.properties
+```
+
+```properties
+telegram.apiId=123456
+telegram.apiHash=0123456789abcdef0123456789abcdef
+```
+
+The values are compiled into the app binary, so they are not suitable for high-security secrets. They are kept out of
+version control only. On CI, create `local.properties` from secrets before running the build.
+
+After creating or changing `local.properties`, reload the project in the IDE so the generated `BuildConfig` source is
+picked up.
+
 ### Running
 
 Run each module from the command line:

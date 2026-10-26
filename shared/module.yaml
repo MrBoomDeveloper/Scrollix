@@ -2,6 +2,9 @@ product:
   type: kmp/lib
   platforms: [android, jvm]
 
+plugins:
+  build-config: enabled
+
 dependencies:
   - $kotlin.reflect
   - $compose.runtime

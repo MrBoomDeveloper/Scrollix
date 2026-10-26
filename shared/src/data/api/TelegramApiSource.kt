@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.api
 
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.generated.BuildConfig
 import dev.g000sha256.tdl.TdlClient
 import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.AuthorizationStateWaitTdlibParameters
@@ -37,8 +38,8 @@ data object TelegramApiSource: ApiSource {
                                     useChatInfoDatabase = false,
                                     useMessageDatabase = false,
                                     useSecretChats = false,
-                                    apiId = 0,
-                                    apiHash = "",
+                                    apiId = BuildConfig.TELEGRAM_API_ID,
+                                    apiHash = BuildConfig.TELEGRAM_API_HASH,
                                     systemLanguageCode = "en",
                                     deviceModel = "Unknown",
                                     systemVersion = "Unknown",

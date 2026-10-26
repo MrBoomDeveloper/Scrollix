@@ -1,4 +1,8 @@
 modules:
   - androidApp
+  - build-config
   - desktopApp
   - shared
+
+plugins:
+  - ./build-config

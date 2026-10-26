@@ -1,4 +1,5 @@
 /build/
+local.properties
 .idea/
 **/module.xcodeproj/*
 !**/module.xcodeproj/project.pbxproj

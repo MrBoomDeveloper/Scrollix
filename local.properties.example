@@ -1,0 +1,4 @@
+# Copy this file to local.properties and fill in your own credentials.
+# Get them at https://my.telegram.org/apps
+telegram.apiId=123456
+telegram.apiHash=0123456789abcdef0123456789abcdef
