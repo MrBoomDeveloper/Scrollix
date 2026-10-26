@@ -1,6 +1,9 @@
 /build/
 local.properties
 .idea/
+tdlib_files/
+*.binlog
+.scrollix/
 **/module.xcodeproj/*
 !**/module.xcodeproj/project.pbxproj
 !**/module.xcodeproj/xcshareddata/

@@ -20,6 +20,7 @@ dependencies:
   - $libs.jetbrains.lifecycle.viewmodelNavigation3
   - $libs.jetbrains.material3.adaptiveNavigation3
   - $libs.tdlib
+  - $libs.qrose
 
 dependencies@android:
   - $compose.uiTooling

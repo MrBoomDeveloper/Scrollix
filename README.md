@@ -35,6 +35,29 @@ version control only. On CI, create `local.properties` from secrets before runni
 After creating or changing `local.properties`, reload the project in the IDE so the generated `BuildConfig` source is
 picked up.
 
+### Telegram login
+
+Telegram decides how login codes are delivered. Third-party TDLib clients usually receive the code through the official
+Telegram app on another signed-in device, not by SMS. Keep an official Telegram session available when signing in.
+
+If the code does not arrive, use **Log in with QR code** and scan it from Telegram's **Settings → Devices → Link
+Desktop Device** on a signed-in device. New accounts must be registered in an official Telegram app first; TDLib cannot
+create a new account by itself.
+
+### Accounts and local data
+
+Scrollix supports multiple Telegram accounts. Accounts are persisted in `accounts.json`, and each account has its own
+TDLib database and file directory. All authorized accounts are started when the app launches, so restarting the app does
+not require signing in again.
+
+Local data is stored in:
+
+- Desktop: `~/.scrollix/`
+- Android: the app's `noBackupFilesDir/scrollix/`
+
+Android backups are disabled because the TDLib databases contain account credentials. The `tdlib_files/` directory is a
+local development artifact and is gitignored.
+
 ### Running
 
 Run each module from the command line:

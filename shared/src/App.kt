@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.ShortNavigationBarItemDefaults
@@ -23,7 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
-import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
@@ -35,7 +32,6 @@ import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon_filled
-import com.mrboomdev.scrollix.ui.icons.search_icon
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
@@ -53,8 +49,6 @@ fun App() {
             serializersModule = SerializersModule {
                 polymorphic(NavKey::class) {
                     subclassesOfSealed<Route>()
-//                    subclass(Route.Home::class, Route.Home.serializer())
-//                    subclass(Route.Login::class, Route.Login.serializer())
                 }
             }
         }, Route.Home
@@ -64,6 +58,8 @@ fun App() {
         ApiManager.init()
     }
     
+    val currentRoute = backStack.lastOrNull()
+
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = Color.Black,
@@ -109,50 +105,47 @@ fun App() {
 
                 ShortNavigationBar(
                     containerColor = MaterialTheme.colorScheme.background
-                ) { 
+                ) {
                     val itemColors = ShortNavigationBarItemDefaults.colors(
                         selectedIndicatorColor = MaterialTheme.colorScheme.primary,
                         selectedIconColor = MaterialTheme.colorScheme.onPrimary,
                         selectedTextColor = MaterialTheme.colorScheme.primary
                     )
-                    
+
                     ShortNavigationBarItem(
-                        selected = true,
-                        onClick = {},
+                        selected = currentRoute is Route.Home,
+                        onClick = {
+                            if (backStack.lastOrNull() != Route.Home) {
+                                backStack.clear()
+                                backStack.add(Route.Home)
+                            }
+                        },
                         colors = itemColors,
-                        
+
                         icon = {
                             Icon(
-                                imageVector = home_icon_filled,
+                                imageVector = if (currentRoute is Route.Home) {
+                                    home_icon_filled
+                                } else {
+                                    home_icon
+                                },
                                 contentDescription = null
                             )
                         },
-                        
+
                         label = {
                             Text("Home")
                         }
                     )
 
-//                    ShortNavigationBarItem(
-//                        selected = false,
-//                        onClick = {},
-//                        colors = itemColors,
-//
-//                        icon = {
-//                            Icon(
-//                                imageVector = search_icon,
-//                                contentDescription = null
-//                            )
-//                        },
-//
-//                        label = {
-//                            Text("Feed")
-//                        }
-//                    )
-
                     ShortNavigationBarItem(
-                        selected = false,
-                        onClick = {},
+                        selected = currentRoute is Route.Accounts ||
+                            currentRoute is Route.Login,
+                        onClick = {
+                            if (backStack.lastOrNull() != Route.Accounts) {
+                                backStack.add(Route.Accounts)
+                            }
+                        },
                         colors = itemColors,
 
                         icon = {
@@ -163,7 +156,7 @@ fun App() {
                         },
 
                         label = {
-                            Text("Profile")
+                            Text("Accounts")
                         }
                     )
                 }
