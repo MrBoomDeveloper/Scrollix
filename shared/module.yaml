@@ -21,6 +21,8 @@ dependencies:
   - $libs.jetbrains.material3.adaptiveNavigation3
   - $libs.tdlib
   - $libs.qrose
+  - nl.jacobras:Human-Readable:2.0.0
+  - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0
 
 dependencies@android:
   - $compose.uiTooling

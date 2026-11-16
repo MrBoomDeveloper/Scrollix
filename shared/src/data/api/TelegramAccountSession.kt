@@ -1025,6 +1025,10 @@ class TelegramAccountSession(
             providerDialogId = message.chatId.toString(),
             messageId = message.id,
             senderName = senderName,
+            senderId = when(val sender = message.senderId) {
+                is MessageSenderUser -> sender.userId
+                is MessageSenderChat -> sender.chatId
+            },
             text = messageText(message.content),
             timestamp = message.date.toLong() * 1000L,
             isOutgoing = message.isOutgoing,

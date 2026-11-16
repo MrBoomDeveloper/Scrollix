@@ -1,7 +1,9 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -22,19 +25,24 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,10 +55,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.test.microphone_icon
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
@@ -62,15 +75,27 @@ import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.MessageBubble
+import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
 import com.mrboomdev.scrollix.ui.components.PickedFile
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
+import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.attach_file_icon
+import com.mrboomdev.scrollix.ui.icons.call_icon
+import com.mrboomdev.scrollix.ui.icons.mood_icon
+import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.search_icon
+import com.mrboomdev.scrollix.ui.icons.send_icon
+import com.mrboomdev.scrollix.ui.isTwoPaneLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.skia.impl.Stats.enabled
+import javax.management.Query.value
 
 @Composable
 fun DialogScreen(
@@ -78,6 +103,7 @@ fun DialogScreen(
     providerDialogId: String,
     onBack: () -> Unit
 ) {
+    val isTwoPaneWindow = isTwoPaneLayout()
     val session = remember(accountId) { ApiManager.session(accountId) }
     val fallbackDialogs = remember { MutableStateFlow<List<Dialog>>(emptyList()) }
     val fallbackMessages = remember { MutableStateFlow<List<ChatMessage>>(emptyList()) }
@@ -149,7 +175,7 @@ fun DialogScreen(
         if (!isLoading) {
             if (messages.isNotEmpty()) {
                 val paginationOffset = if (isLoadingMore || !canLoadMore) 1 else 0
-                listState.animateScrollToItem(messages.lastIndex + paginationOffset)
+                listState.scrollToItem(messages.lastIndex + paginationOffset)
             }
             hasScrolledToBottom = true
         }
@@ -228,12 +254,14 @@ fun DialogScreen(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    tint = MaterialTheme.colorScheme.secondary,
-                    imageVector = arrow_back_icon,
-                    contentDescription = "Back"
-                )
+            if(!isTwoPaneWindow) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        tint = MaterialTheme.colorScheme.secondary,
+                        imageVector = arrow_back_icon,
+                        contentDescription = "Back"
+                    )
+                }
             }
 
             AvatarImage(
@@ -244,7 +272,7 @@ fun DialogScreen(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 8.dp)
+                    .padding(horizontal = 12.dp)
             ) {
                 Text(
                     text = dialog?.title ?: "Dialog",
@@ -266,6 +294,42 @@ fun DialogScreen(
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
+            }
+
+            IconButton(
+                onClick = {
+                    
+                }
+            ) {
+                Icon(
+                    tint = MaterialTheme.colorScheme.secondary,
+                    imageVector = search_icon,
+                    contentDescription = null
+                )
+            }
+
+            IconButton(
+                onClick = {
+
+                }
+            ) {
+                Icon(
+                    tint = MaterialTheme.colorScheme.secondary,
+                    imageVector = call_icon,
+                    contentDescription = null
+                )
+            }
+
+            IconButton(
+                onClick = {
+
+                }
+            ) {
+                Icon(
+                    tint = MaterialTheme.colorScheme.secondary,
+                    imageVector = more_vertical_icon,
+                    contentDescription = null
+                )
             }
         }
 
@@ -299,7 +363,7 @@ fun DialogScreen(
                         modifier = Modifier.fillMaxSize(),
                         state = listState,
                         contentPadding = PaddingValues(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (isLoadingMore || !canLoadMore) {
                             item(key = "pagination") {
@@ -324,14 +388,38 @@ fun DialogScreen(
                             }
                         }
 
-                        items(
+                        itemsIndexed(
                             items = messages,
-                            key = { it.messageId }
-                        ) { message ->
+                            key = { _, it -> it.messageId }
+                        ) { index, message ->
                             MessageBubble(
+                                dialogKind = dialog?.kind ?: DialogKind.Direct,
                                 message = message,
-                                dialogKind = dialog?.kind,
-                                session = session
+                                
+                                connection = run {
+                                    val prevMessage = if(index > 0) messages[index - 1] else null
+                                    val nextMessage = if(index < messages.size - 1) messages[index + 1] else null
+                                    
+                                    if (index > 0) {
+                                        if (prevMessage?.senderId == message.senderId) {
+                                            if (nextMessage?.senderId == message.senderId) {
+                                                return@run MessageBubbleConnection.BOTH
+                                            }
+                                            
+                                            return@run MessageBubbleConnection.BOTTOM
+                                        }
+                                    }
+
+                                    if (
+                                        index < messages.size - 1 &&
+                                        messages.size > 1 &&
+                                        nextMessage?.senderId == message.senderId
+                                    ) { 
+                                        return@run MessageBubbleConnection.TOP 
+                                    }
+
+                                    return@run MessageBubbleConnection.NONE
+                                }
                             )
                         }
                     }
@@ -347,146 +435,113 @@ fun DialogScreen(
                 style = MaterialTheme.typography.bodySmall
             )
         }
-
+        
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(start = 8.dp, end = 4.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            TextButton(
-                enabled = !isSending,
-                onClick = { filePicker.pickImage() }
+            CompositionLocalProvider(
+                LocalMinimumInteractiveComponentSize provides Dp.Unspecified
             ) {
-                Text("Image")
-            }
-
-            TextButton(
-                enabled = !isSending,
-                onClick = { filePicker.pickFile() }
-            ) {
-                Text("File")
-            }
-
-            if (isSending) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                modifier = Modifier.weight(1f),
-                value = input,
-                onValueChange = { input = it },
-                enabled = !isSending,
-                placeholder = { Text("Message") },
-                maxLines = 4
-            )
-
-            Button(
-                modifier = Modifier.padding(start = 8.dp),
-                enabled = input.isNotBlank() && !isSending,
-                onClick = ::send
-            ) {
-                if (isSending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Send")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MessageBubble(
-    message: ChatMessage,
-    dialogKind: DialogKind?,
-    session: AccountSession?
-) {
-    val showSender = !message.isOutgoing &&
-        dialogKind != DialogKind.Direct &&
-        dialogKind != DialogKind.Secret &&
-        !message.senderName.isNullOrBlank()
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.isOutgoing) {
-            Arrangement.End
-        } else {
-            Arrangement.Start
-        }
-    ) {
-        Surface(
-            modifier = Modifier.widthIn(max = 300.dp),
-            color = if (message.isOutgoing) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.surfaceContainer
-            },
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (showSender) {
-                    Text(
-                        text = message.senderName.orEmpty(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                message.media?.let { media ->
-                    when (media.kind) {
-                        MessageMediaKind.Photo -> MessageImagePreview(
-                            media = media,
-                            session = session
-                        )
-
-                        MessageMediaKind.File -> MessageFilePreview(
-                            media = media,
-                            isOutgoing = message.isOutgoing
+                Row(
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .clip(RoundedCornerShape(32.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(32.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .weight(1f)
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    IconButton(
+                        onClick = {
+                            filePicker.pickFile()
+                        }
+                    ) {
+                        Icon(
+                            tint = MaterialTheme.colorScheme.secondary,
+                            imageVector = add_icon,
+                            contentDescription = null
                         )
                     }
-                }
 
-                if (message.text.isNotBlank()) {
-                    Text(
-                        text = message.text,
-                        color = if (message.isOutgoing) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+                    BasicTextField(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 32.dp),
+                        value = input,
+                        onValueChange = { input = it },
+                        enabled = !isSending,
+                        maxLines = 10,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        
+                        decorationBox = { innerTextField ->
+                            innerTextField()
+                            
+                            if(input.isEmpty()) {
+                                Text(
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    text = "Write a message..."
+                                )
+                            }
                         }
                     )
-                }
 
-                Text(
-                    modifier = Modifier.align(Alignment.End),
-                    text = formatTime(message.timestamp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (message.isOutgoing) {
-                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                    } else {
-                        MaterialTheme.colorScheme.secondary
+                    IconButton(
+                        onClick = {
+
+                        }
+                    ) {
+                        Icon(
+                            tint = MaterialTheme.colorScheme.secondary,
+                            imageVector = mood_icon,
+                            contentDescription = null
+                        )
                     }
-                )
+                    
+                    AnimatedVisibility(input.isEmpty()) {
+                        IconButton(
+                            onClick = {
+
+                            }
+                        ) {
+                            Icon(
+                                tint = MaterialTheme.colorScheme.secondary,
+                                imageVector = microphone_icon,
+                                contentDescription = null
+                            )
+                        }
+                    }
+                }
+            }
+            
+            AnimatedVisibility(input.isNotEmpty()) {
+                FilledIconButton(
+                    enabled = input.isNotBlank() && !isSending,
+                    onClick = ::send
+                ) {
+                    if (isSending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+
+                        return@FilledIconButton
+                    }
+                    Icon(
+                        imageVector = send_icon,
+                        contentDescription = null
+                    )
+                }
             }
         }
     }

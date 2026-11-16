@@ -6,17 +6,19 @@ import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuDefaults.itemColors
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemColors
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
@@ -24,7 +26,6 @@ import androidx.compose.material3.ShortNavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -37,16 +38,16 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
-import androidx.navigation3.ui.NavDisplay.popTransitionSpec
-import androidx.navigation3.ui.NavDisplay.predictivePopTransitionSpec
-import androidx.navigation3.ui.NavDisplay.transitionSpec
 import androidx.savedstate.serialization.SavedStateConfiguration
-import androidx.window.core.layout.WindowSizeClass
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
+import com.mrboomdev.scrollix.ui.icons.explore_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
+import com.mrboomdev.scrollix.ui.icons.search_icon
+import com.mrboomdev.scrollix.ui.icons.settings_icon
+import com.mrboomdev.scrollix.ui.isWideLayout
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
@@ -66,7 +67,7 @@ private data class AppNavTab(
 @Preview
 @DevelopmentEntryPoint
 fun App() {
-    val windowSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass
+    val isExpanded = isWideLayout()
     
     val backStack = rememberNavBackStack(
         configuration = SavedStateConfiguration {
@@ -82,6 +83,7 @@ fun App() {
         ApiManager.init()
     }
     
+    val selectedDialog = remember { mutableStateOf<Route.Dialog?>(null) }
     val currentRoute = backStack.lastOrNull()
     
     val showNavigation = remember(currentRoute) {
@@ -97,10 +99,30 @@ fun App() {
                 icon = if(isHomeTab) home_icon_filled else home_icon,
                 title = "Home",
                 onClick = {
+                    selectedDialog.value = null
+
                     if (backStack.lastOrNull() != Route.Home) {
                         backStack.clear()
                         backStack.add(Route.Home)
                     }
+                }
+            ),
+
+            AppNavTab(
+                isActive = false,
+                icon = explore_icon,
+                title = "Explore",
+                onClick = {
+
+                }
+            ),
+
+            AppNavTab(
+                isActive = false,
+                icon = search_icon,
+                title = "Search",
+                onClick = {
+                    
                 }
             ),
 
@@ -129,21 +151,51 @@ fun App() {
             color = MaterialTheme.colorScheme.background
         ) {
             Row {
-                AnimatedVisibility(showNavigation && windowSizeClass.isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND)) {
+                AnimatedVisibility(showNavigation && isExpanded) {
                     Row {
                         NavigationRail(
                             containerColor = MaterialTheme.colorScheme.background,
                             header = {
-                                IconButton(
-                                    modifier = Modifier.padding(vertical = 6.dp),
-                                    onClick = {
-
+                                Box {
+                                    var expand by remember { mutableStateOf(false) }
+                                    
+                                    IconButton(
+                                        modifier = Modifier.padding(vertical = 6.dp),
+                                        onClick = {
+                                            expand = !expand
+                                        }
+                                    ) {
+                                        Icon(
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            imageVector = menu_icon,
+                                            contentDescription = null
+                                        )
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = menu_icon,
-                                        contentDescription = null
-                                    )
+
+                                    DropdownMenu(
+                                        expanded = expand,
+                                        onDismissRequest = { expand = false },
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        DropdownMenuItem(
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = settings_icon,
+                                                    contentDescription = null
+                                                )
+                                            },
+
+                                            text = {
+                                                Text(
+                                                    text = "Settings"
+                                                )
+                                            },
+
+                                            onClick = {
+
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         ) {
@@ -184,7 +236,12 @@ fun App() {
                     NavDisplay(
                         modifier = Modifier.weight(1f),
                         backStack = backStack,
-                        entryProvider = rememberAppEntryProvider(backStack),
+                        
+                        entryProvider = rememberAppEntryProvider(
+                            backStack = backStack,
+                            selectedDialog = selectedDialog,
+                            onSelectDialog = { selectedDialog.value = it }
+                        ),
 
                         transitionSpec = {
                             ContentTransform(
@@ -213,7 +270,7 @@ fun App() {
                         )
                     )
 
-                    AnimatedVisibility(showNavigation && !windowSizeClass.isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND)) {
+                    AnimatedVisibility(showNavigation && !isExpanded) {
                         ShortNavigationBar(
                             containerColor = MaterialTheme.colorScheme.background
                         ) {

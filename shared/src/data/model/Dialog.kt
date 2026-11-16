@@ -9,12 +9,14 @@ data class DialogIdentity(
 )
 
 @Serializable
-enum class DialogKind {
-    Direct,
-    Group,
-    Channel,
-    Bot,
-    Secret
+enum class DialogKind(
+    val isPeer: Boolean
+) {
+    Direct(isPeer = true),
+    Group(isPeer = false),
+    Channel(isPeer = true),
+    Bot(isPeer = true),
+    Secret(isPeer = true)
 }
 
 @Serializable

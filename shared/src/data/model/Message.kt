@@ -22,6 +22,7 @@ data class ChatMessage(
     val providerDialogId: String,
     val messageId: Long,
     val senderName: String? = null,
+    val senderId: Long,
     val text: String,
     val timestamp: Long,
     val isOutgoing: Boolean,

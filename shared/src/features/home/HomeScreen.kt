@@ -1,23 +1,34 @@
 package com.mrboomdev.scrollix.features.home
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -25,10 +36,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +50,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
@@ -52,7 +71,10 @@ import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
+import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
+import com.mrboomdev.scrollix.ui.isWideLayout
 
 private const val TAB_ALL = 0
 private const val TAB_DIRECT = 1
@@ -63,9 +85,16 @@ private const val TAB_BOTS = 4
 @Composable
 fun HomeScreen(
     onOpenAccountsScreen: () -> Unit,
-    onOpenDialog: (AccountDialogEntry) -> Unit
+    onOpenDialog: (AccountDialogEntry) -> Unit,
+    selectedDialogAccountId: String? = null,
+    selectedDialogProviderDialogId: String? = null
 ) {
-    var selectedTab by remember { mutableStateOf(TAB_ALL) }
+    // TODO: Make it as an setting
+    val isAllShown = false
+    val isSingleRowFilters = false
+    
+    val isWideWindow = isWideLayout()
+    var selectedTab by remember { mutableStateOf(if(isAllShown) TAB_ALL else TAB_DIRECT) }
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
     val loadingDialogs by ApiManager.dialogsLoading.collectAsState()
@@ -91,95 +120,166 @@ fun HomeScreen(
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize()
-    ) {
+    Column(Modifier.fillMaxSize()) {
         Surface(
             color = MaterialTheme.colorScheme.background
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp, 8.dp, 8.dp, 0.dp)
-                    .windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(
-                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                        )
-                    )
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier.size(IconButtonDefaults.smallContainerSize())
-                    )
-
-                    Text(
-                        text = "Scrollix",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-
-                    IconButton(
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
-                        onClick = onOpenAccountsScreen
+            Column(Modifier.fillMaxWidth()) {
+                if(!isWideWindow) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp, 8.dp, 8.dp, 0.dp)
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(
+                                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                                )
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            modifier = Modifier.scale(1.1f),
-                            imageVector = account_circle_icon,
-                            contentDescription = "Accounts"
+//                        Image(
+//                            modifier = Modifier.size(IconButtonDefaults.smallContainerSize()),
+//                            painter = rememberVectorPainter(home_icon),
+//                            contentDescription = null
+//                        )
+
+                        Text(
+                            modifier = Modifier.padding(start = 4.dp),
+                            text = "Scrollix",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        
+                        Spacer(Modifier.weight(1f))
+
+                        Box {
+                            var expand by remember { mutableStateOf(false) }
+                            
+                            IconButton(
+                                onClick = {
+                                    expand = !expand
+                                }
+                            ) {
+                                Icon(
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    imageVector = more_vertical_icon,
+                                    contentDescription = null
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = expand,
+                                onDismissRequest = { expand = false },
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = settings_icon,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    
+                                    text = {
+                                        Text(
+                                            text = "Settings"
+                                        )
+                                    },
+                                    
+                                    onClick = {
+                                        
+                                    }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                }
+                
+                CompositionLocalProvider(
+                    LocalMinimumInteractiveComponentSize provides Dp.Unspecified
+                ) {
+                    @Composable
+                    fun RowScope.homeFilterChipsContent() {
+                        val chipModifier = if(isSingleRowFilters) {
+                            Modifier
+                        } else Modifier.weight(1f)
+                        
+                        if(isAllShown) {
+                            HomeTab(
+                                modifier = chipModifier,
+                                selected = selectedTab == TAB_ALL,
+                                label = "All",
+                                icon = home_icon,
+                                onClick = { selectedTab = TAB_ALL }
+                            )
+                        }
+
+                        HomeTab(
+                            modifier = chipModifier,
+                            selected = selectedTab == TAB_DIRECT,
+                            label = "DM",
+                            icon = account_circle_icon,
+                            onClick = { selectedTab = TAB_DIRECT }
+                        )
+
+                        HomeTab(
+                            modifier = chipModifier,
+                            selected = selectedTab == TAB_GROUPS,
+                            label = "Groups",
+                            icon = group_icon,
+                            onClick = { selectedTab = TAB_GROUPS }
+                        )
+
+                        HomeTab(
+                            modifier = chipModifier,
+                            selected = selectedTab == TAB_CHANNELS,
+                            label = "Channels",
+                            icon = brand_awareness_icon,
+                            onClick = { selectedTab = TAB_CHANNELS }
+                        )
+
+                        HomeTab(
+                            modifier = chipModifier,
+                            selected = selectedTab == TAB_BOTS,
+                            label = "Bots",
+                            icon = smart_toy_icon,
+                            onClick = { selectedTab = TAB_BOTS }
                         )
                     }
+                    
+                    if(isSingleRowFilters) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 8.dp)
+                                .windowInsetsPadding(
+                                    WindowInsets.safeDrawing.only(
+                                        WindowInsetsSides.Horizontal
+                                    )
+                                ),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            homeFilterChipsContent()
+                        }
+                    } else {
+                        FlowRow(
+                            modifier = Modifier
+                                .padding(horizontal = 8.dp)
+                                .windowInsetsPadding(
+                                    WindowInsets.safeDrawing.only(
+                                        WindowInsetsSides.Horizontal
+                                    )
+                                ),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            maxItemsInEachRow = if(isAllShown) 3 else 2
+                        ) {
+                            homeFilterChipsContent()
+                        }
+                    }
                 }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    HomeTab(
-                        selected = selectedTab == TAB_ALL,
-                        label = "All",
-                        icon = home_icon,
-                        onClick = { selectedTab = TAB_ALL }
-                    )
-
-                    HomeTab(
-                        selected = selectedTab == TAB_DIRECT,
-                        label = "DM",
-                        icon = account_circle_icon,
-                        onClick = { selectedTab = TAB_DIRECT }
-                    )
-
-                    HomeTab(
-                        selected = selectedTab == TAB_GROUPS,
-                        label = "Groups",
-                        icon = group_icon,
-                        onClick = { selectedTab = TAB_GROUPS }
-                    )
-
-                    HomeTab(
-                        selected = selectedTab == TAB_CHANNELS,
-                        label = "Channels",
-                        icon = brand_awareness_icon,
-                        onClick = { selectedTab = TAB_CHANNELS }
-                    )
-
-                    HomeTab(
-                        selected = selectedTab == TAB_BOTS,
-                        label = "Bots",
-                        icon = smart_toy_icon,
-                        onClick = { selectedTab = TAB_BOTS }
-                    )
-                }
-
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.surfaceContainer
-                )
 
                 if (isDialogsLoading) {
                     LinearProgressIndicator(
@@ -188,6 +288,8 @@ fun HomeScreen(
                             .padding(top = 4.dp)
                     )
                 }
+
+                Spacer(Modifier.height(4.dp))
             }
         }
 
@@ -207,6 +309,8 @@ fun HomeScreen(
                 ) { entry ->
                     DialogItem(
                         entry = entry,
+                        isSelected = entry.account.id == selectedDialogAccountId &&
+                            entry.dialog.providerDialogId == selectedDialogProviderDialogId,
                         onClick = { onOpenDialog(entry) }
                     )
                 }
@@ -235,22 +339,31 @@ fun HomeScreen(
 
 @Composable
 private fun HomeTab(
+    modifier: Modifier = Modifier,
     selected: Boolean,
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: () -> Unit
 ) {
-    val colors = FilterChipDefaults.filterChipColors(
-        selectedContainerColor = MaterialTheme.colorScheme.primary,
-        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
-    )
-
     FilterChip(
+        modifier = modifier,
         selected = selected,
         onClick = onClick,
-        label = { Text(label) },
-        colors = colors,
+        
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+        ),
+
+        label = {
+            Text(
+                overflow = TextOverflow.Visible,
+                softWrap = false,
+                text = label
+            ) 
+        },
+        
         leadingIcon = {
             Icon(
                 modifier = Modifier.size(20.dp),
@@ -262,18 +375,25 @@ private fun HomeTab(
 }
 
 @Composable
-private fun DialogItem(entry: AccountDialogEntry, onClick: () -> Unit) {
+private fun DialogItem(
+    entry: AccountDialogEntry,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
     val dialog = entry.dialog
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = androidx.compose.ui.graphics.Color.Transparent,
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        } else Color.Transparent,
         onClick = onClick
     ) {
         Row(
             modifier = Modifier.padding(8.dp)
         ) {
             AvatarImage(
+                modifier = Modifier.padding(end = 2.dp),
                 avatar = dialog.avatar ?: Avatar.fromName(dialog.title),
                 size = 48.dp
             )
@@ -309,22 +429,36 @@ private fun DialogItem(entry: AccountDialogEntry, onClick: () -> Unit) {
             }
 
             Column(
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalAlignment = Alignment.End
             ) {
                 Text(
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                     text = formatTime(dialog.timestamp)
                 )
 
                 if (dialog.unreadCount > 0) {
-                    Text(
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        text = dialog.unreadCount.toString()
-                    )
-                } else if (dialog.isPinned) {
+                    val textStyle = MaterialTheme.typography.labelMedium
+                    val textSizeDp = with(LocalDensity.current) { textStyle.fontSize.toDp() }
+                    
+                    Box(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(textSizeDp))
+                            .padding(vertical = 2.dp, horizontal = 4.dp)
+                            .widthIn(min = textSizeDp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            style = textStyle,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            text = dialog.unreadCount.toString()
+                        )
+                    }
+                } 
+                
+                if (dialog.isPinned) {
                     Icon(
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.secondary,
