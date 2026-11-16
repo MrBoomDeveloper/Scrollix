@@ -10,6 +10,7 @@ import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageMedia
@@ -63,6 +64,9 @@ class TelegramAccountSession(
     private val _dialogs = MutableStateFlow<List<Dialog>>(emptyList())
     override val dialogs: StateFlow<List<Dialog>> = _dialogs.asStateFlow()
 
+    private val _folders = MutableStateFlow<List<DialogFolder>>(emptyList())
+    override val folders: StateFlow<List<DialogFolder>> = _folders.asStateFlow()
+
     private val _isLoadingDialogs = MutableStateFlow(false)
     override val isLoadingDialogs: StateFlow<Boolean> = _isLoadingDialogs.asStateFlow()
 
@@ -72,6 +76,9 @@ class TelegramAccountSession(
     private val fileCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
 
     private val stateMutex = Mutex()
+    private val folderChatsMutex = Mutex()
+    private val loadedFolderChats = mutableSetOf<Int>()
+    private val loadingFolderChats = mutableSetOf<Int>()
     private val _chats = MutableStateFlow<Map<Long, ChatEntry>>(emptyMap())
     private val _users = MutableStateFlow<Map<Long, User>>(emptyMap())
     private val _requestedUsers = MutableStateFlow<Set<Long>>(emptySet())
@@ -542,6 +549,7 @@ class TelegramAccountSession(
         runCatching { client.close() }
         scope.cancel()
         _isLoadingDialogs.value = false
+        _folders.value = emptyList()
         _authState.value = AuthState.Closed
     }
 
@@ -599,11 +607,9 @@ class TelegramAccountSession(
             }
 
             is UpdateChatAddedToList -> {
-                if (update.chatList is ChatListMain) {
-                    when (val result = client.getChat(update.chatId)) {
-                        is TdlResult.Success -> upsertChat(result.result)
-                        is TdlResult.Failure -> Unit
-                    }
+                when (val result = client.getChat(update.chatId)) {
+                    is TdlResult.Success -> upsertChat(result.result)
+                    is TdlResult.Failure -> Unit
                 }
             }
 
@@ -615,6 +621,21 @@ class TelegramAccountSession(
                         }
                     )
                 }
+            }
+
+            is UpdateChatFolders -> {
+                _folders.value = update.chatFolders.mapIndexed { index, folder ->
+                    DialogFolder(
+                        id = folder.id,
+                        name = folder.name.text.text.ifBlank { "Folder" },
+                        iconName = folder.icon.name,
+                        colorId = folder.colorId,
+                        order = index,
+                        isShareable = folder.isShareable
+                    )
+                }
+
+                requestFolderChatsLoad(update.chatFolders.map { it.id })
             }
 
             is UpdateUser -> {
@@ -1168,6 +1189,93 @@ class TelegramAccountSession(
             )
     }
 
+    private fun requestFolderChatsLoad(folderIds: Collection<Int>) {
+        if (closed || folderIds.isEmpty()) return
+
+        scope.launch {
+            val toLoad = folderChatsMutex.withLock {
+                folderIds.filter { folderId ->
+                    folderId !in loadedFolderChats &&
+                        loadingFolderChats.add(folderId)
+                }
+            }
+
+            for (folderId in toLoad) {
+                scope.launch {
+                    var succeeded = false
+
+                    try {
+                        loadChatsForFolder(folderId)
+                        succeeded = true
+                    } catch (exception: CancellationException) {
+                        throw exception
+                    } catch (exception: Exception) {
+                        if (!closed) {
+                            println(
+                                "Failed to load Telegram folder chats: " +
+                                    exception.message
+                            )
+                        }
+                    } finally {
+                        folderChatsMutex.withLock {
+                            loadingFolderChats.remove(folderId)
+
+                            if (succeeded) {
+                                loadedFolderChats.add(folderId)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun loadChatsForFolder(folderId: Int) {
+        var loadAttempts = 0
+
+        while (!closed && loadAttempts < 1000) {
+            loadAttempts++
+
+            when (val result = client.loadChats(ChatListFolder(folderId), 100)) {
+                is TdlResult.Success -> Unit
+                is TdlResult.Failure -> {
+                    if (result.code != 404) {
+                        println(
+                            "Failed to load Telegram folder $folderId: " +
+                                result.message
+                        )
+                    }
+
+                    break
+                }
+            }
+        }
+
+        when (val result = client.getChats(ChatListFolder(folderId), 10_000)) {
+            is TdlResult.Success -> {
+                for (chatId in result.result.chatIds) {
+                    if (closed) return
+
+                    when (val chat = client.getChat(chatId)) {
+                        is TdlResult.Success -> upsertChat(chat.result)
+                        is TdlResult.Failure -> Unit
+                    }
+                }
+            }
+
+            is TdlResult.Failure -> {
+                if (result.code != 404) {
+                    println(
+                        "Failed to get Telegram folder $folderId chats: " +
+                            result.message
+                    )
+                }
+            }
+        }
+
+        emitDialogs()
+    }
+
     private suspend fun loadAllChats() {
         _isLoadingDialogs.value = true
 
@@ -1206,6 +1314,7 @@ class TelegramAccountSession(
 
             loadPrivateUsers()
             emitDialogs()
+            requestFolderChatsLoad(_folders.value.map { it.id })
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
@@ -1381,6 +1490,9 @@ class TelegramAccountSession(
                 isPinned = mainPosition.isPinned,
                 isMarkedAsUnread = entry.isMarkedAsUnread,
                 order = mainPosition.order,
+                folderIds = entry.positions.mapNotNull { position ->
+                    (position.list as? ChatListFolder)?.chatFolderId
+                }.toSet(),
                 avatar = imageBytes?.let { image ->
                     Avatar(
                         initials = Avatar.fromName(entry.title).initials,

@@ -33,6 +33,7 @@ data class Dialog(
     val isPinned: Boolean = false,
     val isMarkedAsUnread: Boolean = false,
     val order: Long = 0,
+    val folderIds: Set<Int> = emptySet(),
     val avatar: Avatar? = null
 )
 

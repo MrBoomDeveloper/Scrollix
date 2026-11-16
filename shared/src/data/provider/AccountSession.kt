@@ -5,6 +5,7 @@ import com.mrboomdev.scrollix.data.model.AuthAction
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogFolder
 import kotlinx.coroutines.flow.StateFlow
 
 interface AccountSession {
@@ -14,6 +15,7 @@ interface AccountSession {
     val authState: StateFlow<AuthState>
     val profile: StateFlow<AccountProfile?>
     val dialogs: StateFlow<List<Dialog>>
+    val folders: StateFlow<List<DialogFolder>>
     val isLoadingDialogs: StateFlow<Boolean>
 
     fun messages(providerDialogId: String): StateFlow<List<ChatMessage>>

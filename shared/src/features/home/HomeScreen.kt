@@ -60,12 +60,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.icons.FolderIcon
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
@@ -92,13 +95,26 @@ fun HomeScreen(
     // TODO: Make it as an setting
     val isAllShown = false
     val isSingleRowFilters = false
+    val isUsingNativeFolders = true
     
     val isWideWindow = isWideLayout()
     var selectedTab by remember { mutableStateOf(if(isAllShown) TAB_ALL else TAB_DIRECT) }
+    var selectedNativeFolderKey by remember { mutableStateOf<String?>(null) }
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
     val loadingDialogs by ApiManager.dialogsLoading.collectAsState()
     val entries by ApiManager.dialogs.collectAsState()
+    val folders by ApiManager.folders.collectAsState()
+
+    val selectedNativeFolder = folders.firstOrNull {
+        it.key == selectedNativeFolderKey
+    }
+    val duplicateFolderNames = remember(folders) {
+        folders.groupingBy { it.folder.name }
+            .eachCount()
+            .filterValues { count -> count > 1 }
+            .keys
+    }
 
     val isConnecting = accountState.accounts.any { account ->
         val state = sessionStates[account.id]
@@ -106,16 +122,32 @@ fun HomeScreen(
     }
     val isDialogsLoading = isConnecting || loadingDialogs.isNotEmpty()
 
-    val visibleEntries = remember(entries, selectedTab) {
-        entries.filter { entry ->
-            when (selectedTab) {
-                TAB_DIRECT -> entry.dialog.kind == DialogKind.Direct ||
-                    entry.dialog.kind == DialogKind.Secret
+    val visibleEntries = remember(
+        entries,
+        selectedTab,
+        selectedNativeFolder,
+        isUsingNativeFolders
+    ) {
+        if (isUsingNativeFolders) {
+            if (selectedNativeFolder == null) {
+                entries
+            } else {
+                entries.filter { entry ->
+                    entry.account.id == selectedNativeFolder.account.id &&
+                        selectedNativeFolder.folder.id in entry.dialog.folderIds
+                }
+            }
+        } else {
+            entries.filter { entry ->
+                when (selectedTab) {
+                    TAB_DIRECT -> entry.dialog.kind == DialogKind.Direct ||
+                        entry.dialog.kind == DialogKind.Secret
 
-                TAB_GROUPS -> entry.dialog.kind == DialogKind.Group
-                TAB_CHANNELS -> entry.dialog.kind == DialogKind.Channel
-                TAB_BOTS -> entry.dialog.kind == DialogKind.Bot
-                else -> true
+                    TAB_GROUPS -> entry.dialog.kind == DialogKind.Group
+                    TAB_CHANNELS -> entry.dialog.kind == DialogKind.Channel
+                    TAB_BOTS -> entry.dialog.kind == DialogKind.Bot
+                    else -> true
+                }
             }
         }
     }
@@ -205,47 +237,70 @@ fun HomeScreen(
                             Modifier
                         } else Modifier.weight(1f)
                         
-                        if(isAllShown) {
+                        if(isUsingNativeFolders) {
                             HomeTab(
                                 modifier = chipModifier,
-                                selected = selectedTab == TAB_ALL,
+                                selected = selectedNativeFolder == null,
                                 label = "All",
                                 icon = home_icon,
-                                onClick = { selectedTab = TAB_ALL }
+                                onClick = { selectedNativeFolderKey = null }
+                            )
+
+                            folders.forEach { folder ->
+                                NativeFolderTab(
+                                    modifier = chipModifier,
+                                    selected = selectedNativeFolder?.key == folder.key,
+                                    folder = folder.folder,
+                                    account = folder.account,
+                                    showAccountIndicator = folder.folder.name in duplicateFolderNames,
+                                    onClick = {
+                                        selectedNativeFolderKey = folder.key
+                                    }
+                                )
+                            }
+                        } else {
+                            if(isAllShown) {
+                                HomeTab(
+                                    modifier = chipModifier,
+                                    selected = selectedTab == TAB_ALL,
+                                    label = "All",
+                                    icon = home_icon,
+                                    onClick = { selectedTab = TAB_ALL }
+                                )
+                            }
+
+                            HomeTab(
+                                modifier = chipModifier,
+                                selected = selectedTab == TAB_DIRECT,
+                                label = "DM",
+                                icon = account_circle_icon,
+                                onClick = { selectedTab = TAB_DIRECT }
+                            )
+
+                            HomeTab(
+                                modifier = chipModifier,
+                                selected = selectedTab == TAB_GROUPS,
+                                label = "Groups",
+                                icon = group_icon,
+                                onClick = { selectedTab = TAB_GROUPS }
+                            )
+
+                            HomeTab(
+                                modifier = chipModifier,
+                                selected = selectedTab == TAB_CHANNELS,
+                                label = "Channels",
+                                icon = brand_awareness_icon,
+                                onClick = { selectedTab = TAB_CHANNELS }
+                            )
+
+                            HomeTab(
+                                modifier = chipModifier,
+                                selected = selectedTab == TAB_BOTS,
+                                label = "Bots",
+                                icon = smart_toy_icon,
+                                onClick = { selectedTab = TAB_BOTS }
                             )
                         }
-
-                        HomeTab(
-                            modifier = chipModifier,
-                            selected = selectedTab == TAB_DIRECT,
-                            label = "DM",
-                            icon = account_circle_icon,
-                            onClick = { selectedTab = TAB_DIRECT }
-                        )
-
-                        HomeTab(
-                            modifier = chipModifier,
-                            selected = selectedTab == TAB_GROUPS,
-                            label = "Groups",
-                            icon = group_icon,
-                            onClick = { selectedTab = TAB_GROUPS }
-                        )
-
-                        HomeTab(
-                            modifier = chipModifier,
-                            selected = selectedTab == TAB_CHANNELS,
-                            label = "Channels",
-                            icon = brand_awareness_icon,
-                            onClick = { selectedTab = TAB_CHANNELS }
-                        )
-
-                        HomeTab(
-                            modifier = chipModifier,
-                            selected = selectedTab == TAB_BOTS,
-                            label = "Bots",
-                            icon = smart_toy_icon,
-                            onClick = { selectedTab = TAB_BOTS }
-                        )
                     }
                     
                     if(isSingleRowFilters) {
@@ -369,6 +424,56 @@ private fun HomeTab(
                 modifier = Modifier.size(20.dp),
                 imageVector = icon,
                 contentDescription = null
+            )
+        }
+    )
+}
+
+@Composable
+private fun NativeFolderTab(
+    modifier: Modifier = Modifier,
+    selected: Boolean,
+    folder: DialogFolder,
+    account: AccountRecord,
+    showAccountIndicator: Boolean,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        modifier = modifier,
+        selected = selected,
+        onClick = onClick,
+
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+        ),
+
+        label = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    text = folder.name
+                )
+
+                if (showAccountIndicator) {
+                    AvatarImage(
+                        avatar = account.avatar
+                            ?: Avatar.fromName(account.displayName),
+                        size = 14.dp
+                    )
+                }
+            }
+        },
+
+        leadingIcon = {
+            FolderIcon(
+                folder = folder,
+                isSelected = selected
             )
         }
     )

@@ -1,9 +1,11 @@
 package com.mrboomdev.scrollix.data.api
 
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.AccountDialogFolder
 import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.DialogAggregator
 import com.mrboomdev.scrollix.data.provider.MessengerProvider
@@ -35,6 +37,9 @@ object ApiManager {
     private val _dialogs = MutableStateFlow<List<AccountDialogEntry>>(emptyList())
     val dialogs: StateFlow<List<AccountDialogEntry>> = _dialogs.asStateFlow()
 
+    private val _folders = MutableStateFlow<List<AccountDialogFolder>>(emptyList())
+    val folders: StateFlow<List<AccountDialogFolder>> = _folders.asStateFlow()
+
     private val _sessionStates = MutableStateFlow<Map<String, AuthState>>(emptyMap())
     val sessionStates: StateFlow<Map<String, AuthState>> = _sessionStates.asStateFlow()
 
@@ -43,6 +48,7 @@ object ApiManager {
 
     private val _sessions = MutableStateFlow<Map<String, AccountSession>>(emptyMap())
     private val _dialogsByAccount = MutableStateFlow<Map<String, List<Dialog>>>(emptyMap())
+    private val _foldersByAccount = MutableStateFlow<Map<String, List<DialogFolder>>>(emptyMap())
 
     private var appScope = newScope()
     private var platformStorage: PlatformStorage? = null
@@ -76,6 +82,7 @@ object ApiManager {
             store.state.collect { state ->
                 _accountState.value = state
                 recomputeDialogs()
+                recomputeFolders()
             }
         }
 
@@ -146,9 +153,11 @@ object ApiManager {
         _sessionStates.update { it - accountId }
         _dialogsLoading.update { it - accountId }
         _dialogsByAccount.update { it - accountId }
+        _foldersByAccount.update { it - accountId }
         platformStorage?.delete("accounts/$accountId")
         accountStore?.remove(accountId)
         recomputeDialogs()
+        recomputeFolders()
     }
 
     suspend fun cancelPendingAccount(accountId: String) {
@@ -179,7 +188,9 @@ object ApiManager {
         _sessionStates.value = emptyMap()
         _dialogsLoading.value = emptySet()
         _dialogsByAccount.value = emptyMap()
+        _foldersByAccount.value = emptyMap()
         _dialogs.value = emptyList()
+        _folders.value = emptyList()
         appScope.cancel()
         initialized = false
     }
@@ -293,6 +304,14 @@ object ApiManager {
         }
 
         appScope.launch {
+            session.folders.collect { folders ->
+                if (_sessions.value[accountId] !== session) return@collect
+                _foldersByAccount.update { it + (accountId to folders) }
+                recomputeFolders()
+            }
+        }
+
+        appScope.launch {
             session.isLoadingDialogs.collect { loading ->
                 if (_sessions.value[accountId] !== session) return@collect
                 _dialogsLoading.update { active ->
@@ -308,6 +327,20 @@ object ApiManager {
             accounts = accounts,
             dialogsByAccount = _dialogsByAccount.value
         )
+    }
+
+    private fun recomputeFolders() {
+        val accounts = accountStore?.state?.value?.accounts ?: _accountState.value.accounts
+        val foldersByAccount = _foldersByAccount.value
+
+        _folders.value = accounts.flatMap { account ->
+            foldersByAccount[account.id].orEmpty().map { folder ->
+                AccountDialogFolder(
+                    account = account,
+                    folder = folder
+                )
+            }
+        }
     }
 
     private fun newScope(): CoroutineScope {

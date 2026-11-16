@@ -94,9 +94,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jetbrains.skia.impl.Stats.enabled
-import javax.management.Query.value
-
 @Composable
 fun DialogScreen(
     accountId: String,
