@@ -12,6 +12,8 @@ import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.readFileBytes
@@ -22,6 +24,7 @@ import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -34,6 +37,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -62,6 +66,7 @@ class TelegramAccountSession(
     private val messagesByChat = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
     private val avatarCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
     private val avatarRequests = MutableStateFlow<Set<Int>>(emptySet())
+    private val fileCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
 
     private val stateMutex = Mutex()
     private val _chats = MutableStateFlow<Map<Long, ChatEntry>>(emptyMap())
@@ -130,6 +135,95 @@ class TelegramAccountSession(
         }
     }
 
+    override suspend fun loadOlderMessages(providerDialogId: String, limit: Int): Result<Boolean> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        val existing = messagesByChat.value[providerDialogId].orEmpty()
+        if (existing.isEmpty()) {
+            return loadMessages(providerDialogId, limit).map { true }
+        }
+
+        val oldestMessageId = existing.minOf { it.messageId }
+
+        return try {
+            when (val result = client.getChatHistory(
+                chatId = chatId,
+                fromMessageId = oldestMessageId,
+                offset = 0,
+                limit = limit.coerceIn(1, 100),
+                onlyLocal = false
+            )) {
+                is TdlResult.Success -> {
+                    val olderMessages = result.result.messages
+                        .filterNotNull()
+                        .filter { it.id < oldestMessageId }
+                        .map(::mapMessage)
+
+                    if (olderMessages.isNotEmpty()) {
+                        messagesByChat.update { messages ->
+                            messages + (
+                                providerDialogId to mergeMessages(
+                                    messages[providerDialogId].orEmpty() + olderMessages
+                                )
+                            )
+                        }
+
+                        markMessagesRead(
+                            providerDialogId = providerDialogId,
+                            messageIds = olderMessages.map { it.messageId }.toLongArray()
+                        )
+                    }
+
+                    Result.success(olderMessages.isNotEmpty())
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadFile(fileId: Int): Result<ByteArray> {
+        if (fileId == 0) {
+            return Result.failure(IllegalArgumentException("Invalid file id"))
+        }
+
+        fileCache.value[fileId]?.let { return Result.success(it) }
+
+        return try {
+            when (val result = client.downloadFile(
+                fileId = fileId,
+                priority = 16,
+                offset = 0,
+                limit = 0,
+                synchronous = true
+            )) {
+                is TdlResult.Success -> {
+                    val bytes = withContext(Dispatchers.IO) {
+                        readFileBytes(result.result.local.path)
+                    }
+
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        fileCache.update { it + (fileId to bytes) }
+                        Result.success(bytes)
+                    } else {
+                        Result.failure(Exception("File is not available"))
+                    }
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun sendMessage(providerDialogId: String, text: String): Result<Unit> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
@@ -150,6 +244,63 @@ class TelegramAccountSession(
                     linkPreviewOptions = null,
                     clearDraft = true
                 )
+            )) {
+                is TdlResult.Success -> {
+                    upsertMessage(result.result)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun sendFile(
+        providerDialogId: String,
+        path: String,
+        asPhoto: Boolean
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (path.isBlank()) {
+            return Result.failure(IllegalArgumentException("File path is empty"))
+        }
+
+        val content: InputMessageContent = if (asPhoto) {
+            InputMessagePhoto(
+                photo = InputPhoto(
+                    photo = InputFileLocal(path),
+                    thumbnail = null,
+                    video = null,
+                    addedStickerFileIds = intArrayOf(),
+                    width = 0,
+                    height = 0
+                ),
+                caption = null,
+                showCaptionAboveMedia = false,
+                selfDestructType = null,
+                hasSpoiler = false
+            )
+        } else {
+            InputMessageDocument(
+                document = InputDocument(
+                    document = InputFileLocal(path),
+                    thumbnail = null,
+                    disableContentTypeDetection = false
+                ),
+                caption = null
+            )
+        }
+
+        return try {
+            when (val result = client.sendMessage(
+                chatId = chatId,
+                inputMessageContent = content
             )) {
                 is TdlResult.Success -> {
                     upsertMessage(result.result)
@@ -870,10 +1021,69 @@ class TelegramAccountSession(
             providerDialogId = message.chatId.toString(),
             messageId = message.id,
             senderName = senderName,
-            text = messageBody(message.content),
+            text = messageText(message.content),
             timestamp = message.date.toLong() * 1000L,
-            isOutgoing = message.isOutgoing
+            isOutgoing = message.isOutgoing,
+            media = mapMedia(message.content)
         )
+    }
+
+    private fun messageText(content: MessageContent): String {
+        return when (content) {
+            is MessageText -> content.text.text
+            is MessagePhoto -> content.caption.text
+            is MessageDocument -> content.caption.text
+            else -> messageBody(content)
+        }
+    }
+
+    private fun mapMedia(content: MessageContent): MessageMedia? {
+        return when (content) {
+            is MessagePhoto -> {
+                val size = content.photo.previewSize()
+
+                MessageMedia(
+                    kind = MessageMediaKind.Photo,
+                    previewFileId = size?.photo?.id,
+                    fileName = "Photo",
+                    mimeType = "image/jpeg",
+                    size = size?.photo?.size ?: 0,
+                    width = size?.width ?: 0,
+                    height = size?.height ?: 0,
+                    minithumbnail = content.photo.minithumbnail?.data
+                )
+            }
+
+            is MessageDocument -> {
+                val document = content.document
+                val isImage = document.mimeType.startsWith("image/")
+                val thumbnail = document.thumbnail
+
+                MessageMedia(
+                    kind = if (isImage) MessageMediaKind.Photo else MessageMediaKind.File,
+                    previewFileId = if (isImage) {
+                        thumbnail?.file?.id ?: document.document.id
+                    } else {
+                        null
+                    },
+                    fileName = document.fileName,
+                    mimeType = document.mimeType,
+                    size = document.document.size,
+                    width = thumbnail?.width ?: 0,
+                    height = thumbnail?.height ?: 0,
+                    minithumbnail = document.minithumbnail?.data
+                )
+            }
+
+            else -> null
+        }
+    }
+
+    private fun Photo.previewSize(): PhotoSize? {
+        return sizes
+            .filter { it.width in 1..800 }
+            .maxByOrNull { it.width }
+            ?: sizes.minByOrNull { it.width }
     }
 
     private fun upsertMessage(message: Message) {
@@ -915,7 +1125,10 @@ class TelegramAccountSession(
             existing + (
                 dialogId to existing[dialogId].orEmpty().map { message ->
                     if (message.messageId == messageId) {
-                        message.copy(text = messageBody(content))
+                        message.copy(
+                            text = messageText(content),
+                            media = mapMedia(content)
+                        )
                     } else {
                         message
                     }
@@ -1189,10 +1402,12 @@ class TelegramAccountSession(
     private fun messageBody(content: MessageContent): String {
         return when (content) {
             is MessageText -> content.text.text
-            is MessagePhoto -> "Photo"
-            is MessageVideo -> "Video"
+            is MessagePhoto -> content.caption.text.ifBlank { "Photo" }
+            is MessageVideo -> content.caption.text.ifBlank { "Video" }
             is MessageSticker -> "Sticker"
-            is MessageDocument -> "Document"
+            is MessageDocument -> content.caption.text.ifBlank {
+                content.document.fileName.ifBlank { "Document" }
+            }
             is MessageAudio -> "Audio"
             is MessageVoiceNote -> "Voice message"
             is MessageVideoNote -> "Video message"

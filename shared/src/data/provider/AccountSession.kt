@@ -21,7 +21,14 @@ interface AccountSession {
     suspend fun submitAuth(values: Map<String, String>)
     suspend fun performAuthAction(action: AuthAction)
     suspend fun loadMessages(providerDialogId: String, limit: Int = 50): Result<Unit>
+    suspend fun loadOlderMessages(providerDialogId: String, limit: Int = 50): Result<Boolean>
+    suspend fun loadFile(fileId: Int): Result<ByteArray>
     suspend fun sendMessage(providerDialogId: String, text: String): Result<Unit>
+    suspend fun sendFile(
+        providerDialogId: String,
+        path: String,
+        asPhoto: Boolean
+    ): Result<Unit>
     suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray)
     suspend fun logout()
     suspend fun close()

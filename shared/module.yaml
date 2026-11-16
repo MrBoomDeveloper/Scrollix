@@ -24,6 +24,7 @@ dependencies:
 
 dependencies@android:
   - $compose.uiTooling
+  - $libs.androidx.activity.compose
 
 settings:
   compose:
@@ -33,4 +34,6 @@ settings:
       # Generate public accessors so other modules (and previews) can use Res.*
       exposedAccessors: true
   kotlin: 
-    serialization: json
+    serialization:
+      format: json
+      version: 1.12.0

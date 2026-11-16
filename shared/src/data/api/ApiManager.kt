@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 object ApiManager {
     private val _accountState = MutableStateFlow(AccountStoreState())
@@ -129,7 +130,7 @@ object ApiManager {
         val session = _sessions.value[accountId]
 
         if (session != null) {
-            val loggedOut = withTimeoutOrNull(10_000) {
+            val loggedOut = withTimeoutOrNull(10_000.milliseconds) {
                 runCatching { session.logout() }.isSuccess
             }
 
@@ -165,7 +166,7 @@ object ApiManager {
         val sessions = _sessions.value.values.toList()
 
         for (session in sessions) {
-            withTimeoutOrNull(5_000) {
+            withTimeoutOrNull(5_000.milliseconds) {
                 session.close()
             }
         }
@@ -189,7 +190,7 @@ object ApiManager {
 
         for ((index, account) in accounts.withIndex()) {
             if (!initialized) return
-            if (index > 0) delay(250)
+            if (index > 0) delay(250.milliseconds)
 
             val session = createSession(account) ?: continue
             runCatching { session.start() }.onFailure { exception ->
