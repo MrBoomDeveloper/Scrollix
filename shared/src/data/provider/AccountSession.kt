@@ -14,6 +14,7 @@ interface AccountSession {
     val authState: StateFlow<AuthState>
     val profile: StateFlow<AccountProfile?>
     val dialogs: StateFlow<List<Dialog>>
+    val isLoadingDialogs: StateFlow<Boolean>
 
     fun messages(providerDialogId: String): StateFlow<List<ChatMessage>>
 

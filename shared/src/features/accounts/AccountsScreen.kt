@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,18 +51,65 @@ fun AccountsScreen(
 ) {
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
+    val dialogsLoading by ApiManager.dialogsLoading.collectAsState()
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
+    var isAdding by remember { mutableStateOf(false) }
+    var removingIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var activatingId by remember { mutableStateOf<String?>(null) }
 
     fun addAccount() {
+        if (isAdding) return
+        isAdding = true
+
         scope.launch {
-            runCatching {
-                ApiManager.addAccount("telegram")
-            }.onSuccess { accountId ->
-                error = null
-                onOpenLogin(accountId)
-            }.onFailure { exception ->
-                error = exception.message ?: "Failed to add account"
+            try {
+                runCatching {
+                    ApiManager.addAccount("telegram")
+                }.onSuccess { accountId ->
+                    error = null
+                    onOpenLogin(accountId)
+                }.onFailure { exception ->
+                    error = exception.message ?: "Failed to add account"
+                }
+            } finally {
+                isAdding = false
+            }
+        }
+    }
+
+    fun removeAccount(accountId: String) {
+        if (accountId in removingIds) return
+
+        removingIds = removingIds + accountId
+
+        scope.launch {
+            try {
+                runCatching {
+                    ApiManager.removeAccount(accountId)
+                }.onFailure { exception ->
+                    error = exception.message ?: "Failed to remove account"
+                }
+            } finally {
+                removingIds = removingIds - accountId
+            }
+        }
+    }
+
+    fun setActiveAccount(accountId: String) {
+        if (activatingId != null) return
+
+        activatingId = accountId
+
+        scope.launch {
+            try {
+                runCatching {
+                    ApiManager.setActiveAccount(accountId)
+                }.onFailure { exception ->
+                    error = exception.message ?: "Failed to switch account"
+                }
+            } finally {
+                activatingId = null
             }
         }
     }
@@ -94,12 +143,22 @@ fun AccountsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            IconButton(onClick = ::addAccount) {
-                Icon(
-                    tint = MaterialTheme.colorScheme.primary,
-                    imageVector = add_icon,
-                    contentDescription = "Add account"
-                )
+            IconButton(
+                onClick = ::addAccount,
+                enabled = !isAdding
+            ) {
+                if (isAdding) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        tint = MaterialTheme.colorScheme.primary,
+                        imageVector = add_icon,
+                        contentDescription = "Add account"
+                    )
+                }
             }
         }
 
@@ -127,21 +186,12 @@ fun AccountsScreen(
                     account = account,
                     isActive = account.id == accountState.activeAccountId,
                     authState = sessionStates[account.id],
+                    isRemoving = account.id in removingIds,
+                    isActivating = account.id == activatingId,
+                    isDialogsLoading = account.id in dialogsLoading,
                     onOpenLogin = onOpenLogin,
-                    onRemove = {
-                        scope.launch {
-                            runCatching {
-                                ApiManager.removeAccount(account.id)
-                            }.onFailure { exception ->
-                                error = exception.message ?: "Failed to remove account"
-                            }
-                        }
-                    },
-                    onSetActive = {
-                        scope.launch {
-                            ApiManager.setActiveAccount(account.id)
-                        }
-                    }
+                    onRemove = { removeAccount(account.id) },
+                    onSetActive = { setActiveAccount(account.id) }
                 )
             }
 
@@ -173,9 +223,17 @@ fun AccountsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
+                    enabled = !isAdding,
                     onClick = ::addAccount
                 ) {
-                    Text("Add account")
+                    if (isAdding) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Add account")
+                    }
                 }
             }
         }
@@ -187,16 +245,21 @@ private fun AccountRow(
     account: AccountRecord,
     isActive: Boolean,
     authState: AuthState?,
+    isRemoving: Boolean,
+    isActivating: Boolean,
+    isDialogsLoading: Boolean,
     onOpenLogin: (String) -> Unit,
     onRemove: () -> Unit,
     onSetActive: () -> Unit
 ) {
     val providerName = ProviderRegistry.get(account.providerId)?.displayName
         ?: account.providerId
+    val isBusy = isRemoving || isActivating
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color.Transparent,
+        enabled = !isBusy,
         onClick = {
             if (authState is AuthState.Ready) {
                 onSetActive()
@@ -249,31 +312,84 @@ private fun AccountRow(
                     maxLines = 1
                 )
 
-                Text(
-                    text = authState.statusText(),
-                    color = when (authState) {
-                        is AuthState.Error -> MaterialTheme.colorScheme.error
-                        is AuthState.Ready -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.secondary
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1
+                AccountStatus(
+                    authState = authState,
+                    isActivating = isActivating,
+                    isDialogsLoading = isDialogsLoading
                 )
             }
 
             if (authState !is AuthState.Ready) {
-                TextButton(onClick = { onOpenLogin(account.id) }) {
+                TextButton(
+                    enabled = !isBusy,
+                    onClick = { onOpenLogin(account.id) }
+                ) {
                     Text("Login")
                 }
             }
 
-            TextButton(onClick = onRemove) {
-                Text(
-                    text = "Remove",
-                    color = MaterialTheme.colorScheme.error
-                )
+            TextButton(
+                enabled = !isBusy,
+                onClick = onRemove
+            ) {
+                if (isRemoving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = "Remove",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun AccountStatus(
+    authState: AuthState?,
+    isActivating: Boolean,
+    isDialogsLoading: Boolean
+) {
+    val isLoading = isActivating ||
+        isDialogsLoading ||
+        authState == null ||
+        authState is AuthState.Initializing
+
+    val text = when {
+        isActivating -> "Activating..."
+        isDialogsLoading -> "Loading chats..."
+        else -> authState.statusText()
+    }
+
+    val color = when {
+        isActivating || isDialogsLoading -> MaterialTheme.colorScheme.secondary
+        authState is AuthState.Error -> MaterialTheme.colorScheme.error
+        authState is AuthState.Ready -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.secondary
+    }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(12.dp),
+                strokeWidth = 1.5.dp,
+                color = color
+            )
+        }
+
+        Text(
+            text = text,
+            color = color,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1
+        )
     }
 }
 

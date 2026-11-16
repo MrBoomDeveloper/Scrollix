@@ -63,6 +63,9 @@ class TelegramAccountSession(
     private val _dialogs = MutableStateFlow<List<Dialog>>(emptyList())
     override val dialogs: StateFlow<List<Dialog>> = _dialogs.asStateFlow()
 
+    private val _isLoadingDialogs = MutableStateFlow(false)
+    override val isLoadingDialogs: StateFlow<Boolean> = _isLoadingDialogs.asStateFlow()
+
     private val messagesByChat = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
     private val avatarCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
     private val avatarRequests = MutableStateFlow<Set<Int>>(emptySet())
@@ -538,6 +541,7 @@ class TelegramAccountSession(
 
         runCatching { client.close() }
         scope.cancel()
+        _isLoadingDialogs.value = false
         _authState.value = AuthState.Closed
     }
 
@@ -1161,6 +1165,8 @@ class TelegramAccountSession(
     }
 
     private suspend fun loadAllChats() {
+        _isLoadingDialogs.value = true
+
         try {
             var loadAttempts = 0
 
@@ -1202,6 +1208,8 @@ class TelegramAccountSession(
             if (!closed) {
                 println("Failed to load Telegram dialogs: ${exception.message}")
             }
+        } finally {
+            _isLoadingDialogs.value = false
         }
     }
 

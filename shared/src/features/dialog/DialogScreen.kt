@@ -61,6 +61,7 @@ import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.components.PickedFile
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
@@ -268,7 +269,9 @@ fun DialogScreen(
             }
         }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.surfaceContainer
+        )
 
         Box(
             modifier = Modifier
@@ -277,8 +280,9 @@ fun DialogScreen(
         ) {
             when {
                 isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
+                    LoadingContent(
+                        modifier = Modifier.align(Alignment.Center),
+                        text = "Loading messages..."
                     )
                 }
 
@@ -348,7 +352,8 @@ fun DialogScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(
                 enabled = !isSending,
@@ -363,6 +368,13 @@ fun DialogScreen(
             ) {
                 Text("File")
             }
+
+            if (isSending) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+            }
         }
 
         Row(
@@ -375,6 +387,7 @@ fun DialogScreen(
                 modifier = Modifier.weight(1f),
                 value = input,
                 onValueChange = { input = it },
+                enabled = !isSending,
                 placeholder = { Text("Message") },
                 maxLines = 4
             )
@@ -384,7 +397,14 @@ fun DialogScreen(
                 enabled = input.isNotBlank() && !isSending,
                 onClick = ::send
             ) {
-                Text("Send")
+                if (isSending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Send")
+                }
             }
         }
     }

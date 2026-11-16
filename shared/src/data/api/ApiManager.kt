@@ -38,6 +38,9 @@ object ApiManager {
     private val _sessionStates = MutableStateFlow<Map<String, AuthState>>(emptyMap())
     val sessionStates: StateFlow<Map<String, AuthState>> = _sessionStates.asStateFlow()
 
+    private val _dialogsLoading = MutableStateFlow<Set<String>>(emptySet())
+    val dialogsLoading: StateFlow<Set<String>> = _dialogsLoading.asStateFlow()
+
     private val _sessions = MutableStateFlow<Map<String, AccountSession>>(emptyMap())
     private val _dialogsByAccount = MutableStateFlow<Map<String, List<Dialog>>>(emptyMap())
 
@@ -141,6 +144,7 @@ object ApiManager {
 
         _sessions.update { it - accountId }
         _sessionStates.update { it - accountId }
+        _dialogsLoading.update { it - accountId }
         _dialogsByAccount.update { it - accountId }
         platformStorage?.delete("accounts/$accountId")
         accountStore?.remove(accountId)
@@ -173,6 +177,7 @@ object ApiManager {
 
         _sessions.value = emptyMap()
         _sessionStates.value = emptyMap()
+        _dialogsLoading.value = emptySet()
         _dialogsByAccount.value = emptyMap()
         _dialogs.value = emptyList()
         appScope.cancel()
@@ -284,6 +289,15 @@ object ApiManager {
                 if (_sessions.value[accountId] !== session) return@collect
                 _dialogsByAccount.update { it + (accountId to dialogs) }
                 recomputeDialogs()
+            }
+        }
+
+        appScope.launch {
+            session.isLoadingDialogs.collect { loading ->
+                if (_sessions.value[accountId] !== session) return@collect
+                _dialogsLoading.update { active ->
+                    if (loading) active + accountId else active - accountId
+                }
             }
         }
     }

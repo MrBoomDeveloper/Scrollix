@@ -20,9 +20,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,14 +36,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
@@ -62,7 +67,15 @@ fun HomeScreen(
 ) {
     var selectedTab by remember { mutableStateOf(TAB_ALL) }
     val accountState by ApiManager.accountState.collectAsState()
+    val sessionStates by ApiManager.sessionStates.collectAsState()
+    val loadingDialogs by ApiManager.dialogsLoading.collectAsState()
     val entries by ApiManager.dialogs.collectAsState()
+
+    val isConnecting = accountState.accounts.any { account ->
+        val state = sessionStates[account.id]
+        state == null || state is AuthState.Initializing
+    }
+    val isDialogsLoading = isConnecting || loadingDialogs.isNotEmpty()
 
     val visibleEntries = remember(entries, selectedTab) {
         entries.filter { entry ->
@@ -115,6 +128,7 @@ fun HomeScreen(
                         onClick = onOpenAccountsScreen
                     ) {
                         Icon(
+                            modifier = Modifier.scale(1.1f),
                             imageVector = account_circle_icon,
                             contentDescription = "Accounts"
                         )
@@ -162,6 +176,18 @@ fun HomeScreen(
                         onClick = { selectedTab = TAB_BOTS }
                     )
                 }
+
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.surfaceContainer
+                )
+
+                if (isDialogsLoading) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    )
+                }
             }
         }
 
@@ -187,10 +213,19 @@ fun HomeScreen(
 
                 if (visibleEntries.isEmpty()) {
                     item {
-                        EmptyState(
-                            hasAccounts = accountState.accounts.isNotEmpty(),
-                            onOpenAccountsScreen = onOpenAccountsScreen
-                        )
+                        if (isDialogsLoading) {
+                            LoadingContent(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                text = "Loading dialogs..."
+                            )
+                        } else {
+                            EmptyState(
+                                hasAccounts = accountState.accounts.isNotEmpty(),
+                                onOpenAccountsScreen = onOpenAccountsScreen
+                            )
+                        }
                     }
                 }
             }

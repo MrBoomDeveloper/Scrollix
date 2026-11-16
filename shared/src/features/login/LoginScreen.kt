@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,6 +47,7 @@ import com.mrboomdev.scrollix.data.model.AuthField
 import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import io.github.alexzhirkevich.qrose.rememberQrCodePainter
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,53 +87,55 @@ fun LoginScreen(
             )
         }
 
-        when (val state = authState) {
-            is AuthState.Challenge -> {
-                AuthChallengeContent(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    challenge = state.challenge,
-                    session = session
-                )
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            val contentModifier = Modifier
+                .widthIn(max = 450.dp)
+                .fillMaxWidth()
+            
+            when (val state = authState) {
+                is AuthState.Challenge -> {
+                    AuthChallengeContent(
+                        modifier = contentModifier,
+                        challenge = state.challenge,
+                        session = session
+                    )
+                }
 
-            is AuthState.Initializing -> {
-                LoadingContent(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    text = "Connecting to Telegram..."
-                )
-            }
+                is AuthState.Initializing -> {
+                    LoadingContent(
+                        modifier = contentModifier,
+                        text = "Connecting to Telegram..."
+                    )
+                }
 
-            is AuthState.Error -> {
-                ErrorContent(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    message = state.message,
-                    onBack = onBack
-                )
-            }
+                is AuthState.Error -> {
+                    ErrorContent(
+                        modifier = contentModifier,
+                        message = state.message,
+                        onBack = onBack
+                    )
+                }
 
-            is AuthState.Closed -> {
-                ErrorContent(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    message = "This account session is closed.",
-                    onBack = onBack
-                )
-            }
+                is AuthState.Closed -> {
+                    ErrorContent(
+                        modifier = contentModifier,
+                        message = "This account session is closed.",
+                        onBack = onBack
+                    )
+                }
 
-            is AuthState.Ready -> {
-                LoadingContent(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    text = "Signed in"
-                )
+                is AuthState.Ready -> {
+                    LoadingContent(
+                        modifier = contentModifier,
+                        text = "Signed in"
+                    )
+                }
             }
         }
     }
@@ -152,9 +156,28 @@ private fun AuthChallengeContent(
             challenge.fields.associate { it.id to "" }
         )
     }
+    var pendingAction by remember(challenge.id) {
+        mutableStateOf<AuthAction?>(null)
+    }
+
+    val isBusy = challenge.isSubmitting || pendingAction != null
 
     val canSubmit = challenge.fields.isNotEmpty() && challenge.fields.all { field ->
         field.type == AuthFieldType.LastName || values[field.id].orEmpty().isNotBlank()
+    }
+
+    fun performAction(action: AuthAction) {
+        if (session == null || pendingAction != null) return
+
+        scope.launch {
+            pendingAction = action
+
+            try {
+                session.performAuthAction(action)
+            } finally {
+                pendingAction = null
+            }
+        }
     }
 
     Column(
@@ -186,6 +209,7 @@ private fun AuthChallengeContent(
             AuthFieldInput(
                 field = field,
                 value = values[field.id].orEmpty(),
+                enabled = !isBusy,
                 onValueChange = { value ->
                     values = values + (field.id to value)
                 }
@@ -205,7 +229,7 @@ private fun AuthChallengeContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
-                enabled = canSubmit && !challenge.isSubmitting,
+                enabled = canSubmit && !isBusy && session != null,
                 onClick = {
                     keyboardController?.hide()
 
@@ -232,53 +256,36 @@ private fun AuthChallengeContent(
             .forEach { action ->
                 when (action) {
                     is AuthAction.ResendCode -> {
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                if (session != null) {
-                                    scope.launch {
-                                        session.performAuthAction(action)
-                                    }
-                                }
-                            }
-                        ) {
-                            Text("Resend code")
-                        }
+                        AuthActionButton(
+                            text = "Resend code",
+                            isBusy = pendingAction == action,
+                            enabled = !isBusy && session != null,
+                            onClick = { performAction(action) }
+                        )
                     }
 
                     is AuthAction.RecoverPassword -> {
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                if (session != null) {
-                                    scope.launch {
-                                        session.performAuthAction(action)
-                                    }
-                                }
-                            }
-                        ) {
-                            Text("Recover password")
-                        }
+                        AuthActionButton(
+                            text = "Recover password",
+                            isBusy = pendingAction == action,
+                            enabled = !isBusy && session != null,
+                            onClick = { performAction(action) }
+                        )
                     }
 
                     is AuthAction.UseQrCode -> {
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                if (session != null) {
-                                    scope.launch {
-                                        session.performAuthAction(action)
-                                    }
-                                }
-                            }
-                        ) {
-                            Text("Log in with QR code")
-                        }
+                        AuthActionButton(
+                            text = "Log in with QR code",
+                            isBusy = pendingAction == action,
+                            enabled = !isBusy && session != null,
+                            onClick = { performAction(action) }
+                        )
                     }
 
                     is AuthAction.OpenUrl -> {
                         Button(
                             modifier = Modifier.fillMaxWidth(),
+                            enabled = !challenge.isSubmitting,
                             onClick = {
                                 runCatching {
                                     uriHandler.openUri(action.url)
@@ -292,6 +299,29 @@ private fun AuthChallengeContent(
                     AuthAction.Submit -> Unit
                 }
             }
+    }
+}
+
+@Composable
+private fun AuthActionButton(
+    text: String,
+    isBusy: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
+        onClick = onClick
+    ) {
+        if (isBusy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp
+            )
+        } else {
+            Text(text)
+        }
     }
 }
 
@@ -322,12 +352,14 @@ private fun QrCodeImage(link: String) {
 private fun AuthFieldInput(
     field: AuthField,
     value: String,
+    enabled: Boolean,
     onValueChange: (String) -> Unit
 ) {
     OutlinedTextField(
         modifier = Modifier.fillMaxWidth(),
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         label = { Text(field.label) },
         placeholder = field.placeholder?.let { hint ->
             { Text(hint) }
@@ -342,24 +374,6 @@ private fun AuthFieldInput(
             VisualTransformation.None
         }
     )
-}
-
-@Composable
-private fun LoadingContent(
-    modifier: Modifier,
-    text: String
-) {
-    Column(
-        modifier = modifier.padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
-    ) {
-        CircularProgressIndicator()
-        Text(
-            text = text,
-            color = MaterialTheme.colorScheme.secondary
-        )
-    }
 }
 
 @Composable
