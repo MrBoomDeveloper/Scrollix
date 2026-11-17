@@ -36,6 +36,17 @@ private class AndroidPlatformStorage : PlatformStorage {
         }
     }
 
+    override fun readBytes(relativePath: String): ByteArray? {
+        val file = file(relativePath)
+        return if (file.isFile) file.readBytes() else null
+    }
+
+    override fun writeBytes(relativePath: String, bytes: ByteArray) {
+        val file = file(relativePath)
+        file.parentFile?.mkdirs()
+        file.writeBytes(bytes)
+    }
+
     override fun delete(relativePath: String) {
         file(relativePath).deleteRecursively()
     }

@@ -49,6 +49,8 @@ data class Dialog(
     val preview: String,
     val timestamp: Long,
     val unreadCount: Int = 0,
+    val memberCount: Int? = null,
+    val pinnedMessageId: Long? = null,
     val canSendMessages: Boolean = true,
     val isPinned: Boolean = false,
     val isMarkedAsUnread: Boolean = false,

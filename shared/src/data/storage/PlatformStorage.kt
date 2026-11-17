@@ -5,6 +5,8 @@ interface PlatformStorage {
 
     fun readText(relativePath: String): String?
     fun writeText(relativePath: String, text: String)
+    fun readBytes(relativePath: String): ByteArray?
+    fun writeBytes(relativePath: String, bytes: ByteArray)
     fun delete(relativePath: String)
     fun ensureDirectory(relativePath: String): String
     fun absolutePath(relativePath: String): String

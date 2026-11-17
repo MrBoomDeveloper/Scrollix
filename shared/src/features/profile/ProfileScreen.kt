@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.features.profile
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,11 +14,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,10 +31,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
@@ -93,10 +99,105 @@ private fun ProfileDetails(profile: UserProfileDetails) {
 }
 
 @Composable
+private fun PersonalChannelCard(
+    channel: com.mrboomdev.scrollix.data.model.PersonalChannel,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AvatarImage(
+                avatar = channel.avatar ?: Avatar.fromName(channel.title),
+                size = 44.dp
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = channel.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = channel.subscriberCount?.let { count ->
+                        "${formatCount(count)} " +
+                            if (count == 1) "subscriber" else "subscribers"
+                    } ?: "Channel",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommonGroupsSection(
+    groups: List<CommonGroup>,
+    onOpenGroup: (CommonGroup) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = "Groups in common",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+
+        for (group in groups) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onOpenGroup(group) },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AvatarImage(
+                        avatar = group.avatar ?: Avatar.fromName(group.title),
+                        size = 44.dp
+                    )
+
+                    Text(
+                        modifier = Modifier.weight(1f),
+                        text = group.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ProfileScreen(
     accountId: String,
     providerDialogId: String,
     userId: Long? = null,
+    onOpenChannelProfile: (String) -> Unit = {},
     onBack: () -> Unit
 ) {
     val entries by ApiManager.dialogs.collectAsState()
@@ -146,7 +247,10 @@ fun ProfileScreen(
 
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
-        if (entry == null) {
+        val dialog = entry?.dialog
+        val profile = details
+
+        if (entry == null && profile == null) {
             Text(
                 modifier = Modifier.padding(24.dp),
                 text = "This dialog is no longer available.",
@@ -164,10 +268,11 @@ fun ProfileScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            val displayName = details?.displayName ?: entry.dialog.title
-            val avatar = details?.avatar
-                ?: entry.dialog.avatar
-                ?: Avatar.fromName(entry.dialog.title)
+            val displayName = profile?.displayName ?: dialog?.title ?: "Profile"
+            val avatar = profile?.avatar
+                ?: dialog?.avatar
+                ?: Avatar.fromName(displayName)
+            val kind = profile?.kind ?: dialog?.kind
 
             AvatarImage(
                 avatar = avatar,
@@ -183,26 +288,63 @@ fun ProfileScreen(
             Text(
                 text = if (userId != null) {
                     "Telegram user"
-                } else when (entry.dialog.kind) {
+                } else when (kind) {
                     DialogKind.Direct -> "Direct message"
-                    DialogKind.Group -> "Group"
-                    DialogKind.Channel -> "Channel"
+                    DialogKind.Group -> profile?.memberCount?.let { count ->
+                        "${formatCount(count)} ${if (count == 1) "member" else "members"}"
+                    } ?: "Group"
+
+                    DialogKind.Channel -> profile?.memberCount?.let { count ->
+                        "${formatCount(count)} " +
+                            if (count == 1) "subscriber" else "subscribers"
+                    } ?: "Channel"
+
                     DialogKind.Bot -> "Bot"
                     DialogKind.Secret -> "Secret chat"
+                    null -> "Profile"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary
             )
 
-            details?.let { profile -> ProfileDetails(profile) }
+            profile?.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Text(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
 
-            Text(
-                text = "Account: ${entry.account.displayName}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary
-            )
+            profile?.personalChannel?.let { channel ->
+                PersonalChannelCard(
+                    channel = channel,
+                    onClick = { onOpenChannelProfile(channel.providerDialogId) }
+                )
+            }
 
-            if (userId == null && entry.dialog.identity.remoteId.isNotBlank()) {
+            val commonGroups = profile?.commonGroups.orEmpty()
+
+            if (commonGroups.isNotEmpty()) {
+                CommonGroupsSection(
+                    groups = commonGroups,
+                    onOpenGroup = { group ->
+                        onOpenChannelProfile(group.providerDialogId)
+                    }
+                )
+            }
+
+            profile?.let { data -> ProfileDetails(data) }
+
+            entry?.let { accountEntry ->
+                Text(
+                    text = "Account: ${accountEntry.account.displayName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+
+            if (entry != null && userId == null && entry.dialog.identity.remoteId.isNotBlank()) {
                 Text(
                     text = entry.dialog.identity.remoteId,
                     style = MaterialTheme.typography.bodySmall,
@@ -211,4 +353,12 @@ fun ProfileScreen(
             }
         }
     }
+}
+
+private fun formatCount(count: Int): String {
+    return count.toString()
+        .reversed()
+        .chunked(3)
+        .joinToString(" ")
+        .reversed()
 }

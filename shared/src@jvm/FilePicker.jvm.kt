@@ -3,13 +3,14 @@ package com.mrboomdev.scrollix.ui.components
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import io.github.vinceglb.filekit.FileKit
+import io.github.vinceglb.filekit.dialogs.FileKitType
+import io.github.vinceglb.filekit.dialogs.openFilePicker
+import io.github.vinceglb.filekit.name
+import io.github.vinceglb.filekit.path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.SwingUtilities
-import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 actual fun rememberFilePicker(
@@ -37,36 +38,21 @@ actual fun rememberFilePicker(
 
 private suspend fun chooseFile(imagesOnly: Boolean): PickedFile? {
     return withContext(Dispatchers.IO) {
-        var selected: File? = null
-
-        runCatching {
-            SwingUtilities.invokeAndWait {
-                val chooser = JFileChooser()
-
-                if (imagesOnly) {
-                    chooser.isAcceptAllFileFilterUsed = false
-                    chooser.fileFilter = FileNameExtensionFilter(
-                        "Images",
-                        "jpg",
-                        "jpeg",
-                        "png",
-                        "gif",
-                        "webp",
-                        "bmp"
-                    )
-                }
-
-                if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                    selected = chooser.selectedFile
-                }
-            }
+        val type = if (imagesOnly) {
+            // Explicit extensions keep WebP selectable on desktop, where the
+            // native image filter doesn't always include it.
+            FileKitType.File("jpg", "jpeg", "png", "gif", "webp", "bmp")
+        } else {
+            FileKitType.File()
         }
 
-        selected?.let { file ->
-            PickedFile(
-                path = file.absolutePath,
-                name = file.name
-            )
-        }
+        val file = runCatching {
+            FileKit.openFilePicker(type = type)
+        }.getOrNull() ?: return@withContext null
+
+        PickedFile(
+            path = file.path,
+            name = file.name
+        )
     }
 }

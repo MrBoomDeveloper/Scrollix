@@ -8,6 +8,7 @@ import com.mrboomdev.scrollix.data.model.AuthField
 import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.ChatWallpaper
@@ -23,6 +24,7 @@ import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+import com.mrboomdev.scrollix.data.model.PersonalChannel
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 import com.mrboomdev.scrollix.data.provider.AccountSession
@@ -103,6 +105,9 @@ class TelegramAccountSession(
     private val _users = MutableStateFlow<Map<Long, User>>(emptyMap())
     private val _userStatuses = MutableStateFlow<Map<Long, UserStatus>>(emptyMap())
     private val _requestedUsers = MutableStateFlow<Set<Long>>(emptySet())
+    private val _memberCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val _requestedMemberCounts = MutableStateFlow<Set<String>>(emptySet())
+    private val _pinnedMessageIds = MutableStateFlow<Map<Long, Long>>(emptyMap())
 
     private var started = false
     private var parametersSet = false
@@ -274,7 +279,11 @@ class TelegramAccountSession(
         }
     }
 
-    override suspend fun sendMessage(providerDialogId: String, text: String): Result<Unit> {
+    override suspend fun sendMessage(
+        providerDialogId: String,
+        text: String,
+        replyToMessageId: Long?
+    ): Result<Unit> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
@@ -286,6 +295,14 @@ class TelegramAccountSession(
         return try {
             when (val result = client.sendMessage(
                 chatId = chatId,
+                replyTo = replyToMessageId?.let { messageId ->
+                    InputMessageReplyToMessage(
+                        messageId = messageId,
+                        quote = null,
+                        checklistTaskId = 0,
+                        pollOptionId = ""
+                    )
+                },
                 inputMessageContent = InputMessageText(
                     text = FormattedText(
                         text = trimmed,
@@ -358,6 +375,132 @@ class TelegramAccountSession(
                 }
 
                 is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun forwardMessages(
+        providerDialogId: String,
+        messageIds: LongArray,
+        targetDialogId: String
+    ): Result<Unit> {
+        val fromChatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+        val targetChatId = targetDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid target dialog id"))
+
+        if (messageIds.isEmpty()) return Result.success(Unit)
+
+        return try {
+            when (val result = client.forwardMessages(
+                chatId = targetChatId,
+                fromChatId = fromChatId,
+                messageIds = messageIds.sortedArray(),
+                sendCopy = false,
+                removeCaption = false
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun deleteMessages(
+        providerDialogId: String,
+        messageIds: LongArray
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (messageIds.isEmpty()) return Result.success(Unit)
+
+        return try {
+            when (val result = client.deleteMessages(
+                chatId = chatId,
+                messageIds = messageIds,
+                revoke = true
+            )) {
+                is TdlResult.Success -> {
+                    removeMessages(chatId, messageIds)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun setMessagePinned(
+        providerDialogId: String,
+        messageId: Long,
+        isPinned: Boolean
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val result = if (isPinned) {
+                client.pinChatMessage(
+                    chatId = chatId,
+                    messageId = messageId,
+                    disableNotification = false,
+                    onlyForSelf = false
+                )
+            } else {
+                client.unpinChatMessage(
+                    chatId = chatId,
+                    messageId = messageId
+                )
+            }
+
+            when (result) {
+                is TdlResult.Success -> {
+                    _pinnedMessageIds.update { pinned ->
+                        if (isPinned) pinned + (chatId to messageId) else pinned - chatId
+                    }
+                    emitDialogs()
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.getChatPinnedMessage(chatId)) {
+                is TdlResult.Success -> {
+                    val messageId = result.result.id
+                    _pinnedMessageIds.update { it + (chatId to messageId) }
+                    emitDialogs()
+                    Result.success(messageId.takeIf { it > 0 })
+                }
+
+                is TdlResult.Failure -> {
+                    _pinnedMessageIds.update { it - chatId }
+                    emitDialogs()
+                    Result.success(null)
+                }
             }
         } catch (exception: CancellationException) {
             throw exception
@@ -455,8 +598,13 @@ class TelegramAccountSession(
                     is TdlResult.Failure -> return Result.failure(Exception(result.message))
                 }
 
-                (chat.type as? ChatTypePrivate)?.userId
-                    ?: return Result.success(UserProfileDetails())
+                (chat.type as? ChatTypePrivate)?.userId ?: return Result.success(
+                    when (val type = chat.type) {
+                        is ChatTypeSupergroup -> supergroupProfile(chat, type)
+                        is ChatTypeBasicGroup -> basicGroupProfile(chat, type)
+                        else -> UserProfileDetails()
+                    }
+                )
             }
 
             val user = when (val result = client.getUser(resolvedUserId)) {
@@ -469,6 +617,8 @@ class TelegramAccountSession(
                 is TdlResult.Failure -> null
             }
 
+            val personalChatId = fullInfo?.personalChatId ?: 0L
+
             Result.success(
                 UserProfileDetails(
                     displayName = userDisplayName(user),
@@ -477,7 +627,13 @@ class TelegramAccountSession(
                     phoneNumber = user.phoneNumber.ifBlank { null },
                     bio = fullInfo?.bio?.text?.ifBlank { null },
                     birthdate = fullInfo?.birthdate?.let(::formatBirthdate),
-                    status = userStatusText(user)
+                    status = userStatusText(user),
+                    personalChannel = if (personalChatId != 0L) {
+                        loadPersonalChannel(personalChatId)
+                    } else {
+                        null
+                    },
+                    commonGroups = loadCommonGroups(resolvedUserId)
                 )
             )
         } catch (exception: CancellationException) {
@@ -485,6 +641,106 @@ class TelegramAccountSession(
         } catch (exception: Exception) {
             Result.failure(exception)
         }
+    }
+
+    private suspend fun supergroupProfile(
+        chat: Chat,
+        type: ChatTypeSupergroup
+    ): UserProfileDetails {
+        val fullInfo = when (val result = client.getSupergroupFullInfo(type.supergroupId)) {
+            is TdlResult.Success -> result.result
+            is TdlResult.Failure -> null
+        }
+
+        return UserProfileDetails(
+            displayName = chat.title,
+            avatar = chatAvatar(chat),
+            kind = if (type.isChannel) DialogKind.Channel else DialogKind.Group,
+            memberCount = fullInfo?.memberCount?.takeIf { it > 0 },
+            description = fullInfo?.description?.ifBlank { null }
+        )
+    }
+
+    private suspend fun basicGroupProfile(
+        chat: Chat,
+        type: ChatTypeBasicGroup
+    ): UserProfileDetails {
+        val fullInfo = when (val result = client.getBasicGroupFullInfo(type.basicGroupId)) {
+            is TdlResult.Success -> result.result
+            is TdlResult.Failure -> null
+        }
+
+        return UserProfileDetails(
+            displayName = chat.title,
+            avatar = chatAvatar(chat),
+            kind = DialogKind.Group,
+            memberCount = fullInfo?.members?.size?.takeIf { it > 0 },
+            description = fullInfo?.description?.ifBlank { null }
+        )
+    }
+
+    private fun chatAvatar(chat: Chat): Avatar {
+        val photo = chat.photo
+        val image = photo?.small?.let(::avatarBytes)
+            ?: photo?.minithumbnail?.data
+        val fallback = Avatar.fromName(chat.title)
+
+        return image?.let { bytes ->
+            Avatar(
+                initials = fallback.initials,
+                colorSeed = fallback.colorSeed,
+                image = bytes
+            )
+        } ?: fallback
+    }
+
+    private suspend fun loadCommonGroups(userId: Long, limit: Int = 10): List<CommonGroup> {
+        val chatIds = when (val result = client.getGroupsInCommon(
+            userId = userId,
+            offsetChatId = 0L,
+            limit = limit
+        )) {
+            is TdlResult.Success -> result.result.chatIds
+            is TdlResult.Failure -> return emptyList()
+        }
+
+        val groups = mutableListOf<CommonGroup>()
+
+        for (chatId in chatIds) {
+            when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> groups += CommonGroup(
+                    providerDialogId = result.result.id.toString(),
+                    title = result.result.title,
+                    avatar = chatAvatar(result.result)
+                )
+
+                is TdlResult.Failure -> Unit
+            }
+        }
+
+        return groups
+    }
+
+    private suspend fun loadPersonalChannel(chatId: Long): PersonalChannel? {
+        val chat = when (val result = client.getChat(chatId)) {
+            is TdlResult.Success -> result.result
+            is TdlResult.Failure -> return null
+        }
+        val type = chat.type as? ChatTypeSupergroup ?: return null
+
+        if (!type.isChannel) return null
+
+        val fullInfo = when (val result = client.getSupergroupFullInfo(type.supergroupId)) {
+            is TdlResult.Success -> result.result
+            is TdlResult.Failure -> null
+        }
+
+        return PersonalChannel(
+            providerDialogId = chat.id.toString(),
+            title = chat.title,
+            avatar = chatAvatar(chat),
+            subscriberCount = fullInfo?.memberCount?.takeIf { it > 0 }
+        )
     }
 
     private fun formatBirthdate(birthdate: Birthdate): String {
@@ -509,6 +765,28 @@ class TelegramAccountSession(
 
         return listOfNotNull(day?.toString(), month, year?.toString())
             .joinToString(" ")
+    }
+
+    override suspend fun loadMessage(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<ChatMessage?> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.getMessage(
+                chatId = chatId,
+                messageId = messageId
+            )) {
+                is TdlResult.Success -> Result.success(mapMessage(result.result))
+                is TdlResult.Failure -> Result.success(null)
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
     }
 
     override suspend fun searchMessages(
@@ -829,6 +1107,16 @@ class TelegramAccountSession(
                 it.copy(permissions = update.permissions)
             }
 
+            is UpdateSupergroupFullInfo -> setMemberCount(
+                key = "supergroup:${update.supergroupId}",
+                memberCount = update.supergroupFullInfo.memberCount
+            )
+
+            is UpdateBasicGroupFullInfo -> setMemberCount(
+                key = "basicGroup:${update.basicGroupId}",
+                memberCount = update.basicGroupFullInfo.members.size
+            )
+
             is UpdateChatBackground -> {
                 updateChat(update.chatId) { entry ->
                     entry.copy(background = update.background)
@@ -842,6 +1130,7 @@ class TelegramAccountSession(
                     interactionInfo = update.interactionInfo
                 )
             }
+
 
             is UpdateChatIsMarkedAsUnread -> {
                 updateChat(update.chatId) {
@@ -1359,6 +1648,8 @@ class TelegramAccountSession(
                 )
             },
             reactions = mapReactions(message.interactionInfo),
+            viewCount = message.interactionInfo?.viewCount ?: 0,
+            shareCount = message.interactionInfo?.forwardCount ?: 0,
             sendState = when (message.sendingState) {
                 is MessageSendingStatePending -> MessageSendState.Sending
                 is MessageSendingStateFailed -> MessageSendState.Failed
@@ -1377,6 +1668,8 @@ class TelegramAccountSession(
             is MessageDocument -> content.caption.text
             is MessageVideo -> content.caption.text
             is MessageSticker -> ""
+            is MessageAnimatedEmoji -> ""
+            is MessageGift -> content.text.text
             is MessageVideoNote -> ""
             is MessageVoiceNote -> ""
             is MessageAudio -> content.caption.text
@@ -1386,15 +1679,50 @@ class TelegramAccountSession(
     }
 
     private fun mapReactions(interactionInfo: MessageInteractionInfo?): List<MessageReactionInfo> {
+        val users = _users.value
+
         return interactionInfo?.reactions?.reactions.orEmpty().mapNotNull { reaction ->
             val emoji = (reaction.type as? ReactionTypeEmoji)?.emoji
                 ?: return@mapNotNull null
 
+            val reactorIds = reaction.recentSenderIds
+                .mapNotNull { sender -> (sender as? MessageSenderUser)?.userId }
+
+            reactorIds.forEach(::requestUser)
+
             MessageReactionInfo(
                 emoji = emoji,
                 count = reaction.totalCount,
-                isChosen = reaction.isChosen
+                isChosen = reaction.isChosen,
+                reactorIds = reactorIds,
+                reactorAvatars = reactorIds.mapNotNull { userId ->
+                    users[userId]?.let(::userAvatar)
+                }
             )
+        }
+    }
+
+    private fun refreshReactionAvatars() {
+        val users = _users.value
+
+        messagesByChat.update { existing ->
+            existing.mapValues { (_, messages) ->
+                messages.map { message ->
+                    if (message.reactions.none { it.reactorIds.isNotEmpty() }) {
+                        message
+                    } else {
+                        message.copy(
+                            reactions = message.reactions.map { reaction ->
+                                reaction.copy(
+                                    reactorAvatars = reaction.reactorIds.mapNotNull { userId ->
+                                        users[userId]?.let(::userAvatar)
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1411,7 +1739,11 @@ class TelegramAccountSession(
             existing + (
                 dialogId to existing[dialogId].orEmpty().map { message ->
                     if (message.messageId == messageId) {
-                        message.copy(reactions = mapReactions(interactionInfo))
+                        message.copy(
+                            reactions = mapReactions(interactionInfo),
+                            viewCount = interactionInfo?.viewCount ?: 0,
+                            shareCount = interactionInfo?.forwardCount ?: 0
+                        )
                     } else {
                         message
                     }
@@ -1544,6 +1876,38 @@ class TelegramAccountSession(
             is MessageSticker -> {
                 val sticker = content.sticker
 
+                MessageMedia(
+                    kind = MessageMediaKind.Sticker,
+                    size = sticker.sticker.size,
+                    width = sticker.width,
+                    height = sticker.height,
+                    fileId = sticker.sticker.id,
+                    stickerFileId = sticker.sticker.id,
+                    stickerFormat = when (sticker.format) {
+                        is StickerFormatTgs -> MessageStickerFormat.Tgs
+                        is StickerFormatWebm -> MessageStickerFormat.Webm
+                        else -> MessageStickerFormat.Webp
+                    }
+                )
+            }
+
+            is MessageAnimatedEmoji -> content.animatedEmoji.sticker?.let { sticker ->
+                MessageMedia(
+                    kind = MessageMediaKind.Sticker,
+                    size = sticker.sticker.size,
+                    width = sticker.width,
+                    height = sticker.height,
+                    fileId = sticker.sticker.id,
+                    stickerFileId = sticker.sticker.id,
+                    stickerFormat = when (sticker.format) {
+                        is StickerFormatTgs -> MessageStickerFormat.Tgs
+                        is StickerFormatWebm -> MessageStickerFormat.Webm
+                        else -> MessageStickerFormat.Webp
+                    }
+                )
+            }
+
+            is MessageGift -> content.gift.sticker?.let { sticker ->
                 MessageMedia(
                     kind = MessageMediaKind.Sticker,
                     size = sticker.sticker.size,
@@ -2059,6 +2423,7 @@ class TelegramAccountSession(
                 val bytes = readFileBytes(result.result.local.path)
                 if (bytes != null && bytes.isNotEmpty()) {
                     avatarCache.update { it + (file.id to bytes) }
+                    refreshReactionAvatars()
                     emitDialogs()
                     _users.value[currentUserId]?.let(::updateProfile)
                 }
@@ -2071,6 +2436,59 @@ class TelegramAccountSession(
             .mapNotNull { (it.type as? ChatTypePrivate)?.userId }
             .distinct()
             .forEach(::requestUser)
+    }
+
+    private fun requestMemberCount(chat: Chat) {
+        val key = when (val type = chat.type) {
+            is ChatTypeSupergroup -> "supergroup:${type.supergroupId}"
+            is ChatTypeBasicGroup -> "basicGroup:${type.basicGroupId}"
+            else -> return
+        }
+
+        if (_memberCounts.value.containsKey(key)) return
+
+        var shouldLoad = false
+        _requestedMemberCounts.update { requested ->
+            if (key in requested) {
+                requested
+            } else {
+                shouldLoad = true
+                requested + key
+            }
+        }
+
+        if (!shouldLoad) return
+
+        scope.launch {
+            val memberCount = try {
+                when (val type = chat.type) {
+                    is ChatTypeSupergroup -> when (
+                        val result = client.getSupergroupFullInfo(type.supergroupId)
+                    ) {
+                        is TdlResult.Success -> result.result.memberCount
+                        is TdlResult.Failure -> null
+                    }
+
+                    is ChatTypeBasicGroup -> when (
+                        val result = client.getBasicGroupFullInfo(type.basicGroupId)
+                    ) {
+                        is TdlResult.Success -> result.result.members.size
+                        is TdlResult.Failure -> null
+                    }
+
+                    else -> null
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+                null
+            }
+
+            if (memberCount != null && memberCount > 0) {
+                _memberCounts.update { it + (key to memberCount) }
+                emitDialogs()
+            }
+        }
     }
 
     private fun requestUser(userId: Long) {
@@ -2092,6 +2510,7 @@ class TelegramAccountSession(
             when (val result = client.getUser(userId)) {
                 is TdlResult.Success -> {
                     _users.update { it + (userId to result.result) }
+                    refreshReactionAvatars()
                     emitDialogs()
                 }
 
@@ -2103,11 +2522,19 @@ class TelegramAccountSession(
     private fun upsertChat(chat: Chat) {
         _chats.update { it + (chat.id to ChatEntry.from(chat)) }
 
-        val type = chat.type
-        if (type is ChatTypePrivate) {
-            requestUser(type.userId)
+        when (val type = chat.type) {
+            is ChatTypePrivate -> requestUser(type.userId)
+            is ChatTypeSupergroup, is ChatTypeBasicGroup -> requestMemberCount(chat)
+            else -> Unit
         }
 
+        emitDialogs()
+    }
+
+    private fun setMemberCount(key: String, memberCount: Int) {
+        if (memberCount <= 0) return
+
+        _memberCounts.update { it + (key to memberCount) }
         emitDialogs()
     }
 
@@ -2210,6 +2637,8 @@ class TelegramAccountSession(
                 preview = messagePreview(entry.lastMessage),
                 timestamp = (entry.lastMessage?.date ?: 0).toLong() * 1000L,
                 unreadCount = entry.unreadCount,
+                memberCount = _memberCounts.value[identity.remoteId]?.takeIf { it > 0 },
+                pinnedMessageId = _pinnedMessageIds.value[entry.chatId]?.takeIf { it > 0 },
                 canSendMessages = entry.permissions.canSendBasicMessages,
                 isPinned = mainPosition.isPinned,
                 isMarkedAsUnread = entry.isMarkedAsUnread,
@@ -2263,6 +2692,9 @@ class TelegramAccountSession(
             is MessageText -> content.text.text
             is MessagePhoto -> content.caption.text.ifBlank { "Photo" }
             is MessageVideo -> content.caption.text.ifBlank { "Video" }
+            is MessageAnimatedEmoji -> "Emoji"
+            is MessageGift -> content.text.text.ifBlank { "Gift" }
+            is MessageSticker -> "Sticker"
             is MessageDocument -> content.caption.text.ifBlank {
                 content.document.fileName.ifBlank { "Document" }
             }

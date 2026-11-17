@@ -10,11 +10,14 @@ import kotlinx.serialization.json.Json
 data class AppSettings(
     val showAllChatsTab: Boolean = false,
     val singleRowFilters: Boolean = false,
-    val useNativeFolders: Boolean = true
+    val useNativeFolders: Boolean = true,
+    val hasCustomWallpaper: Boolean = false,
+    val wallpaperUpdatedAt: Long = 0
 )
 
 object AppSettingsStore {
     private const val FILE_NAME = "settings.json"
+    private const val WALLPAPER_FILE = "wallpaper.img"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -25,6 +28,30 @@ object AppSettingsStore {
 
     private val _state = MutableStateFlow(read())
     val state: StateFlow<AppSettings> = _state.asStateFlow()
+
+    fun saveWallpaper(bytes: ByteArray) {
+        runCatching { storage.writeBytes(WALLPAPER_FILE, bytes) }
+        update {
+            it.copy(
+                hasCustomWallpaper = true,
+                wallpaperUpdatedAt = currentTimeMillis()
+            )
+        }
+    }
+
+    fun removeWallpaper() {
+        runCatching { storage.delete(WALLPAPER_FILE) }
+        update {
+            it.copy(
+                hasCustomWallpaper = false,
+                wallpaperUpdatedAt = currentTimeMillis()
+            )
+        }
+    }
+
+    fun readWallpaper(): ByteArray? {
+        return runCatching { storage.readBytes(WALLPAPER_FILE) }.getOrNull()
+    }
 
     fun update(transform: (AppSettings) -> AppSettings) {
         val updated = transform(_state.value)

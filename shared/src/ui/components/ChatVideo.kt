@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -55,6 +56,9 @@ fun ChatVideoPreview(
     var animation by remember(media.fileId, session, isRound) {
         mutableStateOf<WebmAnimation?>(null)
     }
+    var videoBytes by remember(media.fileId, session, isRound) {
+        mutableStateOf<ByteArray?>(null)
+    }
     val roundSizePx = with(LocalDensity.current) {
         RoundVideoNoteSize.roundToPx()
     }
@@ -92,6 +96,8 @@ fun ChatVideoPreview(
                 val bytes = session?.loadFile(fileId)?.getOrNull()
 
                 if (bytes != null) {
+                    videoBytes = bytes
+
                     animation = loadWebmAnimation(
                         customEmojiId = fileId.toLong(),
                         bytes = bytes,
@@ -115,6 +121,15 @@ fun ChatVideoPreview(
     var isPlaying by remember(webm) { mutableStateOf(true) }
     var progress by remember(webm) { mutableFloatStateOf(0f) }
     var playedNanos by remember(webm) { mutableLongStateOf(0L) }
+    var loopCount by remember(webm) { mutableIntStateOf(0) }
+    var isMuted by remember(media.fileId) { mutableStateOf(true) }
+    val voicePlayer = remember { createVoicePlayer() }
+
+    DisposableEffect(voicePlayer) {
+        onDispose {
+            voicePlayer.stop()
+        }
+    }
 
     LaunchedEffect(webm, isPlaying) {
         val current = webm ?: return@LaunchedEffect
@@ -124,36 +139,40 @@ fun ChatVideoPreview(
         val frameDuration = (1_000_000_000.0 / frameRate)
             .toLong()
             .coerceAtLeast(1L)
-        val totalNanos = frameDuration * current.frames.size
-        val startPosition = playedNanos.coerceIn(
-            minimumValue = 0L,
-            maximumValue = (totalNanos - 1).coerceAtLeast(0L)
-        )
+        val totalNanos = (frameDuration * current.frames.size).coerceAtLeast(1L)
+        val startPosition = playedNanos.coerceIn(0L, totalNanos - 1L)
         var startedAt = 0L
+        var nextLoopAt = totalNanos
 
         while (isPlaying) {
             withFrameNanos { now ->
                 if (startedAt == 0L) startedAt = now
 
-                val position = (startPosition + (now - startedAt))
-                    .coerceIn(0L, totalNanos)
+                val elapsedPosition = startPosition + (now - startedAt)
+                val position = elapsedPosition % totalNanos
                 playedNanos = position
 
                 frameIndex = ((position / frameDuration).toInt())
                     .coerceIn(0, current.frames.lastIndex)
-                progress = if (totalNanos <= 0L) {
-                    1f
-                } else {
-                    (position.toFloat() / totalNanos).coerceIn(0f, 1f)
-                }
+                progress = (position.toFloat() / totalNanos).coerceIn(0f, 1f)
 
-                if (position >= totalNanos) {
-                    progress = 1f
-                    frameIndex = current.frames.lastIndex
-                    isPlaying = false
+                // Round video notes loop forever, restarting the ring each time.
+                if (elapsedPosition >= nextLoopAt) {
+                    nextLoopAt += totalNanos
+                    loopCount++
                 }
             }
         }
+    }
+
+    LaunchedEffect(webm, isMuted, isPlaying, loopCount, videoBytes, voicePlayer) {
+        if (!isRound || isMuted || !isPlaying || webm == null) {
+            voicePlayer.stop()
+            return@LaunchedEffect
+        }
+
+        val bytes = videoBytes ?: return@LaunchedEffect
+        voicePlayer.play(bytes, playedNanos / 1_000_000L) { }
     }
 
     Box(
@@ -175,16 +194,8 @@ fun ChatVideoPreview(
                     return@clickable
                 }
 
-                if (webm == null) return@clickable
-
-                if (progress >= 1f) {
-                    playedNanos = 0L
-                    frameIndex = 0
-                    progress = 0f
-                    isPlaying = true
-                } else {
-                    isPlaying = !isPlaying
-                }
+                // Video notes start silent and are unmuted by tapping them.
+                isMuted = !isMuted
             },
         contentAlignment = Alignment.Center
     ) {
@@ -198,22 +209,6 @@ fun ChatVideoPreview(
                 )
 
                 RoundPlaybackRing(progress = progress)
-
-                if (!isPlaying && progress >= 1f) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.45f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "▶",
-                            color = Color.White,
-                            fontSize = 22.sp
-                        )
-                    }
-                }
             }
 
             bitmap != null -> Image(

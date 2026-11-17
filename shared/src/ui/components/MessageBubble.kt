@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,7 +27,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.model.Avatar
@@ -59,8 +66,18 @@ fun MessageBubble(
     mediaContent: (@Composable () -> Unit)? = null,
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
     reply: MessageReply? = null,
+    replyThumbnail: (@Composable () -> Unit)? = null,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    isPinned: Boolean = false,
     onOpenSender: (() -> Unit)? = null,
-    onEdit: (() -> Unit)? = null
+    onEdit: (() -> Unit)? = null,
+    onToggleSelection: (() -> Unit)? = null,
+    onReply: (() -> Unit)? = null,
+    onForward: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    onPin: (() -> Unit)? = null,
+    onSelect: (() -> Unit)? = null
 ) {
     val clipboard = LocalClipboardManager.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
@@ -106,8 +123,16 @@ fun MessageBubble(
                 Surface(
                     modifier = Modifier
                         .combinedClickable(
-                            onClick = {},
-                            onLongClick = { menuExpanded = true }
+                            onClick = {
+                                if (isSelectionMode) onToggleSelection?.invoke()
+                            },
+                            onLongClick = {
+                                if (isSelectionMode) {
+                                    onToggleSelection?.invoke()
+                                } else {
+                                    menuExpanded = true
+                                }
+                            }
                         )
                         .onSecondaryClick { menuExpanded = true },
 
@@ -137,6 +162,7 @@ fun MessageBubble(
                     },
 
                     color = when {
+                        isSelected -> MaterialTheme.colorScheme.secondaryContainer
                         isMediaOnly -> Color.Transparent
                         message.isOutgoing -> MaterialTheme.colorScheme.primary
                         else -> MaterialTheme.colorScheme.surfaceContainer
@@ -159,6 +185,7 @@ fun MessageBubble(
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(MaterialTheme.colorScheme.primary),
                                             reply = data,
+                                            thumbnail = replyThumbnail,
                                             isOutgoing = true
                                         )
                                     }
@@ -204,6 +231,7 @@ fun MessageBubble(
                                             .fillMaxWidth()
                                             .padding(bottom = 4.dp),
                                         reply = data,
+                                        thumbnail = replyThumbnail,
                                         isOutgoing = message.isOutgoing
                                     )
                                 }
@@ -226,26 +254,31 @@ fun MessageBubble(
                             }
 
                             if (message.text.isNotBlank()) {
-                                if (message.customEmojis.isEmpty() || customEmojiData.isEmpty()) {
-                                    Text(
-                                        modifier = Modifier.padding(bottom = 2.dp),
-                                        lineHeight = 20.sp,
-                                        text = message.text
-                                    )
-                                } else {
-                                    CustomEmojiMessageText(
-                                        modifier = Modifier.padding(bottom = 2.dp),
-                                        lineHeight = 20.sp,
-                                        text = message.text,
-                                        emojis = message.customEmojis,
-                                        data = customEmojiData
-                                    )
+                                SelectionContainer {
+                                    if (message.customEmojis.isEmpty() || customEmojiData.isEmpty()) {
+                                        Text(
+                                            modifier = Modifier.padding(bottom = 2.dp),
+                                            lineHeight = 20.sp,
+                                            text = buildAnnotatedString {
+                                                appendTextWithLinks(message.text)
+                                            }
+                                        )
+                                    } else {
+                                        CustomEmojiMessageText(
+                                            modifier = Modifier.padding(bottom = 2.dp),
+                                            lineHeight = 20.sp,
+                                            text = message.text,
+                                            emojis = message.customEmojis,
+                                            data = customEmojiData
+                                        )
+                                    }
                                 }
                             }
 
                             if (!isMediaOnly) {
                                 MessageFooter(
                                     message = message,
+                                    isChannel = dialogKind == DialogKind.Channel,
                                     modifier = Modifier
                                         .align(Alignment.End)
                                         .then(
@@ -262,6 +295,7 @@ fun MessageBubble(
                                 MessageFooter(
                                     message = message,
                                     onMedia = true,
+                                    isChannel = dialogKind == DialogKind.Channel,
                                     modifier = Modifier
                                         .align(Alignment.End)
                                         .then(
@@ -289,6 +323,7 @@ fun MessageBubble(
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(MaterialTheme.colorScheme.surfaceContainer),
                                             reply = data,
+                                            thumbnail = replyThumbnail,
                                             isOutgoing = false
                                         )
                                     }
@@ -303,6 +338,36 @@ fun MessageBubble(
                     onDismissRequest = { menuExpanded = false },
                     shape = RoundedCornerShape(16.dp)
                 ) {
+                    if (onReply != null) {
+                        DropdownMenuItem(
+                            text = { Text("Reply") },
+                            onClick = {
+                                menuExpanded = false
+                                onReply()
+                            }
+                        )
+                    }
+
+                    if (onForward != null) {
+                        DropdownMenuItem(
+                            text = { Text("Forward") },
+                            onClick = {
+                                menuExpanded = false
+                                onForward()
+                            }
+                        )
+                    }
+
+                    if (onPin != null) {
+                        DropdownMenuItem(
+                            text = { Text(if (isPinned) "Unpin" else "Pin") },
+                            onClick = {
+                                menuExpanded = false
+                                onPin()
+                            }
+                        )
+                    }
+
                     if (onEdit != null) {
                         DropdownMenuItem(
                             text = { Text("Edit") },
@@ -322,6 +387,26 @@ fun MessageBubble(
                             }
                         )
                     }
+
+                    if (onSelect != null) {
+                        DropdownMenuItem(
+                            text = { Text("Select") },
+                            onClick = {
+                                menuExpanded = false
+                                onSelect()
+                            }
+                        )
+                    }
+
+                    if (onDelete != null) {
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            }
+                        )
+                    }
                 }
             }
 
@@ -337,6 +422,7 @@ fun MessageBubble(
 private fun ReplyQuote(
     modifier: Modifier = Modifier,
     reply: MessageReply,
+    thumbnail: (@Composable () -> Unit)? = null,
     isOutgoing: Boolean
 ) {
     val accent = if (isOutgoing) {
@@ -357,6 +443,14 @@ private fun ReplyQuote(
                 .fillMaxHeight()
                 .background(accent)
         )
+
+        if (thumbnail != null) {
+            Box(
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp)
+            ) {
+                thumbnail()
+            }
+        }
 
         Column(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -386,7 +480,8 @@ private fun ReplyQuote(
 private fun MessageFooter(
     message: ChatMessage,
     modifier: Modifier = Modifier,
-    onMedia: Boolean = false
+    onMedia: Boolean = false,
+    isChannel: Boolean = false
 ) {
     Row(
         modifier = modifier,
@@ -400,7 +495,8 @@ private fun MessageFooter(
                 modifier = Modifier.padding(top = 4.dp),
                 reactions = message.reactions,
                 isOutgoing = message.isOutgoing,
-                onMedia = onMedia
+                onMedia = onMedia,
+                showAvatars = !isChannel && message.reactions.sumOf { it.count } < 4
             )
         }
         
@@ -408,7 +504,8 @@ private fun MessageFooter(
 
         MessageStatusRow(
             message = message,
-            onMedia = onMedia
+            onMedia = onMedia,
+            isChannel = isChannel
         )
     }
 }
@@ -418,7 +515,8 @@ private fun MessageReactionsRow(
     modifier: Modifier = Modifier,
     reactions: List<MessageReactionInfo>,
     isOutgoing: Boolean,
-    onMedia: Boolean
+    onMedia: Boolean,
+    showAvatars: Boolean = false
 ) {
     val accent = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -461,11 +559,24 @@ private fun MessageReactionsRow(
                         style = MaterialTheme.typography.bodyLarge
                     )
 
-                    Text(
-                        text = reaction.count.toString(),
-                        color = textColor,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
+                    if (showAvatars && reaction.reactorAvatars.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy((-4).dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            reaction.reactorAvatars
+                                .take(reaction.count)
+                                .forEach { avatar ->
+                                    AvatarImage(avatar = avatar, size = 16.dp)
+                                }
+                        }
+                    } else {
+                        Text(
+                            text = reaction.count.toString(),
+                            color = textColor,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
                 }
             }
         }
@@ -476,7 +587,8 @@ private fun MessageReactionsRow(
 private fun MessageStatusRow(
     message: ChatMessage,
     modifier: Modifier = Modifier,
-    onMedia: Boolean = false
+    onMedia: Boolean = false,
+    isChannel: Boolean = false
 ) {
     val contentColor = if (onMedia) Color.White else Color.Unspecified
 
@@ -496,6 +608,26 @@ private fun MessageStatusRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (isChannel) {
+            if (message.viewCount > 0) {
+                Text(
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                    text = "${formatCount(message.viewCount)} " +
+                        if (message.viewCount == 1) "view" else "views"
+                )
+            }
+
+            if (message.shareCount > 0) {
+                Text(
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                    text = "${formatCount(message.shareCount)} " +
+                        if (message.shareCount == 1) "share" else "shares"
+                )
+            }
+        }
+
         Text(
             style = MaterialTheme.typography.bodyMedium,
             color = contentColor,
@@ -538,4 +670,51 @@ private fun MessageStatusRow(
             }
         }
     }
+}
+
+private val LinkRegex = Regex(
+    """(https?://[^\s]+|www\.[^\s]+)""",
+    RegexOption.IGNORE_CASE
+)
+
+internal fun AnnotatedString.Builder.appendTextWithLinks(text: String) {
+    var index = 0
+
+    LinkRegex.findAll(text).forEach { match ->
+        if (match.range.first > index) {
+            append(text.substring(index, match.range.first))
+        }
+
+        val linkText = match.value
+        val url = if (linkText.startsWith("http", ignoreCase = true)) {
+            linkText
+        } else {
+            "https://$linkText"
+        }
+
+        withLink(
+            LinkAnnotation.Url(
+                url = url,
+                styles = TextLinkStyles(
+                    style = SpanStyle(textDecoration = TextDecoration.Underline)
+                )
+            )
+        ) {
+            append(linkText)
+        }
+
+        index = match.range.last + 1
+    }
+
+    if (index < text.length) {
+        append(text.substring(index))
+    }
+}
+
+private fun formatCount(count: Int): String {
+    return count.toString()
+        .reversed()
+        .chunked(3)
+        .joinToString(" ")
+        .reversed()
 }

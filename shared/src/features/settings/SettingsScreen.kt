@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,7 +30,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.mrboomdev.scrollix.isTwoPaneLayout
 
 private enum class SettingsCategory(
@@ -45,6 +51,21 @@ private enum class SettingsCategory(
 fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
     val isTwoPane = isTwoPaneLayout()
     val settings by AppSettingsStore.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    val filePicker = rememberFilePicker(
+        onImagePicked = { picked ->
+            scope.launch {
+                val bytes = withContext(Dispatchers.IO) {
+                    readFileBytes(picked.path)
+                }
+
+                if (bytes != null) {
+                    AppSettingsStore.saveWallpaper(bytes)
+                }
+            }
+        },
+        onFilePicked = {}
+    )
 
     if (isTwoPane) {
         var selected by remember { mutableStateOf(SettingsCategory.ChatList) }
@@ -66,6 +87,7 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                     .fillMaxHeight(),
                 category = selected,
                 settings = settings,
+                onPickWallpaper = { filePicker.pickImage() },
                 onOpenAccountsScreen = onOpenAccountsScreen
             )
         }
@@ -106,6 +128,7 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                     .fillMaxWidth(),
                 category = category,
                 settings = settings,
+                onPickWallpaper = { filePicker.pickImage() },
                 onOpenAccountsScreen = onOpenAccountsScreen
             )
         }
@@ -160,6 +183,7 @@ private fun SettingsCategoryContent(
     modifier: Modifier = Modifier,
     category: SettingsCategory,
     settings: AppSettings,
+    onPickWallpaper: () -> Unit,
     onOpenAccountsScreen: () -> Unit
 ) {
     Column(
@@ -173,6 +197,35 @@ private fun SettingsCategoryContent(
 
         when (category) {
             SettingsCategory.ChatList -> {
+                Text(
+                    text = "Chat wallpaper",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Text(
+                    text = if (settings.hasCustomWallpaper) {
+                        "A custom wallpaper is used in chats without their own."
+                    } else {
+                        "The default wallpaper is used in chats without their own."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onPickWallpaper) {
+                        Text("Pick wallpaper")
+                    }
+
+                    if (settings.hasCustomWallpaper) {
+                        Button(onClick = { AppSettingsStore.removeWallpaper() }) {
+                            Text("Remove")
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
                 SettingsSwitch(
                     title = "Show the \"All\" tab",
                     description = "Add a chip that displays every chat at once.",

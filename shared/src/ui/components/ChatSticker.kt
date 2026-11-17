@@ -66,8 +66,11 @@ internal fun ChatSticker(
         media.width > 0 && media.height > 0 -> media.width.toFloat() / media.height
         else -> 1f
     }
-    val height = StickerSize
-    val width = (height * aspectRatio).coerceIn(48.dp, 260.dp)
+    // Keep the box at the sticker's own aspect ratio: capping the width
+    // without shrinking the height would squish landscape WebM stickers.
+    val maxWidth = 260.dp
+    val width = (StickerSize * aspectRatio).coerceAtMost(maxWidth)
+    val height = width / aspectRatio
 
     val emoji = remember(fileId, data, media.minithumbnail, media.stickerFormat) {
         DialogFolderEmoji(

@@ -22,6 +22,19 @@ data class AccountProfile(
     val avatar: Avatar? = null
 )
 
+data class PersonalChannel(
+    val providerDialogId: String,
+    val title: String,
+    val avatar: Avatar? = null,
+    val subscriberCount: Int? = null
+)
+
+data class CommonGroup(
+    val providerDialogId: String,
+    val title: String,
+    val avatar: Avatar? = null
+)
+
 data class UserProfileDetails(
     val displayName: String? = null,
     val avatar: Avatar? = null,
@@ -29,5 +42,10 @@ data class UserProfileDetails(
     val phoneNumber: String? = null,
     val bio: String? = null,
     val birthdate: String? = null,
-    val status: String? = null
+    val status: String? = null,
+    val kind: DialogKind? = null,
+    val memberCount: Int? = null,
+    val description: String? = null,
+    val personalChannel: PersonalChannel? = null,
+    val commonGroups: List<CommonGroup> = emptyList()
 )

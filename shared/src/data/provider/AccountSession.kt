@@ -27,7 +27,11 @@ interface AccountSession {
     suspend fun loadMessages(providerDialogId: String, limit: Int = 50): Result<Unit>
     suspend fun loadOlderMessages(providerDialogId: String, limit: Int = 50): Result<Boolean>
     suspend fun loadFile(fileId: Int): Result<ByteArray>
-    suspend fun sendMessage(providerDialogId: String, text: String): Result<Unit>
+    suspend fun sendMessage(
+        providerDialogId: String,
+        text: String,
+        replyToMessageId: Long? = null
+    ): Result<Unit>
     suspend fun sendFile(
         providerDialogId: String,
         path: String,
@@ -48,12 +52,31 @@ interface AccountSession {
         query: String,
         limit: Int = 50
     ): Result<List<ChatMessage>>
+    suspend fun loadMessage(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<ChatMessage?>
     suspend fun loadCustomEmoji(emojiId: Long): ByteArray?
     suspend fun editMessage(
         providerDialogId: String,
         messageId: Long,
         text: String
     ): Result<Unit>
+    suspend fun forwardMessages(
+        providerDialogId: String,
+        messageIds: LongArray,
+        targetDialogId: String
+    ): Result<Unit>
+    suspend fun deleteMessages(
+        providerDialogId: String,
+        messageIds: LongArray
+    ): Result<Unit>
+    suspend fun setMessagePinned(
+        providerDialogId: String,
+        messageId: Long,
+        isPinned: Boolean
+    ): Result<Unit>
+    suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?>
     suspend fun logout()
     suspend fun close()
 }

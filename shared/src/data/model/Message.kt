@@ -48,13 +48,16 @@ data class MessageMedia(
 data class MessageReactionInfo(
     val emoji: String,
     val count: Int,
-    val isChosen: Boolean = false
+    val isChosen: Boolean = false,
+    val reactorIds: List<Long> = emptyList(),
+    val reactorAvatars: List<Avatar> = emptyList()
 )
 
 data class MessageReply(
     val messageId: Long,
     val senderName: String? = null,
-    val text: String = ""
+    val text: String = "",
+    val media: MessageMedia? = null
 )
 
 data class ChatMessage(
@@ -72,6 +75,8 @@ data class ChatMessage(
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
     val replyTo: MessageReply? = null,
     val reactions: List<MessageReactionInfo> = emptyList(),
+    val viewCount: Int = 0,
+    val shareCount: Int = 0,
     val sendState: MessageSendState = MessageSendState.Sent,
     val isRead: Boolean = false
 )

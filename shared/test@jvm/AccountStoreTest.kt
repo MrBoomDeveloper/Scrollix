@@ -44,6 +44,7 @@ class AccountStoreTest {
 
     private class MemoryStorage : PlatformStorage {
         private val files = mutableMapOf<String, String>()
+        private val byteFiles = mutableMapOf<String, ByteArray>()
 
         override val rootDirectory: String = "/memory"
 
@@ -55,8 +56,19 @@ class AccountStoreTest {
             files[relativePath] = text
         }
 
+        override fun readBytes(relativePath: String): ByteArray? {
+            return byteFiles[relativePath]
+        }
+
+        override fun writeBytes(relativePath: String, bytes: ByteArray) {
+            byteFiles[relativePath] = bytes
+        }
+
         override fun delete(relativePath: String) {
             files.keys.removeAll { path ->
+                path == relativePath || path.startsWith("$relativePath/")
+            }
+            byteFiles.keys.removeAll { path ->
                 path == relativePath || path.startsWith("$relativePath/")
             }
         }
@@ -70,7 +82,7 @@ class AccountStoreTest {
         }
 
         override fun exists(relativePath: String): Boolean {
-            return files.containsKey(relativePath)
+            return files.containsKey(relativePath) || byteFiles.containsKey(relativePath)
         }
     }
 }

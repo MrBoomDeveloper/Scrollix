@@ -34,6 +34,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
@@ -82,6 +83,7 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.resources.Res
 import com.mrboomdev.scrollix.resources.wallpaper
@@ -148,6 +150,26 @@ fun DialogScreen(
     }
     val messages by messagesFlow.collectAsState()
     val dialog = dialogs.firstOrNull { it.providerDialogId == providerDialogId }
+    val settings by AppSettingsStore.state.collectAsState()
+    var appWallpaper by remember(settings.wallpaperUpdatedAt) {
+        mutableStateOf<ImageBitmap?>(null)
+    }
+
+    LaunchedEffect(settings.hasCustomWallpaper, settings.wallpaperUpdatedAt) {
+        appWallpaper = if (settings.hasCustomWallpaper) {
+            val bytes = withContext(Dispatchers.IO) {
+                AppSettingsStore.readWallpaper()
+            }
+
+            bytes?.let { data ->
+                withContext(Dispatchers.Default) {
+                    decodeImageBitmap(data)
+                }
+            }
+        } else {
+            null
+        }
+    }
     var wallpaperImage by remember(providerDialogId) {
         mutableStateOf<ImageBitmap?>(null)
     }
@@ -207,6 +229,18 @@ fun DialogScreen(
     var searchOpen by remember(providerDialogId) { mutableStateOf(false) }
     var searchQuery = rememberTextFieldState()
     var editingMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
+    var replyingTo by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
+    var selectedMessageIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
+    var forwardingMessageIds by remember(providerDialogId) {
+        mutableStateOf<LongArray?>(null)
+    }
+    var showUnpinConfirmation by remember(providerDialogId) { mutableStateOf(false) }
+    var loadedPinnedMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
+    var attemptedPinnedMessageId by remember(providerDialogId) { mutableStateOf<Long?>(null) }
+    var loadedReplies by remember(providerDialogId) {
+        mutableStateOf<Map<Long, ChatMessage>>(emptyMap())
+    }
+    var attemptedReplyIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
 
     fun sendAttachment(picked: PickedFile, asPhoto: Boolean) {
         if (session == null) return
@@ -235,6 +269,43 @@ fun DialogScreen(
         onFilePicked = { picked -> sendAttachment(picked, asPhoto = false) }
     )
 
+    fun deleteMessages(messageIds: LongArray) {
+        if (session == null || messageIds.isEmpty()) return
+
+        scope.launch {
+            session.deleteMessages(providerDialogId, messageIds)
+                .onSuccess {
+                    selectedMessageIds = selectedMessageIds - messageIds.toSet()
+                }
+                .onFailure { error = it.message ?: "Failed to delete messages" }
+        }
+    }
+
+    fun forwardMessages(messageIds: LongArray, targetDialogId: String) {
+        val currentSession = session ?: return
+
+        scope.launch {
+            currentSession.forwardMessages(
+                providerDialogId = providerDialogId,
+                messageIds = messageIds,
+                targetDialogId = targetDialogId
+            ).onSuccess {
+                selectedMessageIds = emptySet()
+            }.onFailure {
+                error = it.message ?: "Failed to forward messages"
+            }
+        }
+    }
+
+    fun pinMessage(message: ChatMessage, isPinned: Boolean) {
+        if (session == null) return
+
+        scope.launch {
+            session.setMessagePinned(providerDialogId, message.messageId, isPinned)
+                .onFailure { error = it.message ?: "Failed to pin message" }
+        }
+    }
+
     LaunchedEffect(session, providerDialogId) {
         error = null
         isLoading = true
@@ -255,6 +326,27 @@ fun DialogScreen(
         session.loadMessages(providerDialogId)
             .onFailure { error = it.message ?: "Failed to load messages" }
         isLoading = false
+    }
+
+    LaunchedEffect(session, providerDialogId) {
+        session?.loadPinnedMessageId(providerDialogId)
+    }
+
+    LaunchedEffect(session, providerDialogId, dialog?.pinnedMessageId, messages) {
+        val pinnedId = dialog?.pinnedMessageId
+
+        if (pinnedId == null) {
+            loadedPinnedMessage = null
+            attemptedPinnedMessageId = null
+            return@LaunchedEffect
+        }
+
+        if (messages.any { it.messageId == pinnedId }) return@LaunchedEffect
+        if (loadedPinnedMessage?.messageId == pinnedId) return@LaunchedEffect
+        if (attemptedPinnedMessageId == pinnedId) return@LaunchedEffect
+
+        attemptedPinnedMessageId = pinnedId
+        loadedPinnedMessage = session?.loadMessage(providerDialogId, pinnedId)?.getOrNull()
     }
 
     val lastMessageId = messages.lastOrNull()?.messageId
@@ -302,6 +394,32 @@ fun DialogScreen(
     }
 
     val visibleMessages = if (searchQuery.text.isBlank()) messages else searchResults
+
+    LaunchedEffect(session, providerDialogId, visibleMessages, messages, loadedReplies) {
+        val currentSession = session ?: return@LaunchedEffect
+
+        val missingIds = visibleMessages
+            .mapNotNull { message -> message.replyTo?.messageId }
+            .filter { id ->
+                messages.none { it.messageId == id } &&
+                    id !in loadedReplies &&
+                    id !in attemptedReplyIds
+            }
+            .distinct()
+
+        if (missingIds.isEmpty()) return@LaunchedEffect
+
+        attemptedReplyIds = attemptedReplyIds + missingIds
+
+        val loaded = missingIds.mapNotNull { id ->
+            currentSession.loadMessage(providerDialogId, id).getOrNull()
+                ?.let { message -> id to message }
+        }.toMap()
+
+        if (loaded.isNotEmpty()) {
+            loadedReplies = loadedReplies + loaded
+        }
+    }
 
     LaunchedEffect(providerDialogId, isLoading, messages.isNotEmpty()) {
         if (isLoading || messages.isEmpty() || initialScrollDone) return@LaunchedEffect
@@ -440,9 +558,14 @@ fun DialogScreen(
                     }
                     .onFailure { error = it.message ?: "Failed to edit message" }
             } else {
-                session.sendMessage(providerDialogId, text)
+                session.sendMessage(
+                    providerDialogId = providerDialogId,
+                    text = text,
+                    replyToMessageId = replyingTo?.messageId
+                )
                     .onSuccess {
                         input = ""
+                        replyingTo = null
                         scrollToLatestRequested = true
                     }
                     .onFailure { error = it.message ?: "Failed to send message" }
@@ -450,6 +573,73 @@ fun DialogScreen(
 
             isSending = false
         }
+    }
+
+    forwardingMessageIds?.let { messageIds ->
+        AlertDialog(
+            onDismissRequest = { forwardingMessageIds = null },
+            title = { Text("Forward to") },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    itemsIndexed(dialogs) { _, target ->
+                        if (target.providerDialogId == providerDialogId) {
+                            return@itemsIndexed
+                        }
+
+                        Text(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    forwardingMessageIds = null
+                                    forwardMessages(messageIds, target.providerDialogId)
+                                }
+                                .padding(vertical = 12.dp),
+                            text = target.title,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { forwardingMessageIds = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showUnpinConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showUnpinConfirmation = false },
+            text = { Text("Unpin this message?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUnpinConfirmation = false
+                        val messageId = dialog?.pinnedMessageId
+
+                        if (session != null && messageId != null) {
+                            scope.launch {
+                                session.setMessagePinned(
+                                    providerDialogId = providerDialogId,
+                                    messageId = messageId,
+                                    isPinned = false
+                                ).onFailure {
+                                    error = it.message ?: "Failed to unpin message"
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text("Unpin")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnpinConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Column(
@@ -499,12 +689,19 @@ fun DialogScreen(
 
                 dialog?.let {
                     val statusText = it.statusText
+                    val memberCount = it.memberCount
 
                     Text(
                         text = statusText ?: when (it.kind) {
                             DialogKind.Direct -> "Direct message"
-                            DialogKind.Group -> "Group"
-                            DialogKind.Channel -> "Channel"
+                            DialogKind.Group -> memberCount?.let { count ->
+                                "${formatCount(count)} ${if (count == 1) "member" else "members"}"
+                            } ?: "Group"
+
+                            DialogKind.Channel -> memberCount?.let { count ->
+                                "${formatCount(count)} ${if (count == 1) "subscriber" else "subscribers"}"
+                            } ?: "Channel"
+
                             DialogKind.Bot -> "Bot"
                             DialogKind.Secret -> "Secret chat"
                         },
@@ -566,6 +763,46 @@ fun DialogScreen(
             color = MaterialTheme.colorScheme.surfaceContainer
         )
 
+        dialog?.pinnedMessageId?.let { pinnedId ->
+            val pinnedMessage = messages.firstOrNull { it.messageId == pinnedId }
+                ?: loadedPinnedMessage?.takeIf { it.messageId == pinnedId }
+            val preview = pinnedMessage?.text?.takeIf { it.isNotBlank() }
+                ?: pinnedMessage?.media?.fileName
+                ?: "Pinned message"
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Pinned message",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Text(
+                        text = preview,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                IconButton(onClick = { showUnpinConfirmation = true }) {
+                    Icon(
+                        imageVector = close_icon,
+                        contentDescription = "Unpin message"
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+        }
+
         AnimatedVisibility(visible = searchOpen) {
             Row(
                 modifier = Modifier
@@ -618,7 +855,7 @@ fun DialogScreen(
                 .weight(1f)
         ) {
             val wallpaper = dialog?.wallpaper
-            val customWallpaper = wallpaperImage
+            val customWallpaper = wallpaperImage ?: appWallpaper
             val hasFill = wallpaper != null && wallpaper.colors.isNotEmpty()
 
             // Pattern wallpapers are drawn over the gradient fill with the
@@ -658,6 +895,44 @@ fun DialogScreen(
             }
             
             Column(Modifier.fillMaxSize()) {
+                AnimatedVisibility(visible = selectedMessageIds.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            modifier = Modifier.weight(1f),
+                            text = "${selectedMessageIds.size} selected",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        TextButton(
+                            onClick = {
+                                forwardingMessageIds = selectedMessageIds.toLongArray()
+                            }
+                        ) {
+                            Text("Forward")
+                        }
+
+                        TextButton(
+                            onClick = { deleteMessages(selectedMessageIds.toLongArray()) }
+                        ) {
+                            Text("Delete")
+                        }
+
+                        IconButton(onClick = { selectedMessageIds = emptySet() }) {
+                            Icon(
+                                imageVector = close_icon,
+                                contentDescription = "Cancel selection"
+                            )
+                        }
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -708,6 +983,13 @@ fun DialogScreen(
                                         messageDate(it.timestamp)
                                     }
                                     val media = message.media
+                                    val reply = replyFor(message, messages, loadedReplies)
+                                    val replyMedia = reply?.media
+                                        ?.takeIf { it.kind == MessageMediaKind.Photo }
+                                    val replyThumbnail: (@Composable () -> Unit)? =
+                                        replyMedia?.let { replyImage ->
+                                            { ReplyImageThumbnail(replyImage, session) }
+                                        }
 
                                     val mediaContent: (@Composable () -> Unit)? = when {
                                         media == null -> null
@@ -766,7 +1048,35 @@ fun DialogScreen(
                                             message = message,
                                             mediaContent = mediaContent,
                                             customEmojiData = customEmojiData,
-                                            reply = replyFor(message, messages),
+                                            reply = reply,
+                                            replyThumbnail = replyThumbnail,
+                                            isSelectionMode = selectedMessageIds.isNotEmpty(),
+                                            isSelected = message.messageId in selectedMessageIds,
+                                            isPinned = dialog?.pinnedMessageId == message.messageId,
+                                            onToggleSelection = {
+                                                selectedMessageIds =
+                                                    if (message.messageId in selectedMessageIds) {
+                                                        selectedMessageIds - message.messageId
+                                                    } else {
+                                                        selectedMessageIds + message.messageId
+                                                    }
+                                            },
+                                            onReply = { replyingTo = message },
+                                            onForward = {
+                                                forwardingMessageIds = longArrayOf(message.messageId)
+                                            },
+                                            onDelete = {
+                                                deleteMessages(longArrayOf(message.messageId))
+                                            },
+                                            onPin = {
+                                                pinMessage(
+                                                    message = message,
+                                                    isPinned = dialog?.pinnedMessageId != message.messageId
+                                                )
+                                            },
+                                            onSelect = {
+                                                selectedMessageIds = setOf(message.messageId)
+                                            },
                                             onOpenSender = if (
                                                 !message.isOutgoing &&
                                                 !(dialog?.kind ?: DialogKind.Direct).isPeer &&
@@ -864,6 +1174,29 @@ fun DialogScreen(
                                 input = ""
                             }
                         ) {
+                            Text("Cancel")
+                        }
+                    }
+                }
+
+                replyingTo?.let { message ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            modifier = Modifier.weight(1f),
+                            text = "Replying to: " +
+                                message.text.ifBlank { "message" }.take(40),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        TextButton(onClick = { replyingTo = null }) {
                             Text("Cancel")
                         }
                     }
@@ -1022,15 +1355,18 @@ private fun BoxScope.MessageListOverlays(
 
 private fun replyFor(
     message: ChatMessage,
-    allMessages: List<ChatMessage>
+    allMessages: List<ChatMessage>,
+    loadedReplies: Map<Long, ChatMessage> = emptyMap()
 ): MessageReply? {
     val reply = message.replyTo ?: return null
     val original = allMessages.firstOrNull { it.messageId == reply.messageId }
+        ?: loadedReplies[reply.messageId]
 
     return if (original != null) {
         reply.copy(
             senderName = if (original.isOutgoing) "You" else original.senderName,
-            text = original.replySnippet()
+            text = original.replySnippet(),
+            media = original.media
         )
     } else {
         reply.copy(text = reply.text.ifBlank { "Message" })
@@ -1051,6 +1387,53 @@ private fun ChatMessage.replySnippet(): String {
         MessageMediaKind.VoiceNote -> "Voice message"
         MessageMediaKind.Audio -> media.fileName ?: "Audio"
         MessageMediaKind.File -> media.fileName ?: "File"
+    }
+}
+
+@Composable
+private fun ReplyImageThumbnail(
+    media: MessageMedia,
+    session: AccountSession?
+) {
+    var image by remember(media.previewFileId, media.minithumbnail, session) {
+        mutableStateOf<ImageBitmap?>(null)
+    }
+
+    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
+        image = media.minithumbnail?.let { bytes ->
+            withContext(Dispatchers.Default) {
+                decodeImageBitmap(bytes)
+            }
+        }
+
+        val bytes = media.previewFileId?.let { fileId ->
+            session?.loadFile(fileId)?.getOrNull()
+        }
+
+        if (bytes != null) {
+            image = withContext(Dispatchers.Default) {
+                decodeImageBitmap(bytes)
+            }
+        }
+    }
+
+    val bitmap = image
+
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
     }
 }
 
@@ -1089,12 +1472,13 @@ private fun MessageImagePreview(
         isLoading = false
     }
 
-    val aspectRatio = if (media.width > 0 && media.height > 0) {
-        media.width.toFloat() / media.height
-    } else {
-        4f / 3f
-    }
     val bitmap = image
+    val aspectRatio = bitmap?.let { it.width.toFloat() / it.height }
+        ?: if (media.width > 0 && media.height > 0) {
+            media.width.toFloat() / media.height
+        } else {
+            4f / 3f
+        }
 
     Box(
         modifier = Modifier
@@ -1105,7 +1489,7 @@ private fun MessageImagePreview(
                     Modifier.width(260.dp)
                 }
             )
-            .aspectRatio(aspectRatio.coerceIn(0.75f, 1.8f))
+            .aspectRatio(aspectRatio)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable(enabled = bitmap != null, onClick = onClick),
@@ -1117,7 +1501,7 @@ private fun MessageImagePreview(
                     bitmap = bitmap,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Fit
                 )
             }
 
@@ -1209,6 +1593,14 @@ private fun MessageFilePreview(
             }
         }
     }
+}
+
+private fun formatCount(count: Int): String {
+    return count.toString()
+        .reversed()
+        .chunked(3)
+        .joinToString(" ")
+        .reversed()
 }
 
 private fun formatFileSize(bytes: Long): String {

@@ -54,7 +54,7 @@ internal fun CustomEmojiMessageText(
         for (span in spans) {
             if (span.start < index) continue
 
-            append(text.substring(index, span.start))
+            appendTextWithLinks(text.substring(index, span.start))
             appendInlineContent(
                 alternateText = text.substring(span.start, span.end),
                 id = span.emojiId.toString()
@@ -62,7 +62,7 @@ internal fun CustomEmojiMessageText(
             index = span.end
         }
 
-        append(text.substring(index))
+        appendTextWithLinks(text.substring(index))
     }
 
     val inlineContent = spans.associate { span ->
