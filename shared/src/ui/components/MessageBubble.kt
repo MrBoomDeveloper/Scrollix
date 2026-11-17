@@ -46,6 +46,8 @@ import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.ui.icons.check_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.onSecondaryClick
+import com.mrboomdev.scrollix.ui.icons.share_icon
+import com.mrboomdev.scrollix.ui.icons.visibility_icon
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -605,68 +607,93 @@ private fun MessageStatusRow(
                 }
             )
             .heightIn(min = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isChannel) {
             if (message.viewCount > 0) {
-                Text(
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = contentColor,
-                    text = "${formatCount(message.viewCount)} " +
-                        if (message.viewCount == 1) "view" else "views"
-                )
-            }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        modifier = Modifier.size(16.dp),
+                        imageVector = visibility_icon,
+                        contentDescription = null
+                    )
 
-            if (message.shareCount > 0) {
+                    Text(
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor,
+                        text = message.viewCount.toString()
+                    )
+                }
+            }
+        }
+
+        if (message.shareCount > 0) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    modifier = Modifier.size(16.dp),
+                    imageVector = share_icon,
+                    contentDescription = null
+                )
+
                 Text(
                     style = MaterialTheme.typography.bodyMedium,
                     color = contentColor,
-                    text = "${formatCount(message.shareCount)} " +
-                        if (message.shareCount == 1) "share" else "shares"
+                    text = message.shareCount.toString()
                 )
             }
         }
 
-        Text(
-            style = MaterialTheme.typography.bodyMedium,
-            color = contentColor,
-            text = Instant.fromEpochSeconds(message.timestamp / 1000)
-                .toLocalDateTime(TimeZone.currentSystemDefault())
-                .let { time ->
-                    "${if (time.hour > 9) time.hour else "0" + time.hour}:" +
-                        "${if (time.minute > 9) time.minute else "0" + time.minute}"
-                }
-        )
-
-        if (message.isOutgoing) {
-            when (message.sendState) {
-                MessageSendState.Sending -> CircularProgressIndicator(
-                    modifier = Modifier.size(12.dp),
-                    strokeWidth = 1.5.dp,
-                    color = if (onMedia) {
-                        Color.White
-                    } else {
-                        MaterialTheme.colorScheme.onPrimary
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                text = Instant.fromEpochSeconds(message.timestamp / 1000)
+                    .toLocalDateTime(TimeZone.currentSystemDefault())
+                    .let { time ->
+                        "${if(time.hour > 9) time.hour else "0" + time.hour}:" +
+                                "${if(time.minute > 9) time.minute else "0" + time.minute}"
                     }
-                )
+            )
 
-                MessageSendState.Failed -> Text(
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    text = "Not sent"
-                )
+            if(message.isOutgoing) {
+                when (message.sendState) {
+                    MessageSendState.Sending -> CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp,
+                        color = if(onMedia) {
+                            Color.White
+                        } else {
+                            MaterialTheme.colorScheme.onPrimary
+                        }
+                    )
 
-                MessageSendState.Sent -> Icon(
-                    modifier = Modifier.size(14.dp),
-                    tint = when {
-                        onMedia -> Color.White.copy(alpha = if (message.isRead) 1f else 0.6f)
-                        message.isRead -> MaterialTheme.colorScheme.onPrimary
-                        else -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
-                    },
-                    imageVector = if (message.isRead) done_all_icon else check_icon,
-                    contentDescription = if (message.isRead) "Read" else "Sent"
-                )
+                    MessageSendState.Failed -> Text(
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        text = "Not sent"
+                    )
+
+                    MessageSendState.Sent -> Icon(
+                        modifier = Modifier.size(14.dp),
+                        tint = when {
+                            onMedia -> Color.White.copy(alpha = if(message.isRead) 1f else 0.6f)
+                            message.isRead -> MaterialTheme.colorScheme.onPrimary
+                            else -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
+                        },
+                        imageVector = if(message.isRead) done_all_icon else check_icon,
+                        contentDescription = if(message.isRead) "Read" else "Sent"
+                    )
+                }
             }
         }
     }
