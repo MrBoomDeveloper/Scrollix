@@ -40,7 +40,7 @@ import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val RoundVideoNoteSize = 160.dp
+private val RoundVideoNoteSize = 250.dp
 
 @Composable
 fun ChatVideoPreview(

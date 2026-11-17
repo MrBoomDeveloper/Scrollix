@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,6 +31,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
@@ -102,6 +107,7 @@ import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
 import com.mrboomdev.scrollix.isTwoPaneLayout
+import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -109,6 +115,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
+import kotlin.time.Duration.Companion.milliseconds
 
 private fun wallpaperBrush(wallpaper: ChatWallpaper): Brush {
     val colors = wallpaper.colors.map { color ->
@@ -198,7 +205,7 @@ fun DialogScreen(
     var scrollToLatestRequested by remember(providerDialogId) { mutableStateOf(false) }
     var isAtBottom by remember(providerDialogId) { mutableStateOf(true) }
     var searchOpen by remember(providerDialogId) { mutableStateOf(false) }
-    var searchQuery by remember(providerDialogId) { mutableStateOf("") }
+    var searchQuery = rememberTextFieldState()
     var editingMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
 
     fun sendAttachment(picked: PickedFile, asPhoto: Boolean) {
@@ -278,8 +285,8 @@ fun DialogScreen(
         }
     }
 
-    LaunchedEffect(session, providerDialogId, searchQuery) {
-        val query = searchQuery.trim()
+    LaunchedEffect(session, providerDialogId, searchQuery.text) {
+        val query = searchQuery.text.trim()
 
         if (query.isEmpty() || session == null) {
             searchResults = emptyList()
@@ -288,17 +295,17 @@ fun DialogScreen(
         }
 
         isSearchPending = true
-        delay(300)
-        searchResults = session.searchMessages(providerDialogId, query)
+        delay(300.milliseconds)
+        searchResults = session.searchMessages(providerDialogId, query.toString())
             .getOrDefault(emptyList())
         isSearchPending = false
     }
 
-    val visibleMessages = if (searchQuery.isBlank()) messages else searchResults
+    val visibleMessages = if (searchQuery.text.isBlank()) messages else searchResults
 
     LaunchedEffect(providerDialogId, isLoading, messages.isNotEmpty()) {
         if (isLoading || messages.isEmpty() || initialScrollDone) return@LaunchedEffect
-        if (searchQuery.isNotBlank()) return@LaunchedEffect
+        if (searchQuery.text.isNotBlank()) return@LaunchedEffect
 
         listState.scrollToItem(messages.lastIndex)
         previousLastMessageId = messages.lastOrNull()?.messageId
@@ -322,7 +329,7 @@ fun DialogScreen(
 
     LaunchedEffect(lastMessageId, initialScrollDone, scrollToLatestRequested) {
         if (!initialScrollDone) return@LaunchedEffect
-        if (searchQuery.isNotBlank()) return@LaunchedEffect
+        if (searchQuery.text.isNotBlank()) return@LaunchedEffect
 
         val newLastMessageId = lastMessageId ?: return@LaunchedEffect
 
@@ -374,7 +381,7 @@ fun DialogScreen(
             .distinctUntilChanged()
             .collect { atTop ->
                 if (!atTop || isLoading || isLoadingMore || !canLoadMore) return@collect
-                if (searchQuery.isNotBlank()) return@collect
+                if (searchQuery.text.isNotBlank()) return@collect
                 if (listState.layoutInfo.totalItemsCount == 0) return@collect
 
                 var keepLoading = true
@@ -517,7 +524,7 @@ fun DialogScreen(
                     searchOpen = !searchOpen
 
                     if (!searchOpen) {
-                        searchQuery = ""
+                        searchQuery.clearText()
                     }
                 }
             ) {
@@ -528,16 +535,18 @@ fun DialogScreen(
                 )
             }
 
-            IconButton(
-                onClick = {
+            if(dialog?.kind == DialogKind.Direct) {
+                IconButton(
+                    onClick = {
 
+                    }
+                ) {
+                    Icon(
+                        tint = MaterialTheme.colorScheme.secondary,
+                        imageVector = call_icon,
+                        contentDescription = null
+                    )
                 }
-            ) {
-                Icon(
-                    tint = MaterialTheme.colorScheme.secondary,
-                    imageVector = call_icon,
-                    contentDescription = null
-                )
             }
 
             IconButton(
@@ -558,31 +567,46 @@ fun DialogScreen(
         )
 
         AnimatedVisibility(visible = searchOpen) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    singleLine = true,
+                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = Dp.Unspecified),
+                    state = searchQuery,
+                    lineLimits = TextFieldLineLimits.SingleLine,
+                    
+                    contentPadding = PaddingValues(),
+                    
                     placeholder = {
                         Text("Search in chat")
                     }
                 )
 
-                if (searchQuery.isNotBlank()) {
+                if (searchQuery.text.isNotBlank()) {
                     Text(
                         text = if (isSearchPending) {
                             "Searching..."
                         } else {
-                            "${visibleMessages.size} found"
+                            "${visibleMessages.size}\nresults"
                         },
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                
+                IconButton(
+                    onClick = {
+                        searchOpen = false
+                        searchQuery.clearText()
+                    }
+                ) { 
+                    Icon(
+                        imageVector = close_icon,
+                        contentDescription = null
                     )
                 }
             }

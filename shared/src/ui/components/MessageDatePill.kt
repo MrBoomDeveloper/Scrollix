@@ -56,7 +56,7 @@ fun MessageDatePill(date: LocalDate) {
     
     Surface(
         modifier = Modifier
-            .padding(vertical = 8.dp)
+            .padding(vertical = 4.dp)
             .fillMaxWidth()
             .wrapContentWidth(Alignment.CenterHorizontally),
         shape = RoundedCornerShape(32.dp),

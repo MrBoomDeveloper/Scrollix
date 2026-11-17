@@ -4,15 +4,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,7 +69,7 @@ fun MessageBubble(
             message.media?.kind == MessageMediaKind.VideoNote ||
             message.media?.kind == MessageMediaKind.Animation ||
             message.media?.kind == MessageMediaKind.Photo
-    )
+    ) || (message.replyTo != null && message.media?.kind == MessageMediaKind.Sticker)
 
     BoxWithConstraints(modifier = modifier) {
         val maxBubbleWidth = maxWidth * 0.75f
@@ -139,97 +142,158 @@ fun MessageBubble(
                         else -> MaterialTheme.colorScheme.surfaceContainer
                     }
                 ) {
-                    Column(
-                        modifier = Modifier.padding(
-                            if (isMediaOnly) {
-                                PaddingValues(0.dp)
-                            } else {
-                                PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                            }
-                        ).width(IntrinsicSize.Max)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        var isSenderNameShown = false
-                        
-                        message.senderName?.also { name ->
-                            if (message.isOutgoing || dialogKind.isPeer || isMediaOnly) return@also
-                            isSenderNameShown = true
-                            
-                            Text(
-                                modifier = if (onOpenSender != null) {
-                                    Modifier.clickable(onClick = onOpenSender)
-                                } else {
-                                    Modifier
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                text = name
-                            )
+                        if(isMediaOnly && message.isOutgoing) {
+                            reply?.let { data ->
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.TopEnd
+                                ) {
+                                    CompositionLocalProvider(
+                                        LocalContentColor provides MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        ReplyQuote(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.primary),
+                                            reply = data,
+                                            isOutgoing = true
+                                        )
+                                    }
+                                }
+                            }
                         }
+                        
+                        Column(
+                            modifier = Modifier.padding(
+                                if (isMediaOnly) {
+                                    PaddingValues(0.dp)
+                                } else {
+                                    PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                }
+                            ).width(IntrinsicSize.Max)
+                        ) {
+                            var isSenderNameShown = false
 
-                        reply?.let { data ->
-                            if(isSenderNameShown) {
-                                Spacer(Modifier.height(4.dp))
+                            message.senderName?.also { name ->
+                                if (message.isOutgoing || dialogKind.isPeer || isMediaOnly) return@also
+                                isSenderNameShown = true
+
+                                Text(
+                                    modifier = if (onOpenSender != null) {
+                                        Modifier.clickable(onClick = onOpenSender)
+                                    } else {
+                                        Modifier
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    text = name
+                                )
+                            }
+
+                            if(!isMediaOnly) {
+                                reply?.let { data ->
+                                    if(isSenderNameShown) {
+                                        Spacer(Modifier.height(4.dp))
+                                    }
+
+                                    ReplyQuote(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 4.dp),
+                                        reply = data,
+                                        isOutgoing = message.isOutgoing
+                                    )
+                                }
+                            }
+
+                            if (isMediaOnly && mediaContent != null) {
+                                mediaContent()
+                            } else {
+                                if(mediaContent != null && isSenderNameShown) {
+                                    Spacer(Modifier.height(4.dp))
+                                }
+
+                                Box(Modifier.align(if(message.isOutgoing) Alignment.End else Alignment.Start)) {
+                                    mediaContent?.invoke()
+                                }
+
+                                if(mediaContent != null) {
+                                    Spacer(Modifier.height(8.dp))
+                                }
+                            }
+
+                            if (message.text.isNotBlank()) {
+                                if (message.customEmojis.isEmpty() || customEmojiData.isEmpty()) {
+                                    Text(
+                                        modifier = Modifier.padding(bottom = 2.dp),
+                                        lineHeight = 20.sp,
+                                        text = message.text
+                                    )
+                                } else {
+                                    CustomEmojiMessageText(
+                                        modifier = Modifier.padding(bottom = 2.dp),
+                                        lineHeight = 20.sp,
+                                        text = message.text,
+                                        emojis = message.customEmojis,
+                                        data = customEmojiData
+                                    )
+                                }
+                            }
+
+                            if (!isMediaOnly) {
+                                MessageFooter(
+                                    message = message,
+                                    modifier = Modifier
+                                        .align(Alignment.End)
+                                        .then(
+                                            if (message.reactions.isNotEmpty()) {
+                                                Modifier.fillMaxWidth()
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                )
                             }
                             
-                            ReplyQuote(reply = data, isOutgoing = message.isOutgoing)
-                        }
-
-                        if (isMediaOnly && mediaContent != null) {
-                            Box {
-                                mediaContent()
-
+                            if(isMediaOnly) {
                                 MessageFooter(
                                     message = message,
                                     onMedia = true,
                                     modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
-                                        .padding(4.dp)
-                                )
-                            }
-                        } else {
-                            if(isSenderNameShown) {
-                                Spacer(Modifier.height(4.dp))
-                            }
-                            
-                            mediaContent?.invoke()
-                            
-                            if(mediaContent != null) {
-                                Spacer(Modifier.height(8.dp))
-                            }
-                        }
-
-                        if (message.text.isNotBlank()) {
-                            if (message.customEmojis.isEmpty() || customEmojiData.isEmpty()) {
-                                Text(
-                                    modifier = Modifier.padding(bottom = 2.dp),
-                                    lineHeight = 20.sp,
-                                    text = message.text
-                                )
-                            } else {
-                                CustomEmojiMessageText(
-                                    modifier = Modifier.padding(bottom = 2.dp),
-                                    lineHeight = 20.sp,
-                                    text = message.text,
-                                    emojis = message.customEmojis,
-                                    data = customEmojiData
+                                        .align(Alignment.End)
+                                        .then(
+                                            if (message.reactions.isNotEmpty()) {
+                                                Modifier.fillMaxWidth()
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
                                 )
                             }
                         }
 
-                        if (!isMediaOnly) {
-                            MessageFooter(
-                                message = message,
-                                modifier = Modifier
-                                    .align(Alignment.End)
-                                    .then(
-                                        if (message.reactions.isNotEmpty()) {
-                                            Modifier.fillMaxWidth()
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                            )
+                        if(isMediaOnly && !message.isOutgoing) {
+                            reply?.let { data ->
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.TopStart
+                                ) {
+                                    CompositionLocalProvider(
+                                        LocalContentColor provides MaterialTheme.colorScheme.onSurface
+                                    ) {
+                                        ReplyQuote(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceContainer),
+                                            reply = data,
+                                            isOutgoing = false
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -271,6 +335,7 @@ fun MessageBubble(
 
 @Composable
 private fun ReplyQuote(
+    modifier: Modifier = Modifier,
     reply: MessageReply,
     isOutgoing: Boolean
 ) {
@@ -281,13 +346,12 @@ private fun ReplyQuote(
     }
 
     Row(
-        modifier = Modifier
-            .padding(bottom = 4.dp)
+        modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(accent.copy(alpha = 0.12f))
             .height(IntrinsicSize.Min)
     ) {
-        Box(
+        Spacer(
             modifier = Modifier
                 .width(3.dp)
                 .fillMaxHeight()
@@ -326,11 +390,9 @@ private fun MessageFooter(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = if (message.reactions.isNotEmpty()) {
-            Arrangement.SpaceBetween
-        } else {
-            Arrangement.End
-        },
+        horizontalArrangement = Arrangement.spacedBy(2.dp, if (message.reactions.isNotEmpty()) {
+            Alignment.Start
+        } else Alignment.End),
         verticalAlignment = Alignment.Bottom
     ) {
         if (message.reactions.isNotEmpty()) {
@@ -341,6 +403,8 @@ private fun MessageFooter(
                 onMedia = onMedia
             )
         }
+        
+        Spacer(Modifier.weight(1f))
 
         MessageStatusRow(
             message = message,
@@ -368,7 +432,9 @@ private fun MessageReactionsRow(
     }
 
     Row(
-        modifier = modifier,
+        modifier = modifier.then(if(onMedia) Modifier else {
+            Modifier.padding(end = 8.dp)
+        }),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -419,8 +485,8 @@ private fun MessageStatusRow(
             .then(
                 if (onMedia) {
                     Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black.copy(alpha = 0.35f))
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.5f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 } else {
                     Modifier
@@ -431,7 +497,7 @@ private fun MessageStatusRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = contentColor,
             text = Instant.fromEpochSeconds(message.timestamp / 1000)
                 .toLocalDateTime(TimeZone.currentSystemDefault())
