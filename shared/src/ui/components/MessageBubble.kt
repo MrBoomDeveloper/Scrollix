@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.DialogKind
@@ -47,7 +48,6 @@ enum class MessageBubbleConnection {
     BOTTOM
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
     modifier: Modifier = Modifier,
@@ -98,6 +98,9 @@ fun MessageBubble(
             Box(
                 modifier = Modifier.widthIn(max = maxBubbleWidth)
             ) {
+                val connectedCornerRadius = 4.dp
+                val cornerRadius = 16.dp
+                
                 Surface(
                     modifier = Modifier
                         .combinedClickable(
@@ -107,27 +110,27 @@ fun MessageBubble(
                         .onSecondaryClick { menuExpanded = true },
 
                     shape = when (connection) {
-                        MessageBubbleConnection.NONE -> RoundedCornerShape(32.dp)
+                        MessageBubbleConnection.NONE -> RoundedCornerShape(cornerRadius)
 
                         MessageBubbleConnection.BOTTOM -> RoundedCornerShape(
-                            topStart = if (message.isOutgoing) 32.dp else 4.dp,
-                            topEnd = if (message.isOutgoing) 4.dp else 32.dp,
-                            bottomEnd = 32.dp,
-                            bottomStart = 32.dp
+                            topStart = if (message.isOutgoing) cornerRadius else connectedCornerRadius,
+                            topEnd = if (message.isOutgoing) connectedCornerRadius else cornerRadius,
+                            bottomEnd = cornerRadius,
+                            bottomStart = cornerRadius
                         )
 
                         MessageBubbleConnection.TOP -> RoundedCornerShape(
-                            topStart = 32.dp,
-                            topEnd = 32.dp,
-                            bottomEnd = if (message.isOutgoing) 4.dp else 32.dp,
-                            bottomStart = if (message.isOutgoing) 32.dp else 4.dp
+                            topStart = cornerRadius,
+                            topEnd = cornerRadius,
+                            bottomEnd = if (message.isOutgoing) connectedCornerRadius else cornerRadius,
+                            bottomStart = if (message.isOutgoing) cornerRadius else connectedCornerRadius
                         )
 
                         MessageBubbleConnection.BOTH -> RoundedCornerShape(
-                            topStart = if (message.isOutgoing) 32.dp else 4.dp,
-                            topEnd = if (message.isOutgoing) 4.dp else 32.dp,
-                            bottomEnd = if (message.isOutgoing) 4.dp else 32.dp,
-                            bottomStart = if (message.isOutgoing) 32.dp else 4.dp
+                            topStart = if (message.isOutgoing) cornerRadius else connectedCornerRadius,
+                            topEnd = if (message.isOutgoing) connectedCornerRadius else cornerRadius,
+                            bottomEnd = if (message.isOutgoing) connectedCornerRadius else cornerRadius,
+                            bottomStart = if (message.isOutgoing) cornerRadius else connectedCornerRadius
                         )
                     },
 
@@ -142,10 +145,9 @@ fun MessageBubble(
                             if (isMediaOnly) {
                                 PaddingValues(0.dp)
                             } else {
-                                PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                PaddingValues(horizontal = 16.dp, vertical = 12.dp)
                             }
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                        )
                     ) {
                         message.senderName?.also { name ->
                             if (message.isOutgoing || dialogKind.isPeer) return@also
@@ -187,11 +189,13 @@ fun MessageBubble(
                             if (message.customEmojis.isEmpty() || customEmojiData.isEmpty()) {
                                 Text(
                                     modifier = Modifier.padding(bottom = 2.dp),
+                                    lineHeight = 20.sp,
                                     text = message.text
                                 )
                             } else {
                                 CustomEmojiMessageText(
                                     modifier = Modifier.padding(bottom = 2.dp),
+                                    lineHeight = 20.sp,
                                     text = message.text,
                                     emojis = message.customEmojis,
                                     data = customEmojiData
@@ -211,7 +215,6 @@ fun MessageBubble(
                                             Modifier
                                         }
                                     )
-                                    .padding(top = 4.dp)
                             )
                         }
                     }
@@ -283,7 +286,7 @@ private fun ReplyQuote(
             reply.senderName?.takeIf { it.isNotBlank() }?.let { name ->
                 Text(
                     text = name,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = accent,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -292,7 +295,8 @@ private fun ReplyQuote(
 
             Text(
                 text = reply.text.ifBlank { "Message" },
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
+                lineHeight = 18.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -313,10 +317,11 @@ private fun MessageFooter(
         } else {
             Arrangement.End
         },
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Bottom
     ) {
         if (message.reactions.isNotEmpty()) {
             MessageReactionsRow(
+                modifier = Modifier.padding(top = 4.dp),
                 reactions = message.reactions,
                 isOutgoing = message.isOutgoing,
                 onMedia = onMedia
@@ -332,6 +337,7 @@ private fun MessageFooter(
 
 @Composable
 private fun MessageReactionsRow(
+    modifier: Modifier = Modifier,
     reactions: List<MessageReactionInfo>,
     isOutgoing: Boolean,
     onMedia: Boolean
@@ -348,6 +354,7 @@ private fun MessageReactionsRow(
     }
 
     Row(
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -371,13 +378,13 @@ private fun MessageReactionsRow(
                     Text(
                         text = reaction.emoji,
                         color = textColor,
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodyMedium
                     )
 
                     Text(
                         text = reaction.count.toString(),
                         color = textColor,
-                        style = MaterialTheme.typography.labelSmall
+                        style = MaterialTheme.typography.labelMedium
                     )
                 }
             }

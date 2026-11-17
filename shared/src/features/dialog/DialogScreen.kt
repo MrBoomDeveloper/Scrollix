@@ -463,6 +463,7 @@ fun DialogScreen(
     ) {
         Row(
             modifier = Modifier
+                .clickable(onClick = onOpenProfile)
                 .fillMaxWidth()
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -478,7 +479,6 @@ fun DialogScreen(
             }
 
             AvatarImage(
-                modifier = Modifier.clickable(onClick = onOpenProfile),
                 avatar = dialog?.avatar ?: Avatar.fromName(dialog?.title ?: "Dialog"),
                 size = 40.dp
             )
@@ -487,11 +487,11 @@ fun DialogScreen(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 12.dp)
-                    .clickable(onClick = onOpenProfile)
             ) {
                 Text(
                     text = dialog?.title ?: "Dialog",
                     style = MaterialTheme.typography.titleMedium,
+                    lineHeight = MaterialTheme.typography.titleMedium.fontSize,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -507,7 +507,8 @@ fun DialogScreen(
                             DialogKind.Bot -> "Bot"
                             DialogKind.Secret -> "Secret chat"
                         },
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
+                        lineHeight = MaterialTheme.typography.bodyMedium.fontSize,
                         color = if (statusText == "online") {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -519,13 +520,17 @@ fun DialogScreen(
 
             IconButton(
                 onClick = {
-                    
+                    searchOpen = !searchOpen
+
+                    if (!searchOpen) {
+                        searchQuery = ""
+                    }
                 }
             ) {
                 Icon(
                     tint = MaterialTheme.colorScheme.secondary,
                     imageVector = search_icon,
-                    contentDescription = null
+                    contentDescription = "Search in chat"
                 )
             }
 
@@ -550,22 +555,6 @@ fun DialogScreen(
                     tint = MaterialTheme.colorScheme.secondary,
                     imageVector = more_vertical_icon,
                     contentDescription = null
-                )
-            }
-
-            IconButton(
-                onClick = {
-                    searchOpen = !searchOpen
-
-                    if (!searchOpen) {
-                        searchQuery = ""
-                    }
-                }
-            ) {
-                Icon(
-                    tint = MaterialTheme.colorScheme.secondary,
-                    imageVector = search_icon,
-                    contentDescription = "Search in chat"
                 )
             }
         }

@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
@@ -23,6 +25,7 @@ private val EmojiSize = 20.sp
 internal fun CustomEmojiMessageText(
     modifier: Modifier = Modifier,
     text: String,
+    lineHeight: TextUnit = TextUnit.Unspecified,
     emojis: List<CustomEmojiSpan>,
     data: Map<Long, ByteArray>
 ) {
@@ -38,6 +41,7 @@ internal fun CustomEmojiMessageText(
     if (spans.isEmpty()) {
         Text(
             modifier = modifier,
+            lineHeight = lineHeight,
             text = text
         )
 

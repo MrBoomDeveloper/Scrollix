@@ -48,6 +48,7 @@ import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
 import com.mrboomdev.scrollix.ui.icons.settings_icon
+import com.mrboomdev.scrollix.ui.isTwoPaneLayout
 import com.mrboomdev.scrollix.ui.isWideLayout
 import com.mrboomdev.scrollix.ui.theme.appTypography
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
@@ -70,6 +71,7 @@ private data class AppNavTab(
 @DevelopmentEntryPoint
 fun App() {
     val isExpanded = isWideLayout()
+    val isTwoPaneScreen = isTwoPaneLayout()
     
     val backStack = rememberNavBackStack(
         configuration = SavedStateConfiguration {
@@ -88,7 +90,11 @@ fun App() {
     val selectedDialog = remember { mutableStateOf<Route.Dialog?>(null) }
     val currentRoute = backStack.lastOrNull()
     
-    val showNavigation = remember(currentRoute) {
+    val showNavigation = remember(currentRoute, isTwoPaneScreen) {
+        if(!isTwoPaneScreen && currentRoute is Route.Dialog) {
+            return@remember false
+        }
+        
         currentRoute !is Route.Login
     }
     
@@ -136,17 +142,6 @@ fun App() {
                 onClick = {
                     if (backStack.lastOrNull() != Route.Accounts) {
                         backStack.add(Route.Accounts)
-                    }
-                }
-            ),
-
-            AppNavTab(
-                isActive = currentRoute is Route.Settings,
-                icon = settings_icon,
-                title = "Settings",
-                onClick = {
-                    if (backStack.lastOrNull() != Route.Settings) {
-                        backStack.add(Route.Settings)
                     }
                 }
             )
@@ -207,7 +202,11 @@ fun App() {
                                             },
 
                                             onClick = {
-
+                                                if (backStack.lastOrNull() != Route.Settings) {
+                                                    backStack.add(Route.Settings)
+                                                }
+                                                
+                                                expand = false
                                             }
                                         )
                                     }
