@@ -73,6 +73,8 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatTime
+import com.mrboomdev.scrollix.resources.Res
+import com.mrboomdev.scrollix.resources.wallpaper
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.components.MessageBubble
@@ -94,6 +96,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.painterResource
+
 @Composable
 fun DialogScreen(
     accountId: String,
@@ -339,205 +343,220 @@ fun DialogScreen(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            when {
-                isLoading -> {
-                    LoadingContent(
-                        modifier = Modifier.align(Alignment.Center),
-                        text = "Loading messages..."
-                    )
-                }
-
-                messages.isEmpty() -> {
-                    Text(
-                        modifier = Modifier.align(Alignment.Center),
-                        text = "No messages yet",
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        state = listState,
-                        contentPadding = PaddingValues(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (isLoadingMore || !canLoadMore) {
-                            item(key = "pagination") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isLoadingMore) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "Beginning of chat",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.secondary
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        itemsIndexed(
-                            items = messages,
-                            key = { _, it -> it.messageId }
-                        ) { index, message ->
-                            MessageBubble(
-                                dialogKind = dialog?.kind ?: DialogKind.Direct,
-                                message = message,
-                                
-                                connection = run {
-                                    val prevMessage = if(index > 0) messages[index - 1] else null
-                                    val nextMessage = if(index < messages.size - 1) messages[index + 1] else null
-                                    
-                                    if (index > 0) {
-                                        if (prevMessage?.senderId == message.senderId) {
-                                            if (nextMessage?.senderId == message.senderId) {
-                                                return@run MessageBubbleConnection.BOTH
-                                            }
-                                            
-                                            return@run MessageBubbleConnection.BOTTOM
-                                        }
-                                    }
-
-                                    if (
-                                        index < messages.size - 1 &&
-                                        messages.size > 1 &&
-                                        nextMessage?.senderId == message.senderId
-                                    ) { 
-                                        return@run MessageBubbleConnection.TOP 
-                                    }
-
-                                    return@run MessageBubbleConnection.NONE
-                                }
+            Image(
+                modifier = Modifier.matchParentSize(),
+                painter = painterResource(Res.drawable.wallpaper),
+                contentScale = ContentScale.Crop,
+                contentDescription = null
+            )
+            
+            Column(Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    when {
+                        isLoading -> {
+                            LoadingContent(
+                                modifier = Modifier.align(Alignment.Center),
+                                text = "Loading messages..."
                             )
                         }
+
+                        messages.isEmpty() -> {
+                            Text(
+                                modifier = Modifier.align(Alignment.Center),
+                                text = "No messages yet",
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+
+                        else -> {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                state = listState,
+                                contentPadding = PaddingValues(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (isLoadingMore || !canLoadMore) {
+                                    item(key = "pagination") {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isLoadingMore) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "Beginning of chat",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                itemsIndexed(
+                                    items = messages,
+                                    key = { _, it -> it.messageId }
+                                ) { index, message ->
+                                    MessageBubble(
+                                        dialogKind = dialog?.kind ?: DialogKind.Direct,
+                                        message = message,
+
+                                        connection = run {
+                                            val prevMessage = if(index > 0) messages[index - 1] else null
+                                            val nextMessage = if(index < messages.size - 1) messages[index + 1] else null
+
+                                            if (index > 0) {
+                                                if (prevMessage?.senderId == message.senderId) {
+                                                    if (nextMessage?.senderId == message.senderId) {
+                                                        return@run MessageBubbleConnection.BOTH
+                                                    }
+
+                                                    return@run MessageBubbleConnection.BOTTOM
+                                                }
+                                            }
+
+                                            if (
+                                                index < messages.size - 1 &&
+                                                messages.size > 1 &&
+                                                nextMessage?.senderId == message.senderId
+                                            ) {
+                                                return@run MessageBubbleConnection.TOP
+                                            }
+
+                                            return@run MessageBubbleConnection.NONE
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        error?.let { message ->
-            Text(
-                modifier = Modifier.padding(horizontal = 12.dp),
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            CompositionLocalProvider(
-                LocalMinimumInteractiveComponentSize provides Dp.Unspecified
-            ) {
+                error?.let { message ->
+                    Text(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
                 Row(
                     modifier = Modifier
-                        .padding(bottom = 4.dp)
-                        .clip(RoundedCornerShape(32.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(32.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainer)
-                        .weight(1f)
-                        .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.Bottom
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, end = 4.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    IconButton(
-                        onClick = {
-                            filePicker.pickFile()
-                        }
+                    CompositionLocalProvider(
+                        LocalMinimumInteractiveComponentSize provides Dp.Unspecified
                     ) {
-                        Icon(
-                            tint = MaterialTheme.colorScheme.secondary,
-                            imageVector = add_icon,
-                            contentDescription = null
-                        )
-                    }
-
-                    BasicTextField(
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 32.dp),
-                        value = input,
-                        onValueChange = { input = it },
-                        enabled = !isSending,
-                        maxLines = 10,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
-
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        
-                        decorationBox = { innerTextField ->
-                            innerTextField()
-                            
-                            if(input.isEmpty()) {
-                                Text(
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Normal,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    text = "Write a message..."
+                        Row(
+                            modifier = Modifier
+                                .padding(bottom = 4.dp)
+                                .clip(RoundedCornerShape(32.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(32.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainer)
+                                .weight(1f)
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    filePicker.pickFile()
+                                }
+                            ) {
+                                Icon(
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    imageVector = add_icon,
+                                    contentDescription = null
                                 )
                             }
-                        }
-                    )
 
-                    IconButton(
-                        onClick = {
+                            BasicTextField(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 32.dp),
+                                value = input,
+                                onValueChange = { input = it },
+                                enabled = !isSending,
+                                maxLines = 10,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
 
-                        }
-                    ) {
-                        Icon(
-                            tint = MaterialTheme.colorScheme.secondary,
-                            imageVector = mood_icon,
-                            contentDescription = null
-                        )
-                    }
-                    
-                    AnimatedVisibility(input.isEmpty()) {
-                        IconButton(
-                            onClick = {
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
 
+                                decorationBox = { innerTextField ->
+                                    innerTextField()
+
+                                    if(input.isEmpty()) {
+                                        Text(
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Normal,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            text = "Write a message..."
+                                        )
+                                    }
+                                }
+                            )
+
+                            IconButton(
+                                onClick = {
+
+                                }
+                            ) {
+                                Icon(
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    imageVector = mood_icon,
+                                    contentDescription = null
+                                )
                             }
+
+                            AnimatedVisibility(input.isEmpty()) {
+                                IconButton(
+                                    onClick = {
+
+                                    }
+                                ) {
+                                    Icon(
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        imageVector = microphone_icon,
+                                        contentDescription = null
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(input.isNotEmpty()) {
+                        FilledIconButton(
+                            enabled = input.isNotBlank() && !isSending,
+                            onClick = ::send
                         ) {
+                            if (isSending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+
+                                return@FilledIconButton
+                            }
                             Icon(
-                                tint = MaterialTheme.colorScheme.secondary,
-                                imageVector = microphone_icon,
+                                imageVector = send_icon,
                                 contentDescription = null
                             )
                         }
                     }
-                }
-            }
-            
-            AnimatedVisibility(input.isNotEmpty()) {
-                FilledIconButton(
-                    enabled = input.isNotBlank() && !isSending,
-                    onClick = ::send
-                ) {
-                    if (isSending) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
-                        )
-
-                        return@FilledIconButton
-                    }
-                    Icon(
-                        imageVector = send_icon,
-                        contentDescription = null
-                    )
                 }
             }
         }

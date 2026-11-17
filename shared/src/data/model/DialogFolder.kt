@@ -9,7 +9,9 @@ data class DialogFolder(
     val iconName: String? = null,
     val colorId: Int = -1,
     val order: Int = 0,
-    val isShareable: Boolean = false
+    val isShareable: Boolean = false,
+    val animateCustomEmoji: Boolean = false,
+    val customEmojis: List<DialogFolderEmoji> = emptyList()
 )
 
 data class AccountDialogFolder(

@@ -21,12 +21,26 @@ dependencies:
   - $libs.jetbrains.material3.adaptiveNavigation3
   - $libs.tdlib
   - $libs.qrose
+  - $libs.compottie
   - nl.jacobras:Human-Readable:2.0.0
   - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0
 
 dependencies@android:
   - $compose.uiTooling
   - $libs.androidx.activity.compose
+  - $libs.alpha.video
+  - $libs.alpha.video.vpx
+
+dependencies@jvm:
+  - $libs.javacv
+  - org.bytedeco:javacpp:1.5.14:linux-x86_64
+  - org.bytedeco:javacpp:1.5.14:windows-x86_64
+  - org.bytedeco:javacpp:1.5.14:macosx-arm64
+  - org.bytedeco:javacpp:1.5.14:macosx-x86_64
+  - org.bytedeco:ffmpeg:8.1.2-1.5.14:linux-x86_64
+  - org.bytedeco:ffmpeg:8.1.2-1.5.14:windows-x86_64
+  - org.bytedeco:ffmpeg:8.1.2-1.5.14:macosx-arm64
+  - org.bytedeco:ffmpeg:8.1.2-1.5.14:macosx-x86_64
 
 settings:
   compose:

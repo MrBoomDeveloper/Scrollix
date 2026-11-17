@@ -67,6 +67,7 @@ import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.FolderNameText
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.icons.FolderIcon
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
@@ -467,10 +468,10 @@ private fun NativeFolderTab(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
+                FolderNameText(
+                    folder = folder,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    text = folder.name
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 if (showAccountIndicator) {

@@ -11,10 +11,12 @@ import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.readFileBytes
@@ -29,6 +31,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -74,6 +78,9 @@ class TelegramAccountSession(
     private val avatarCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
     private val avatarRequests = MutableStateFlow<Set<Int>>(emptySet())
     private val fileCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
+    private val customEmojiCache = mutableMapOf<Long, Sticker>()
+    private val customEmojiCacheMutex = Mutex()
+    private var folderEmojiJob: Job? = null
 
     private val stateMutex = Mutex()
     private val folderChatsMutex = Mutex()
@@ -625,17 +632,30 @@ class TelegramAccountSession(
 
             is UpdateChatFolders -> {
                 _folders.value = update.chatFolders.mapIndexed { index, folder ->
+                    val text = folder.name.text.text
+                    val name = text.ifBlank { "Folder" }
+
                     DialogFolder(
                         id = folder.id,
-                        name = folder.name.text.text.ifBlank { "Folder" },
+                        name = name,
                         iconName = folder.icon.name,
                         colorId = folder.colorId,
                         order = index,
-                        isShareable = folder.isShareable
+                        isShareable = folder.isShareable,
+                        animateCustomEmoji = folder.name.animateCustomEmoji,
+                        customEmojis = if (text.isBlank()) {
+                            emptyList()
+                        } else {
+                            parseFolderCustomEmojis(
+                                text = text,
+                                entities = folder.name.text.entities.toList()
+                            )
+                        }
                     )
                 }
 
                 requestFolderChatsLoad(update.chatFolders.map { it.id })
+                requestFolderCustomEmojiLoad()
             }
 
             is UpdateUser -> {
@@ -1227,6 +1247,174 @@ class TelegramAccountSession(
                     }
                 }
             }
+        }
+    }
+
+    private fun requestFolderCustomEmojiLoad() {
+        folderEmojiJob?.cancel()
+        if (closed) return
+
+        folderEmojiJob = scope.launch {
+            val ids = _folders.value
+                .flatMap { it.customEmojis }
+                .map { it.customEmojiId }
+                .distinct()
+
+            if (ids.isEmpty()) return@launch
+
+            try {
+                val stickers = loadCustomEmojiStickers(ids)
+                if (stickers.isEmpty()) return@launch
+
+                currentCoroutineContext().ensureActive()
+                applyCustomEmojiMetadata(stickers)
+                loadCustomEmojiAssets(stickers)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                if (!closed) {
+                    println(
+                        "Failed to load Telegram folder custom emoji: " +
+                            exception.message
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun loadCustomEmojiStickers(
+        ids: List<Long>
+    ): Map<Long, Sticker> {
+        val result = mutableMapOf<Long, Sticker>()
+        val missing = mutableListOf<Long>()
+
+        customEmojiCacheMutex.withLock {
+            for (id in ids) {
+                val sticker = customEmojiCache[id]
+
+                if (sticker != null) {
+                    result[id] = sticker
+                } else {
+                    missing += id
+                }
+            }
+        }
+
+        for (chunk in missing.chunked(200)) {
+            when (val response = client.getCustomEmojiStickers(chunk.toLongArray())) {
+                is TdlResult.Success -> {
+                    val stickers = response.result.stickers.mapNotNull { sticker ->
+                        val type = sticker.fullType as? StickerFullTypeCustomEmoji
+                            ?: return@mapNotNull null
+                        type.customEmojiId to sticker
+                    }
+
+                    customEmojiCacheMutex.withLock {
+                        for ((id, sticker) in stickers) {
+                            customEmojiCache[id] = sticker
+                            result[id] = sticker
+                        }
+                    }
+                }
+
+                is TdlResult.Failure -> {
+                    if (!closed) {
+                        println(
+                            "Failed to load Telegram custom emoji stickers: " +
+                                response.message
+                        )
+                    }
+                }
+            }
+        }
+
+        return result
+    }
+
+    private fun applyCustomEmojiMetadata(stickers: Map<Long, Sticker>) {
+        _folders.update { folders ->
+            folders.map { folder ->
+                folder.copy(
+                    customEmojis = folder.customEmojis.map { emoji ->
+                        val sticker = stickers[emoji.customEmojiId]
+
+                        if (sticker == null) {
+                            emoji
+                        } else {
+                            val type = sticker.fullType as? StickerFullTypeCustomEmoji
+
+                            emoji.copy(
+                                needsRepainting = type?.needsRepainting == true,
+                                format = sticker.format.toFolderEmojiFormat()
+                            )
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    private suspend fun loadCustomEmojiAssets(stickers: Map<Long, Sticker>) {
+        val thumbnails = mutableMapOf<Long, ByteArray>()
+
+        for ((customEmojiId, sticker) in stickers) {
+            currentCoroutineContext().ensureActive()
+
+            val fileId = sticker.thumbnail?.file?.id ?: continue
+            loadFileBytes(fileId)?.let { thumbnails[customEmojiId] = it }
+        }
+
+        if (thumbnails.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            applyCustomEmojiAssets(thumbnails = thumbnails)
+        }
+
+        val data = mutableMapOf<Long, ByteArray>()
+
+        for ((customEmojiId, sticker) in stickers) {
+            currentCoroutineContext().ensureActive()
+
+            val fileId = sticker.sticker.id
+            loadFileBytes(fileId)?.let { data[customEmojiId] = it }
+        }
+
+        if (data.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            applyCustomEmojiAssets(data = data)
+        }
+    }
+
+    private suspend fun loadFileBytes(fileId: Int): ByteArray? {
+        if (fileId == 0) return null
+        return loadFile(fileId).getOrNull()
+    }
+
+    private fun applyCustomEmojiAssets(
+        thumbnails: Map<Long, ByteArray> = emptyMap(),
+        data: Map<Long, ByteArray> = emptyMap()
+    ) {
+        if (thumbnails.isEmpty() && data.isEmpty()) return
+
+        _folders.update { folders ->
+            folders.map { folder ->
+                folder.copy(
+                    customEmojis = folder.customEmojis.map { emoji ->
+                        emoji.copy(
+                            thumbnail = thumbnails[emoji.customEmojiId]
+                                ?: emoji.thumbnail,
+                            data = data[emoji.customEmojiId] ?: emoji.data
+                        )
+                    }
+                )
+            }
+        }
+    }
+
+    private fun StickerFormat.toFolderEmojiFormat(): DialogFolderEmojiFormat {
+        return when (this) {
+            is StickerFormatTgs -> DialogFolderEmojiFormat.Tgs
+            is StickerFormatWebp -> DialogFolderEmojiFormat.Webp
+            is StickerFormatWebm -> DialogFolderEmojiFormat.Webm
         }
     }
 
