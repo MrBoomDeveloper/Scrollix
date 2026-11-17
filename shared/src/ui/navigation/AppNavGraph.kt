@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -25,7 +24,6 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import androidx.window.core.layout.WindowSizeClass
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.features.accounts.AccountsScreen
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
@@ -33,7 +31,7 @@ import com.mrboomdev.scrollix.features.home.HomeScreen
 import com.mrboomdev.scrollix.features.login.LoginScreen
 import com.mrboomdev.scrollix.features.profile.ProfileScreen
 import com.mrboomdev.scrollix.features.settings.SettingsScreen
-import com.mrboomdev.scrollix.ui.isTwoPaneLayout
+import com.mrboomdev.scrollix.isTwoPaneLayout
 import kotlinx.coroutines.launch
 
 @Composable

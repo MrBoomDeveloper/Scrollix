@@ -48,8 +48,6 @@ import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
 import com.mrboomdev.scrollix.ui.icons.settings_icon
-import com.mrboomdev.scrollix.ui.isTwoPaneLayout
-import com.mrboomdev.scrollix.ui.isWideLayout
 import com.mrboomdev.scrollix.ui.theme.appTypography
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import com.mrboomdev.scrollix.ui.navigation.Route

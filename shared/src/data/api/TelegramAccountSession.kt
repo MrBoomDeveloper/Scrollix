@@ -32,6 +32,7 @@ import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.generated.BuildConfig
 import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.toJsonStringByReflection
 import dev.g000sha256.tdl.TdlClient
 import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.*
@@ -2262,19 +2263,19 @@ class TelegramAccountSession(
             is MessageText -> content.text.text
             is MessagePhoto -> content.caption.text.ifBlank { "Photo" }
             is MessageVideo -> content.caption.text.ifBlank { "Video" }
-            is MessageSticker -> "Sticker"
             is MessageDocument -> content.caption.text.ifBlank {
                 content.document.fileName.ifBlank { "Document" }
             }
-            is MessageAudio -> "Audio"
-            is MessageVoiceNote -> "Voice message"
-            is MessageVideoNote -> "Video message"
-            is MessageAnimation -> "GIF"
-            is MessagePoll -> "Poll"
-            is MessageLocation -> "Location"
-            is MessageContact -> "Contact"
-            is MessageCall -> "Call"
-            else -> content::class.simpleName?.removePrefix("Message") ?: "Message"
+            else -> buildString { 
+                append("This message is not supported in your version of Scrollix. Please update to the latest version.")
+                appendLine()
+                appendLine()
+                append("Class: ")
+                append(content::class.qualifiedName)
+                appendLine()
+                append("Structure: ")
+                append(content.toJsonStringByReflection())
+            }
         }
     }
 

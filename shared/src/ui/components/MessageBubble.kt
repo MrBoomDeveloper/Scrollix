@@ -1,6 +1,5 @@
 package com.mrboomdev.scrollix.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -36,7 +35,7 @@ import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.ui.icons.check_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
-import com.mrboomdev.scrollix.ui.onSecondaryClick
+import com.mrboomdev.scrollix.onSecondaryClick
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -65,16 +64,16 @@ fun MessageBubble(
     val isMediaOnly = message.replyTo == null && message.text.isBlank() && (
         message.media?.kind == MessageMediaKind.Sticker ||
             message.media?.kind == MessageMediaKind.VideoNote ||
-            message.media?.kind == MessageMediaKind.Animation
+            message.media?.kind == MessageMediaKind.Animation ||
+            message.media?.kind == MessageMediaKind.Photo
     )
-    val media = mediaContent
 
     BoxWithConstraints(modifier = modifier) {
         val maxBubbleWidth = maxWidth * 0.75f
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (message.isOutgoing) {
                 Spacer(Modifier.weight(1f))
@@ -91,7 +90,7 @@ fun MessageBubble(
                         ),
                     avatar = message.senderAvatar
                         ?: Avatar.fromName(message.senderName ?: "Group member"),
-                    size = 32.dp
+                    size = 40.dp
                 )
             }
 
@@ -145,13 +144,16 @@ fun MessageBubble(
                             if (isMediaOnly) {
                                 PaddingValues(0.dp)
                             } else {
-                                PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                                PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                             }
-                        )
+                        ).width(IntrinsicSize.Max)
                     ) {
+                        var isSenderNameShown = false
+                        
                         message.senderName?.also { name ->
-                            if (message.isOutgoing || dialogKind.isPeer) return@also
-
+                            if (message.isOutgoing || dialogKind.isPeer || isMediaOnly) return@also
+                            isSenderNameShown = true
+                            
                             Text(
                                 modifier = if (onOpenSender != null) {
                                     Modifier.clickable(onClick = onOpenSender)
@@ -165,12 +167,16 @@ fun MessageBubble(
                         }
 
                         reply?.let { data ->
+                            if(isSenderNameShown) {
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            
                             ReplyQuote(reply = data, isOutgoing = message.isOutgoing)
                         }
 
-                        if (isMediaOnly && media != null) {
+                        if (isMediaOnly && mediaContent != null) {
                             Box {
-                                media()
+                                mediaContent()
 
                                 MessageFooter(
                                     message = message,
@@ -182,7 +188,15 @@ fun MessageBubble(
                                 )
                             }
                         } else {
-                            media?.invoke()
+                            if(isSenderNameShown) {
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            
+                            mediaContent?.invoke()
+                            
+                            if(mediaContent != null) {
+                                Spacer(Modifier.height(8.dp))
+                            }
                         }
 
                         if (message.text.isNotBlank()) {
@@ -378,13 +392,13 @@ private fun MessageReactionsRow(
                     Text(
                         text = reaction.emoji,
                         color = textColor,
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyLarge
                     )
 
                     Text(
                         text = reaction.count.toString(),
                         color = textColor,
-                        style = MaterialTheme.typography.labelMedium
+                        style = MaterialTheme.typography.bodyLarge
                     )
                 }
             }

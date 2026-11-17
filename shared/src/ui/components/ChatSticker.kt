@@ -27,7 +27,7 @@ import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val StickerSize = 120.dp
+private val StickerSize = 200.dp
 
 @Composable
 internal fun ChatSticker(

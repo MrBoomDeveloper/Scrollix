@@ -1,7 +1,6 @@
 package com.mrboomdev.scrollix.features.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,10 +31,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
@@ -52,10 +48,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,7 +68,6 @@ import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.FolderNameText
 import com.mrboomdev.scrollix.ui.components.LoadingContent
-import com.mrboomdev.scrollix.ui.icons.FolderIcon
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
@@ -83,8 +76,8 @@ import com.mrboomdev.scrollix.ui.icons.keep_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
-import com.mrboomdev.scrollix.ui.isWideLayout
-import com.mrboomdev.scrollix.ui.onSecondaryClick
+import com.mrboomdev.scrollix.isWideLayout
+import com.mrboomdev.scrollix.onSecondaryClick
 import kotlinx.coroutines.launch
 
 private const val TAB_ALL = 0

@@ -1,7 +1,6 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,10 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,7 +66,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.test.microphone_icon
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
@@ -81,7 +77,6 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.resources.Res
 import com.mrboomdev.scrollix.resources.wallpaper
@@ -101,13 +96,12 @@ import com.mrboomdev.scrollix.ui.components.messageDate
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.icons.attach_file_icon
 import com.mrboomdev.scrollix.ui.icons.call_icon
 import com.mrboomdev.scrollix.ui.icons.mood_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
-import com.mrboomdev.scrollix.ui.isTwoPaneLayout
+import com.mrboomdev.scrollix.isTwoPaneLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -666,7 +660,7 @@ fun DialogScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 state = listState,
                                 contentPadding = PaddingValues(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 itemsIndexed(
                                     items = visibleMessages,

@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.isTwoPaneLayout
+import com.mrboomdev.scrollix.isTwoPaneLayout
 
 private enum class SettingsCategory(
     val title: String,
