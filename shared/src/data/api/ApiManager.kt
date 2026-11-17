@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.AccountDialogFolder
 import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.provider.AccountSession
@@ -165,6 +166,29 @@ object ApiManager {
         if (account.isPending) {
             removeAccount(accountId)
         }
+    }
+
+    suspend fun setDialogPinned(
+        accountId: String,
+        providerDialogId: String,
+        isPinned: Boolean,
+        folderId: Int? = null
+    ): Result<Unit> {
+        val session = session(accountId)
+            ?: return Result.failure(IllegalStateException("Account session not found"))
+
+        return session.setDialogPinned(providerDialogId, isPinned, folderId)
+    }
+
+    suspend fun loadUserProfile(
+        accountId: String,
+        providerDialogId: String,
+        userId: Long? = null
+    ): Result<UserProfileDetails> {
+        val session = session(accountId)
+            ?: return Result.failure(IllegalStateException("Account session not found"))
+
+        return session.loadUserProfile(providerDialogId, userId)
     }
 
     suspend fun setActiveAccount(accountId: String) {

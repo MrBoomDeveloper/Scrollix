@@ -57,6 +57,35 @@ actual fun readFileBytes(path: String): ByteArray? {
     }.getOrNull()
 }
 
+actual fun saveFileToDevice(fileName: String, bytes: ByteArray): String? {
+    return runCatching {
+        val safeName = fileName.ifBlank { "file" }
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        val directory = File(
+            AndroidAppContext.context.getExternalFilesDir(null),
+            "Downloads"
+        ).apply { mkdirs() }
+
+        var target = File(directory, safeName)
+        var index = 1
+        val dot = safeName.lastIndexOf('.')
+
+        while (target.exists()) {
+            val candidate = if (dot > 0) {
+                "${safeName.substring(0, dot)} ($index)${safeName.substring(dot)}"
+            } else {
+                "$safeName ($index)"
+            }
+
+            target = File(directory, candidate)
+            index++
+        }
+
+        target.writeBytes(bytes)
+        target.absolutePath
+    }.getOrNull()
+}
+
 actual fun randomId(): String = UUID.randomUUID().toString()
 
 actual fun currentTimeMillis(): Long = System.currentTimeMillis()

@@ -1,7 +1,9 @@
 package com.mrboomdev.scrollix.features.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,8 +66,10 @@ import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.FolderNameText
@@ -79,6 +84,8 @@ import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
 import com.mrboomdev.scrollix.ui.isWideLayout
+import com.mrboomdev.scrollix.ui.onSecondaryClick
+import kotlinx.coroutines.launch
 
 private const val TAB_ALL = 0
 private const val TAB_DIRECT = 1
@@ -93,10 +100,10 @@ fun HomeScreen(
     selectedDialogAccountId: String? = null,
     selectedDialogProviderDialogId: String? = null
 ) {
-    // TODO: Make it as an setting
-    val isAllShown = false
-    val isSingleRowFilters = false
-    val isUsingNativeFolders = true
+    val settings by AppSettingsStore.state.collectAsState()
+    val isAllShown = settings.showAllChatsTab
+    val isSingleRowFilters = settings.singleRowFilters
+    val isUsingNativeFolders = settings.useNativeFolders
     
     val isWideWindow = isWideLayout()
     var selectedTab by remember { mutableStateOf(if(isAllShown) TAB_ALL else TAB_DIRECT) }
@@ -134,6 +141,12 @@ fun HomeScreen(
     }
     val isDialogsLoading = isConnecting || loadingDialogs.isNotEmpty()
 
+    val activeFolderId = if (isUsingNativeFolders) {
+        selectedNativeFolder?.folder?.id
+    } else {
+        null
+    }
+
     val visibleEntries = remember(
         entries,
         selectedTab,
@@ -141,14 +154,18 @@ fun HomeScreen(
         isUsingNativeFolders
     ) {
         if (isUsingNativeFolders) {
-            if (selectedNativeFolder == null) {
-                entries
-            } else {
-                entries.filter { entry ->
-                    entry.account.id == selectedNativeFolder.account.id &&
-                        selectedNativeFolder.folder.id in entry.dialog.folderIds
+            val folderId = selectedNativeFolder?.folder?.id
+
+            entries
+                .filter { entry ->
+                    if (folderId == null) {
+                        true
+                    } else {
+                        entry.account.id == selectedNativeFolder.account.id &&
+                            folderId in entry.dialog.folderIds
+                    }
                 }
-            }
+                .sortedWith(dialogComparator(folderId))
         } else {
             entries.filter { entry ->
                 when (selectedTab) {
@@ -380,6 +397,7 @@ fun HomeScreen(
                         entry = entry,
                         isSelected = entry.account.id == selectedDialogAccountId &&
                             entry.dialog.providerDialogId == selectedDialogProviderDialogId,
+                        folderId = activeFolderId,
                         onClick = { onOpenDialog(entry) }
                     )
                 }
@@ -486,21 +504,32 @@ private fun NativeFolderTab(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DialogItem(
     entry: AccountDialogEntry,
     isSelected: Boolean,
+    folderId: Int?,
     onClick: () -> Unit
 ) {
     val dialog = entry.dialog
+    val isPinned = dialog.isPinnedIn(folderId)
+    val scope = rememberCoroutineScope()
+    var menuExpanded by remember(dialog.providerDialogId) { mutableStateOf(false) }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = if (isSelected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-        } else Color.Transparent,
-        onClick = onClick
-    ) {
+    Box {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { menuExpanded = true }
+                )
+                .onSecondaryClick { menuExpanded = true },
+            color = if (isSelected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            } else Color.Transparent
+        ) {
         Row(
             modifier = Modifier.padding(8.dp)
         ) {
@@ -568,9 +597,9 @@ private fun DialogItem(
                             text = dialog.unreadCount.toString()
                         )
                     }
-                } 
-                
-                if (dialog.isPinned) {
+                }
+
+                if (isPinned) {
                     Icon(
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.secondary,
@@ -579,6 +608,41 @@ private fun DialogItem(
                     )
                 }
             }
+        }
+    }
+
+    DropdownMenu(
+        expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = keep_icon,
+                        contentDescription = null
+                    )
+                },
+
+                text = {
+                    Text(
+                        text = if (isPinned) "Unpin chat" else "Pin chat"
+                    )
+                },
+
+                onClick = {
+                    menuExpanded = false
+
+                    scope.launch {
+                        ApiManager.setDialogPinned(
+                            accountId = entry.account.id,
+                            providerDialogId = dialog.providerDialogId,
+                            isPinned = !isPinned,
+                            folderId = folderId
+                        )
+                    }
+                }
+            )
         }
     }
 }
@@ -606,6 +670,31 @@ private fun AccountBadge(entry: AccountDialogEntry) {
             overflow = TextOverflow.Ellipsis
         )
     }
+}
+
+private fun Dialog.isPinnedIn(folderId: Int?): Boolean {
+    if (folderId == null) return isPinned
+
+    return folderPositions.any { position ->
+        position.folderId == folderId && position.isPinned
+    }
+}
+
+private fun Dialog.orderIn(folderId: Int?): Long {
+    if (folderId == null) return order
+
+    return folderPositions.firstOrNull { position ->
+        position.folderId == folderId
+    }?.order ?: 0L
+}
+
+private fun dialogComparator(folderId: Int?): Comparator<AccountDialogEntry> {
+    return compareByDescending<AccountDialogEntry> {
+        it.dialog.isPinnedIn(folderId)
+    }
+        .thenByDescending { it.dialog.orderIn(folderId) }
+        .thenByDescending { it.dialog.timestamp }
+        .thenBy { it.dialog.title.lowercase() }
 }
 
 @Composable

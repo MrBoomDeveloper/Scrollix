@@ -23,12 +23,13 @@ internal fun WebmFolderEmoji(
     emoji: DialogFolderEmoji,
     size: Dp,
     color: Color,
-    colorFilter: ColorFilter?
+    colorFilter: ColorFilter?,
+    contentModifier: Modifier? = null
 ) {
     val data = emoji.data
 
     if (data == null) {
-        StaticFolderEmoji(emoji, size, color, colorFilter)
+        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
         return
     }
 
@@ -45,20 +46,77 @@ internal fun WebmFolderEmoji(
         value = loadWebmAnimation(
             customEmojiId = emoji.customEmojiId,
             bytes = data,
-            sizePx = sizePx
+            widthPx = sizePx,
+            heightPx = sizePx
         )
     }
     val webm = animation
 
     if (webm == null || webm.frames.isEmpty()) {
-        StaticFolderEmoji(emoji, size, color, colorFilter)
+        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
         return
     }
 
-    var frameIndex by remember(webm) { mutableIntStateOf(0) }
+    WebmFrames(
+        animation = webm,
+        modifier = contentModifier ?: Modifier.size(size),
+        contentScale = ContentScale.Fit,
+        colorFilter = colorFilter
+    )
+}
 
-    LaunchedEffect(webm) {
-        val frameRate = webm.frameRate.coerceAtLeast(1f)
+@Composable
+internal fun WebmSticker(
+    stickerId: Long,
+    data: ByteArray,
+    width: Dp,
+    height: Dp,
+    modifier: Modifier,
+    fallback: @Composable () -> Unit
+) {
+    val density = LocalDensity.current
+    val widthPx = with(density) { width.roundToPx() }
+    val heightPx = with(density) { height.roundToPx() }
+
+    val animation by produceState<WebmAnimation?>(
+        initialValue = null,
+        stickerId,
+        data,
+        widthPx,
+        heightPx
+    ) {
+        value = loadWebmAnimation(
+            customEmojiId = stickerId,
+            bytes = data,
+            widthPx = widthPx,
+            heightPx = heightPx
+        )
+    }
+    val webm = animation
+
+    if (webm == null || webm.frames.isEmpty()) {
+        fallback()
+        return
+    }
+
+    WebmFrames(
+        animation = webm,
+        modifier = modifier,
+        contentScale = ContentScale.Fit
+    )
+}
+
+@Composable
+internal fun WebmFrames(
+    animation: WebmAnimation,
+    modifier: Modifier,
+    contentScale: ContentScale,
+    colorFilter: ColorFilter? = null
+) {
+    var frameIndex by remember(animation) { mutableIntStateOf(0) }
+
+    LaunchedEffect(animation) {
+        val frameRate = animation.frameRate.coerceAtLeast(1f)
         val frameDuration = (1_000_000_000.0 / frameRate)
             .toLong()
             .coerceAtLeast(1L)
@@ -68,16 +126,16 @@ internal fun WebmFolderEmoji(
             withFrameNanos { now ->
                 if (startedAt == 0L) startedAt = now
                 frameIndex = (((now - startedAt) / frameDuration).toInt()) %
-                    webm.frames.size
+                    animation.frames.size
             }
         }
     }
 
     Image(
-        bitmap = webm.frames[frameIndex.coerceIn(0, webm.frames.lastIndex)],
+        bitmap = animation.frames[frameIndex.coerceIn(0, animation.frames.lastIndex)],
         contentDescription = null,
-        modifier = Modifier.size(size),
-        contentScale = ContentScale.Fit,
+        modifier = modifier,
+        contentScale = contentScale,
         colorFilter = colorFilter
     )
 }

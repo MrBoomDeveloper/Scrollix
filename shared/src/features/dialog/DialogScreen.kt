@@ -1,11 +1,14 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -51,9 +54,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -67,20 +74,30 @@ import com.example.test.microphone_icon
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.ChatWallpaper
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatTime
+import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.resources.Res
 import com.mrboomdev.scrollix.resources.wallpaper
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.ChatAnimationPreview
+import com.mrboomdev.scrollix.ui.components.ChatSticker
+import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.MediaViewer
+import com.mrboomdev.scrollix.ui.components.MessageDatePill
 import com.mrboomdev.scrollix.ui.components.MessageBubble
 import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
 import com.mrboomdev.scrollix.ui.components.PickedFile
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.components.VoiceMessagePlayer
+import com.mrboomdev.scrollix.ui.components.messageDate
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
@@ -92,16 +109,31 @@ import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
 import com.mrboomdev.scrollix.ui.isTwoPaneLayout
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 
+private fun wallpaperBrush(wallpaper: ChatWallpaper): Brush {
+    val colors = wallpaper.colors.map { color ->
+        Color(color or (0xFF shl 24))
+    }
+
+    return when (colors.size) {
+        0 -> SolidColor(Color.Transparent)
+        1 -> SolidColor(colors.first())
+        else -> Brush.verticalGradient(colors)
+    }
+}
+
 @Composable
 fun DialogScreen(
     accountId: String,
     providerDialogId: String,
+    onOpenProfile: () -> Unit = {},
+    onOpenUserProfile: (Long) -> Unit = {},
     onBack: () -> Unit
 ) {
     val isTwoPaneWindow = isTwoPaneLayout()
@@ -115,6 +147,46 @@ fun DialogScreen(
     }
     val messages by messagesFlow.collectAsState()
     val dialog = dialogs.firstOrNull { it.providerDialogId == providerDialogId }
+    var wallpaperImage by remember(providerDialogId) {
+        mutableStateOf<ImageBitmap?>(null)
+    }
+
+    LaunchedEffect(dialog?.wallpaper, session) {
+        val wallpaper = dialog?.wallpaper
+        wallpaperImage = null
+
+        if (wallpaper == null) return@LaunchedEffect
+
+        val thumbnailFileId = wallpaper.thumbnailFileId
+
+        if (thumbnailFileId != null) {
+            val bytes = session?.loadFile(thumbnailFileId)?.getOrNull()
+
+            if (bytes != null) {
+                val image = withContext(Dispatchers.Default) {
+                    decodeImageBitmap(bytes)
+                }
+
+                if (image != null) wallpaperImage = image
+            }
+        }
+
+        val fileId = wallpaper.fileId
+
+        if (fileId != null && fileId != thumbnailFileId) {
+            val bytes = session?.loadFile(fileId)?.getOrNull()
+
+            if (bytes != null) {
+                val image = withContext(Dispatchers.Default) {
+                    decodeImageBitmap(bytes)
+                }
+
+                // Animated wallpapers (video/TGS) can't be decoded as a bitmap,
+                // in that case the thumbnail stays as the wallpaper.
+                if (image != null) wallpaperImage = image
+            }
+        }
+    }
 
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -126,7 +198,14 @@ fun DialogScreen(
     var isSending by remember(providerDialogId) { mutableStateOf(false) }
     var isLoadingMore by remember(providerDialogId) { mutableStateOf(false) }
     var canLoadMore by remember(providerDialogId) { mutableStateOf(true) }
-    var hasScrolledToBottom by remember(providerDialogId) { mutableStateOf(false) }
+    var initialScrollDone by remember(providerDialogId) { mutableStateOf(false) }
+    var previousLastMessageId by remember(providerDialogId) { mutableStateOf<Long?>(null) }
+    var showNewMessages by remember(providerDialogId) { mutableStateOf(false) }
+    var scrollToLatestRequested by remember(providerDialogId) { mutableStateOf(false) }
+    var isAtBottom by remember(providerDialogId) { mutableStateOf(true) }
+    var searchOpen by remember(providerDialogId) { mutableStateOf(false) }
+    var searchQuery by remember(providerDialogId) { mutableStateOf("") }
+    var editingMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
 
     fun sendAttachment(picked: PickedFile, asPhoto: Boolean) {
         if (session == null) return
@@ -140,7 +219,9 @@ fun DialogScreen(
                 providerDialogId = providerDialogId,
                 path = picked.path,
                 asPhoto = asPhoto
-            ).onFailure {
+            ).onSuccess {
+                scrollToLatestRequested = true
+            }.onFailure {
                 error = it.message ?: "Failed to send file"
             }
 
@@ -158,7 +239,11 @@ fun DialogScreen(
         isLoading = true
         isLoadingMore = false
         canLoadMore = true
-        hasScrolledToBottom = false
+        initialScrollDone = false
+        previousLastMessageId = null
+        showNewMessages = false
+        scrollToLatestRequested = false
+        isAtBottom = true
 
         if (session == null) {
             error = "Account session not found"
@@ -172,53 +257,166 @@ fun DialogScreen(
     }
 
     val lastMessageId = messages.lastOrNull()?.messageId
-    LaunchedEffect(lastMessageId, isLoading) {
-        if (!isLoading) {
-            if (messages.isNotEmpty()) {
-                val paginationOffset = if (isLoadingMore || !canLoadMore) 1 else 0
-                listState.scrollToItem(messages.lastIndex + paginationOffset)
+
+    var searchResults by remember(providerDialogId) { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var isSearchPending by remember(providerDialogId) { mutableStateOf(false) }
+    var customEmojiData by remember(providerDialogId) {
+        mutableStateOf<Map<Long, ByteArray>>(emptyMap())
+    }
+
+    LaunchedEffect(session, messages) {
+        if (session == null) return@LaunchedEffect
+
+        val ids = messages
+            .flatMap { message -> message.customEmojis }
+            .map { span -> span.emojiId }
+            .distinct()
+            .filter { id -> id !in customEmojiData }
+
+        if (ids.isEmpty()) return@LaunchedEffect
+
+        val loaded = ids.mapNotNull { id ->
+            session.loadCustomEmoji(id)?.let { bytes -> id to bytes }
+        }.toMap()
+
+        if (loaded.isNotEmpty()) {
+            customEmojiData = customEmojiData + loaded
+        }
+    }
+
+    LaunchedEffect(session, providerDialogId, searchQuery) {
+        val query = searchQuery.trim()
+
+        if (query.isEmpty() || session == null) {
+            searchResults = emptyList()
+            isSearchPending = false
+            return@LaunchedEffect
+        }
+
+        isSearchPending = true
+        delay(300)
+        searchResults = session.searchMessages(providerDialogId, query)
+            .getOrDefault(emptyList())
+        isSearchPending = false
+    }
+
+    val visibleMessages = if (searchQuery.isBlank()) messages else searchResults
+
+    LaunchedEffect(providerDialogId, isLoading, messages.isNotEmpty()) {
+        if (isLoading || messages.isEmpty() || initialScrollDone) return@LaunchedEffect
+        if (searchQuery.isNotBlank()) return@LaunchedEffect
+
+        listState.scrollToItem(messages.lastIndex)
+        previousLastMessageId = messages.lastOrNull()?.messageId
+        initialScrollDone = true
+    }
+
+    LaunchedEffect(listState, providerDialogId) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()
+
+            lastVisible != null && lastVisible.index >= info.totalItemsCount - 1
+        }.collect { atBottom ->
+            isAtBottom = atBottom
+
+            if (atBottom) {
+                showNewMessages = false
             }
-            hasScrolledToBottom = true
         }
     }
 
-    LaunchedEffect(messages) {
-        if (messages.isNotEmpty()) {
-            session?.markMessagesRead(
-                providerDialogId = providerDialogId,
-                messageIds = messages.map { it.messageId }.toLongArray()
-            )
+    LaunchedEffect(lastMessageId, initialScrollDone, scrollToLatestRequested) {
+        if (!initialScrollDone) return@LaunchedEffect
+        if (searchQuery.isNotBlank()) return@LaunchedEffect
+
+        val newLastMessageId = lastMessageId ?: return@LaunchedEffect
+
+        if (scrollToLatestRequested) {
+            scrollToLatestRequested = false
+            previousLastMessageId = newLastMessageId
+            showNewMessages = false
+            listState.scrollToItem(messages.lastIndex)
+            return@LaunchedEffect
+        }
+
+        val oldLastMessageId = previousLastMessageId
+            ?: return@LaunchedEffect
+
+        if (oldLastMessageId == newLastMessageId) return@LaunchedEffect
+        previousLastMessageId = newLastMessageId
+
+        val oldLastMessageWasVisible = listState.layoutInfo.visibleItemsInfo
+            .any { it.key == oldLastMessageId }
+
+        if (isAtBottom || oldLastMessageWasVisible) {
+            showNewMessages = false
+            listState.scrollToItem(messages.lastIndex)
+        } else {
+            showNewMessages = true
         }
     }
 
-    LaunchedEffect(
-        listState,
-        session,
-        providerDialogId,
-        canLoadMore,
-        isLoading,
-        hasScrolledToBottom
-    ) {
-        if (session == null || !canLoadMore || !hasScrolledToBottom) return@LaunchedEffect
+    LaunchedEffect(lastMessageId) {
+        val newestMessageId = lastMessageId ?: return@LaunchedEffect
+        if (messages.isEmpty()) return@LaunchedEffect
+
+        session?.markMessagesRead(
+            providerDialogId = providerDialogId,
+            messageIds = messages
+                .takeLast(50)
+                .map { it.messageId }
+                .toLongArray()
+        )
+    }
+
+    LaunchedEffect(session, providerDialogId, listState, initialScrollDone) {
+        if (session == null || !initialScrollDone) return@LaunchedEffect
 
         snapshotFlow {
-            val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-            firstVisible != null &&
-                firstVisible.index <= 1 &&
+            listState.firstVisibleItemIndex == 0 &&
                 listState.firstVisibleItemScrollOffset == 0
         }
             .distinctUntilChanged()
             .collect { atTop ->
-                if (!atTop || isLoading || isLoadingMore) return@collect
+                if (!atTop || isLoading || isLoadingMore || !canLoadMore) return@collect
+                if (searchQuery.isNotBlank()) return@collect
                 if (listState.layoutInfo.totalItemsCount == 0) return@collect
 
-                isLoadingMore = true
-                session.loadOlderMessages(providerDialogId)
-                    .onSuccess { hasMore -> canLoadMore = hasMore }
-                    .onFailure {
-                        error = it.message ?: "Failed to load older messages"
+                var keepLoading = true
+
+                while (keepLoading && !isLoading && canLoadMore) {
+                    val itemCountBefore = listState.layoutInfo.totalItemsCount
+
+                    isLoadingMore = true
+                    val result = session.loadOlderMessages(providerDialogId)
+                    isLoadingMore = false
+
+                    val hasMore = result.getOrNull()
+
+                    if (hasMore == null) {
+                        error = result.exceptionOrNull()?.message
+                            ?: "Failed to load older messages"
+                        break
                     }
-                isLoadingMore = false
+
+                    canLoadMore = hasMore
+
+                    withFrameNanos { }
+
+                    val info = listState.layoutInfo
+                    val stillAtTop = listState.firstVisibleItemIndex == 0 &&
+                        listState.firstVisibleItemScrollOffset == 0
+                    val viewportFilled = info.visibleItemsInfo.lastOrNull()?.let { item ->
+                        item.offset + item.size >= info.viewportEndOffset
+                    } ?: false
+                    val itemCountChanged = info.totalItemsCount > itemCountBefore
+
+                    keepLoading = hasMore &&
+                        stillAtTop &&
+                        !viewportFilled &&
+                        itemCountChanged
+                }
             }
     }
 
@@ -231,9 +429,23 @@ fun DialogScreen(
             isSending = true
             error = null
 
-            session.sendMessage(providerDialogId, text)
-                .onSuccess { input = "" }
-                .onFailure { error = it.message ?: "Failed to send message" }
+            val editing = editingMessage
+
+            if (editing != null) {
+                session.editMessage(providerDialogId, editing.messageId, text)
+                    .onSuccess {
+                        input = ""
+                        editingMessage = null
+                    }
+                    .onFailure { error = it.message ?: "Failed to edit message" }
+            } else {
+                session.sendMessage(providerDialogId, text)
+                    .onSuccess {
+                        input = ""
+                        scrollToLatestRequested = true
+                    }
+                    .onFailure { error = it.message ?: "Failed to send message" }
+            }
 
             isSending = false
         }
@@ -266,6 +478,7 @@ fun DialogScreen(
             }
 
             AvatarImage(
+                modifier = Modifier.clickable(onClick = onOpenProfile),
                 avatar = dialog?.avatar ?: Avatar.fromName(dialog?.title ?: "Dialog"),
                 size = 40.dp
             )
@@ -274,6 +487,7 @@ fun DialogScreen(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 12.dp)
+                    .clickable(onClick = onOpenProfile)
             ) {
                 Text(
                     text = dialog?.title ?: "Dialog",
@@ -283,8 +497,10 @@ fun DialogScreen(
                 )
 
                 dialog?.let {
+                    val statusText = it.statusText
+
                     Text(
-                        text = when (it.kind) {
+                        text = statusText ?: when (it.kind) {
                             DialogKind.Direct -> "Direct message"
                             DialogKind.Group -> "Group"
                             DialogKind.Channel -> "Channel"
@@ -292,7 +508,11 @@ fun DialogScreen(
                             DialogKind.Secret -> "Secret chat"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = if (statusText == "online") {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.secondary
+                        }
                     )
                 }
             }
@@ -332,23 +552,103 @@ fun DialogScreen(
                     contentDescription = null
                 )
             }
+
+            IconButton(
+                onClick = {
+                    searchOpen = !searchOpen
+
+                    if (!searchOpen) {
+                        searchQuery = ""
+                    }
+                }
+            ) {
+                Icon(
+                    tint = MaterialTheme.colorScheme.secondary,
+                    imageVector = search_icon,
+                    contentDescription = "Search in chat"
+                )
+            }
         }
 
         HorizontalDivider(
             color = MaterialTheme.colorScheme.surfaceContainer
         )
 
+        AnimatedVisibility(visible = searchOpen) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    singleLine = true,
+                    placeholder = {
+                        Text("Search in chat")
+                    }
+                )
+
+                if (searchQuery.isNotBlank()) {
+                    Text(
+                        text = if (isSearchPending) {
+                            "Searching..."
+                        } else {
+                            "${visibleMessages.size} found"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            Image(
-                modifier = Modifier.matchParentSize(),
-                painter = painterResource(Res.drawable.wallpaper),
-                contentScale = ContentScale.Crop,
-                contentDescription = null
-            )
+            val wallpaper = dialog?.wallpaper
+            val customWallpaper = wallpaperImage
+            val hasFill = wallpaper != null && wallpaper.colors.isNotEmpty()
+
+            // Pattern wallpapers are drawn over the gradient fill with the
+            // intensity from the server, photo wallpapers are drawn as is.
+            if (hasFill) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(wallpaperBrush(wallpaper!!))
+                )
+            } else if (customWallpaper == null) {
+                Image(
+                    modifier = Modifier.matchParentSize(),
+                    painter = painterResource(Res.drawable.wallpaper),
+                    contentScale = ContentScale.Crop,
+                    contentDescription = null
+                )
+            }
+
+            if (customWallpaper != null) {
+                val isPattern = wallpaper?.isPattern == true
+
+                Image(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .alpha(
+                            if (isPattern) {
+                                (wallpaper.intensity / 100f).coerceIn(0f, 1f)
+                            } else {
+                                1f
+                            }
+                        ),
+                    bitmap = customWallpaper,
+                    contentScale = ContentScale.Crop,
+                    contentDescription = null
+                )
+            }
             
             Column(Modifier.fillMaxSize()) {
                 Box(
@@ -379,66 +679,151 @@ fun DialogScreen(
                                 contentPadding = PaddingValues(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                if (isLoadingMore || !canLoadMore) {
-                                    item(key = "pagination") {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isLoadingMore) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = "Beginning of chat",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.secondary
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
                                 itemsIndexed(
-                                    items = messages,
+                                    items = visibleMessages,
                                     key = { _, it -> it.messageId }
                                 ) { index, message ->
-                                    MessageBubble(
-                                        dialogKind = dialog?.kind ?: DialogKind.Direct,
-                                        message = message,
+                                    val previousMessage = if (index > 0) {
+                                        visibleMessages[index - 1]
+                                    } else {
+                                        null
+                                    }
+                                    val nextMessage = if (index < visibleMessages.size - 1) {
+                                        visibleMessages[index + 1]
+                                    } else {
+                                        null
+                                    }
+                                    val date = messageDate(message.timestamp)
+                                    val previousDate = previousMessage?.let {
+                                        messageDate(it.timestamp)
+                                    }
+                                    val nextDate = nextMessage?.let {
+                                        messageDate(it.timestamp)
+                                    }
+                                    val media = message.media
 
-                                        connection = run {
-                                            val prevMessage = if(index > 0) messages[index - 1] else null
-                                            val nextMessage = if(index < messages.size - 1) messages[index + 1] else null
-
-                                            if (index > 0) {
-                                                if (prevMessage?.senderId == message.senderId) {
-                                                    if (nextMessage?.senderId == message.senderId) {
-                                                        return@run MessageBubbleConnection.BOTH
-                                                    }
-
-                                                    return@run MessageBubbleConnection.BOTTOM
+                                    val mediaContent: (@Composable () -> Unit)? = when {
+                                        media == null -> null
+                                        media.kind == MessageMediaKind.Photo -> {
+                                            {
+                                                MessageImagePreview(
+                                                    media = media,
+                                                    session = session,
+                                                    fillWidth = message.text.isNotBlank()
+                                                ) {
+                                                    MediaViewer.showImage(media, session)
                                                 }
                                             }
-
-                                            if (
-                                                index < messages.size - 1 &&
-                                                messages.size > 1 &&
-                                                nextMessage?.senderId == message.senderId
-                                            ) {
-                                                return@run MessageBubbleConnection.TOP
-                                            }
-
-                                            return@run MessageBubbleConnection.NONE
                                         }
-                                    )
+                                        media.kind == MessageMediaKind.Sticker -> {
+                                            { ChatSticker(media, session) }
+                                        }
+                                        media.kind == MessageMediaKind.Animation -> {
+                                            {
+                                                ChatAnimationPreview(media, session) {
+                                                    MediaViewer.showVideo(media, session)
+                                                }
+                                            }
+                                        }
+                                        media.kind == MessageMediaKind.Video -> {
+                                            {
+                                                ChatVideoPreview(media, session) {
+                                                    MediaViewer.showVideo(media, session)
+                                                }
+                                            }
+                                        }
+                                        media.kind == MessageMediaKind.VideoNote -> {
+                                            {
+                                                ChatVideoPreview(media, session, isRound = true) {
+                                                    MediaViewer.showVideo(media, session)
+                                                }
+                                            }
+                                        }
+                                        media.kind == MessageMediaKind.VoiceNote ||
+                                            media.kind == MessageMediaKind.Audio -> {
+                                            { VoiceMessagePlayer(media, session) }
+                                        }
+                                        media.kind == MessageMediaKind.File -> {
+                                            { MessageFileCard(media, session, message.isOutgoing) }
+                                        }
+                                        else -> null
+                                    }
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (previousDate != date) {
+                                            MessageDatePill(date)
+                                        }
+
+                                        MessageBubble(
+                                            dialogKind = dialog?.kind ?: DialogKind.Direct,
+                                            message = message,
+                                            mediaContent = mediaContent,
+                                            customEmojiData = customEmojiData,
+                                            reply = replyFor(message, messages),
+                                            onOpenSender = if (
+                                                !message.isOutgoing &&
+                                                !(dialog?.kind ?: DialogKind.Direct).isPeer &&
+                                                message.senderId > 0
+                                            ) {
+                                                { onOpenUserProfile(message.senderId) }
+                                            } else {
+                                                null
+                                            },
+
+                                            onEdit = if (
+                                                message.isOutgoing &&
+                                                message.text.isNotBlank()
+                                            ) {
+                                                {
+                                                    editingMessage = message
+                                                    input = message.text
+                                                }
+                                            } else {
+                                                null
+                                            },
+
+                                            connection = run {
+                                                val previousSameSender =
+                                                    previousDate == date &&
+                                                        previousMessage?.senderId == message.senderId
+                                                val nextSameSender =
+                                                    nextDate == date &&
+                                                        nextMessage?.senderId == message.senderId
+
+                                                when {
+                                                    previousSameSender && nextSameSender ->
+                                                        MessageBubbleConnection.BOTH
+
+                                                    previousSameSender ->
+                                                        MessageBubbleConnection.BOTTOM
+
+                                                    nextSameSender ->
+                                                        MessageBubbleConnection.TOP
+
+                                                    else -> MessageBubbleConnection.NONE
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+
+                    MessageListOverlays(
+                        isLoadingMore = isLoadingMore,
+                        showNewMessages = showNewMessages,
+                        onScrollToLatest = {
+                            showNewMessages = false
+
+                            if (messages.isNotEmpty()) {
+                                scope.launch {
+                                    listState.animateScrollToItem(messages.lastIndex)
+                                }
+                            }
+                        }
+                    )
+
                 }
 
                 error?.let { message ->
@@ -450,7 +835,36 @@ fun DialogScreen(
                     )
                 }
 
-                Row(
+                editingMessage?.let { message ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            modifier = Modifier.weight(1f),
+                            text = "Editing: ${message.text.take(40)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        TextButton(
+                            onClick = {
+                                editingMessage = null
+                                input = ""
+                            }
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+                }
+
+                if (dialog?.canSendMessages == false) {
+                    NotSendableNotice()
+                } else Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 8.dp, end = 4.dp, bottom = 2.dp),
@@ -564,9 +978,81 @@ fun DialogScreen(
 }
 
 @Composable
+private fun BoxScope.MessageListOverlays(
+    isLoadingMore: Boolean,
+    showNewMessages: Boolean,
+    onScrollToLatest: () -> Unit
+) {
+    AnimatedVisibility(
+        visible = isLoadingMore,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(8.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(32.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .padding(8.dp)
+                    .size(24.dp)
+            )
+        }
+    }
+
+    AnimatedVisibility(
+        visible = showNewMessages,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(12.dp)
+    ) {
+        Button(onClick = onScrollToLatest) {
+            Text("New messages")
+        }
+    }
+}
+
+private fun replyFor(
+    message: ChatMessage,
+    allMessages: List<ChatMessage>
+): MessageReply? {
+    val reply = message.replyTo ?: return null
+    val original = allMessages.firstOrNull { it.messageId == reply.messageId }
+
+    return if (original != null) {
+        reply.copy(
+            senderName = if (original.isOutgoing) "You" else original.senderName,
+            text = original.replySnippet()
+        )
+    } else {
+        reply.copy(text = reply.text.ifBlank { "Message" })
+    }
+}
+
+private fun ChatMessage.replySnippet(): String {
+    if (text.isNotBlank()) return text
+
+    val media = media ?: return "Message"
+
+    return when (media.kind) {
+        MessageMediaKind.Photo -> "Photo"
+        MessageMediaKind.Video -> "Video"
+        MessageMediaKind.Animation -> "GIF"
+        MessageMediaKind.Sticker -> "Sticker"
+        MessageMediaKind.VideoNote -> "Video message"
+        MessageMediaKind.VoiceNote -> "Voice message"
+        MessageMediaKind.Audio -> media.fileName ?: "Audio"
+        MessageMediaKind.File -> media.fileName ?: "File"
+    }
+}
+
+@Composable
 private fun MessageImagePreview(
     media: MessageMedia,
-    session: AccountSession?
+    session: AccountSession?,
+    fillWidth: Boolean,
+    onClick: () -> Unit
 ) {
     var image by remember(media.previewFileId, media.minithumbnail, session) {
         mutableStateOf<ImageBitmap?>(null)
@@ -605,10 +1091,17 @@ private fun MessageImagePreview(
 
     Box(
         modifier = Modifier
-            .width(260.dp)
+            .then(
+                if (fillWidth) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.width(260.dp)
+                }
+            )
             .aspectRatio(aspectRatio.coerceIn(0.75f, 1.8f))
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(enabled = bitmap != null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         when {
@@ -718,5 +1211,132 @@ private fun formatFileSize(bytes: Long): String {
         bytes < 1024 * 1024 -> "${bytes / 1024} KB"
         bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
         else -> "${bytes / (1024 * 1024 * 1024)} GB"
+    }
+}
+
+@Composable
+private fun MessageFileCard(
+    media: MessageMedia,
+    session: AccountSession?,
+    isOutgoing: Boolean
+) {
+    val scope = rememberCoroutineScope()
+    var isDownloading by remember(media.fileId) { mutableStateOf(false) }
+    var savedPath by remember(media.fileId) { mutableStateOf<String?>(null) }
+
+    val contentColor = if (isOutgoing) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val secondaryColor = if (isOutgoing) {
+        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
+
+    Row(
+        modifier = Modifier
+            .width(260.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isOutgoing) {
+                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    if (isOutgoing) {
+                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainer
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "FILE",
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp)
+        ) {
+            Text(
+                text = media.fileName?.takeIf { it.isNotBlank() } ?: "File",
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val size = formatFileSize(media.size)
+            if (size.isNotEmpty()) {
+                Text(
+                    text = size,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = secondaryColor
+                )
+            }
+        }
+
+        TextButton(
+            enabled = !isDownloading && media.fileId != null,
+            onClick = {
+                val fileId = media.fileId ?: return@TextButton
+
+                scope.launch {
+                    isDownloading = true
+
+                    val bytes = session?.loadFile(fileId)?.getOrNull()
+
+                    if (bytes != null) {
+                        savedPath = withContext(Dispatchers.IO) {
+                            saveFileToDevice(media.fileName ?: "file", bytes)
+                        }
+                    }
+
+                    isDownloading = false
+                }
+            }
+        ) {
+            Text(
+                text = when {
+                    savedPath != null -> "Saved"
+                    isDownloading -> "Saving..."
+                    else -> "Download"
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun NotSendableNotice() {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(32.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Text(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            text = "You can't send messages to this chat",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.secondary
+        )
     }
 }

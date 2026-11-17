@@ -12,11 +12,21 @@ sealed interface Route: NavKey {
     data object Accounts : Route
 
     @Serializable
+    data object Settings : Route
+
+    @Serializable
     data class Login(val accountId: String) : Route
 
     @Serializable
     data class Dialog(
         val accountId: String,
         val providerDialogId: String
+    ) : Route
+
+    @Serializable
+    data class Profile(
+        val accountId: String,
+        val providerDialogId: String,
+        val userId: Long? = null
     ) : Route
 }

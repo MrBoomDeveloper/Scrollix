@@ -18,19 +18,24 @@ import java.nio.ByteBuffer
 
 internal actual suspend fun decodeWebmAnimation(
     bytes: ByteArray,
-    sizePx: Int
+    widthPx: Int,
+    heightPx: Int
 ): WebmAnimation? {
+    val (width, height) = animationFrameSize(widthPx, heightPx)
+
     return withContext(Dispatchers.IO) {
         decodeWebmAnimationBlocking(
             bytes = bytes,
-            sizePx = sizePx.coerceIn(16, 128)
+            widthPx = width,
+            heightPx = height
         )
     }
 }
 
 private suspend fun decodeWebmAnimationBlocking(
     bytes: ByteArray,
-    sizePx: Int
+    widthPx: Int,
+    heightPx: Int
 ): WebmAnimation? {
     if (bytes.isEmpty()) return null
 
@@ -39,14 +44,14 @@ private suspend fun decodeWebmAnimationBlocking(
     return try {
         val currentGrabber = FFmpegFrameGrabber(ByteArrayInputStream(bytes))
         grabber = currentGrabber
-        currentGrabber.videoCodecName = if (bytes.containsAscii("V_VP8")) {
-            "libvpx"
-        } else {
-            "libvpx-vp9"
+        currentGrabber.videoCodecName = when {
+            bytes.containsAscii("V_VP8") -> "libvpx"
+            bytes.containsAscii("V_VP9") -> "libvpx-vp9"
+            else -> null
         }
         currentGrabber.pixelFormat = AV_PIX_FMT_RGBA
-        currentGrabber.imageWidth = sizePx
-        currentGrabber.imageHeight = sizePx
+        currentGrabber.imageWidth = widthPx
+        currentGrabber.imageHeight = heightPx
         currentGrabber.start()
 
         val frameRate = currentGrabber.frameRate
@@ -54,23 +59,23 @@ private suspend fun decodeWebmAnimationBlocking(
             .takeIf { it.isFinite() && it > 0f }
             ?: 30f
         val frames = mutableListOf<ImageBitmap>()
-        val rowBytes = sizePx * 4
+        val rowBytes = widthPx * 4
 
-        while (true) {
+        while (frames.size < MaxAnimationFrames) {
             currentCoroutineContext().ensureActive()
 
             val frame = currentGrabber.grabImage() ?: break
             val buffer = frame.image?.getOrNull(0) as? ByteBuffer ?: break
             val stride = frame.imageStride.takeIf { it >= rowBytes } ?: rowBytes
-            val pixels = ByteArray(sizePx * sizePx * 4)
+            val pixels = ByteArray(widthPx * heightPx * 4)
 
-            for (y in 0 until sizePx) {
+            for (y in 0 until heightPx) {
                 val source = buffer.duplicate()
                 source.position(y * stride)
                 source.get(pixels, y * rowBytes, rowBytes)
             }
 
-            frames += pixels.premultiply().toImageBitmap(sizePx, rowBytes)
+            frames += pixels.premultiply().toImageBitmap(widthPx, heightPx, rowBytes)
         }
 
         if (frames.isEmpty()) {
@@ -78,16 +83,18 @@ private suspend fun decodeWebmAnimationBlocking(
         } else {
             WebmAnimation(
                 frames = frames,
-                frameRate = frameRate
+                frameRate = frameRate,
+                width = widthPx,
+                height = heightPx
             )
         }
     } catch (exception: CancellationException) {
         throw exception
     } catch (exception: Exception) {
-        println("Failed to decode WebM folder emoji: ${exception.message}")
+        println("Failed to decode animation: ${exception.message}")
         null
     } catch (exception: LinkageError) {
-        println("Failed to load WebM folder emoji decoder: ${exception.message}")
+        println("Failed to load animation decoder: ${exception.message}")
         null
     } finally {
         runCatching { grabber?.close() }
@@ -108,10 +115,14 @@ private fun ByteArray.premultiply(): ByteArray {
     return this
 }
 
-private fun ByteArray.toImageBitmap(sizePx: Int, rowBytes: Int): ImageBitmap {
+private fun ByteArray.toImageBitmap(
+    width: Int,
+    height: Int,
+    rowBytes: Int
+): ImageBitmap {
     val imageInfo = ImageInfo(
-        width = sizePx,
-        height = sizePx,
+        width = width,
+        height = height,
         colorType = ColorType.RGBA_8888,
         alphaType = ColorAlphaType.PREMUL
     )

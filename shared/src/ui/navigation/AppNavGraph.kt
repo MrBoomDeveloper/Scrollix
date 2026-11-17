@@ -31,6 +31,8 @@ import com.mrboomdev.scrollix.features.accounts.AccountsScreen
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
 import com.mrboomdev.scrollix.features.home.HomeScreen
 import com.mrboomdev.scrollix.features.login.LoginScreen
+import com.mrboomdev.scrollix.features.profile.ProfileScreen
+import com.mrboomdev.scrollix.features.settings.SettingsScreen
 import com.mrboomdev.scrollix.ui.isTwoPaneLayout
 import kotlinx.coroutines.launch
 
@@ -50,6 +52,19 @@ fun rememberAppEntryProvider(
                     selectedDialog = selected,
                     onOpenDialog = onSelectDialog,
                     onCloseDialog = { onSelectDialog(null) },
+                    onOpenProfile = { dialog ->
+                        backStack += Route.Profile(
+                            accountId = dialog.accountId,
+                            providerDialogId = dialog.providerDialogId
+                        )
+                    },
+                    onOpenUserProfile = { dialog, userId ->
+                        backStack += Route.Profile(
+                            accountId = dialog.accountId,
+                            providerDialogId = dialog.providerDialogId,
+                            userId = userId
+                        )
+                    },
                     onOpenAccountsScreen = { backStack += Route.Accounts }
                 )
             } else {
@@ -93,17 +108,60 @@ fun rememberAppEntryProvider(
                     selectedDialog = selected ?: route,
                     onOpenDialog = onSelectDialog,
                     onCloseDialog = { onSelectDialog(null) },
+                    onOpenProfile = { dialog ->
+                        backStack += Route.Profile(
+                            accountId = dialog.accountId,
+                            providerDialogId = dialog.providerDialogId
+                        )
+                    },
+                    onOpenUserProfile = { dialog, userId ->
+                        backStack += Route.Profile(
+                            accountId = dialog.accountId,
+                            providerDialogId = dialog.providerDialogId,
+                            userId = userId
+                        )
+                    },
                     onOpenAccountsScreen = { backStack += Route.Accounts }
                 )
             } else {
                 DialogScreen(
                     accountId = route.accountId,
                     providerDialogId = route.providerDialogId,
+                    onOpenProfile = {
+                        backStack += Route.Profile(
+                            accountId = route.accountId,
+                            providerDialogId = route.providerDialogId
+                        )
+                    },
+                    onOpenUserProfile = { userId ->
+                        backStack += Route.Profile(
+                            accountId = route.accountId,
+                            providerDialogId = route.providerDialogId,
+                            userId = userId
+                        )
+                    },
                     onBack = {
                         backStack.removeLastOrNull()
                     }
                 )
             }
+        }
+
+        entry<Route.Settings> {
+            SettingsScreen(
+                onOpenAccountsScreen = { backStack += Route.Accounts }
+            )
+        }
+
+        entry<Route.Profile> { route ->
+            ProfileScreen(
+                accountId = route.accountId,
+                providerDialogId = route.providerDialogId,
+                userId = route.userId,
+                onBack = {
+                    backStack.removeLastOrNull()
+                }
+            )
         }
 
         entry<Route.Login> { route ->
@@ -130,6 +188,8 @@ private fun WideDialogsScreen(
     selectedDialog: Route.Dialog?,
     onOpenDialog: (Route.Dialog) -> Unit,
     onCloseDialog: () -> Unit,
+    onOpenProfile: (Route.Dialog) -> Unit,
+    onOpenUserProfile: (Route.Dialog, Long) -> Unit,
     onOpenAccountsScreen: () -> Unit
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -168,6 +228,10 @@ private fun WideDialogsScreen(
                         DialogScreen(
                             accountId = selectedDialog.accountId,
                             providerDialogId = selectedDialog.providerDialogId,
+                            onOpenProfile = { onOpenProfile(selectedDialog) },
+                            onOpenUserProfile = { userId ->
+                                onOpenUserProfile(selectedDialog, userId)
+                            },
                             onBack = onCloseDialog
                         )
                     }

@@ -46,8 +46,10 @@ import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
+import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.isWideLayout
+import com.mrboomdev.scrollix.ui.theme.appTypography
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
@@ -136,6 +138,17 @@ fun App() {
                         backStack.add(Route.Accounts)
                     }
                 }
+            ),
+
+            AppNavTab(
+                isActive = currentRoute is Route.Settings,
+                icon = settings_icon,
+                title = "Settings",
+                onClick = {
+                    if (backStack.lastOrNull() != Route.Settings) {
+                        backStack.add(Route.Settings)
+                    }
+                }
             )
         )
     }
@@ -144,12 +157,14 @@ fun App() {
         colorScheme = darkColorScheme(
             background = Color.Black,
             surfaceContainer = Color(0xff101010)
-        )
+        ),
+        typography = appTypography()
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
+            Box(Modifier.fillMaxSize()) {
             Row {
                 AnimatedVisibility(showNavigation && isExpanded) {
                     Row {
@@ -302,6 +317,9 @@ fun App() {
                         }
                     }
                 }
+            }
+
+                MediaViewerOverlay()
             }
         }
     }

@@ -1,8 +1,10 @@
 package com.mrboomdev.scrollix.ui.components
 
 import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.mrboomdev.scrollix.data.storage.AndroidAppContext
 import dev.mediacache.alphavideo.WebMAlphaPlayerNative
 import dev.mediacache.alphavideo.WebMFrame
 import kotlinx.coroutines.CancellationException
@@ -10,23 +12,35 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.nio.ByteBuffer
+
+private const val DefaultFrameRate = 12f
 
 internal actual suspend fun decodeWebmAnimation(
     bytes: ByteArray,
-    sizePx: Int
+    widthPx: Int,
+    heightPx: Int
 ): WebmAnimation? {
+    val (width, height) = animationFrameSize(widthPx, heightPx)
+
     return withContext(Dispatchers.IO) {
         decodeWebmAnimationBlocking(
             bytes = bytes,
-            sizePx = sizePx.coerceIn(16, 128)
+            widthPx = width,
+            heightPx = height
+        ) ?: decodeWithMediaMetadataRetriever(
+            bytes = bytes,
+            widthPx = width,
+            heightPx = height
         )
     }
 }
 
 private suspend fun decodeWebmAnimationBlocking(
     bytes: ByteArray,
-    sizePx: Int
+    widthPx: Int,
+    heightPx: Int
 ): WebmAnimation? {
     if (bytes.isEmpty()) return null
 
@@ -58,14 +72,14 @@ private suspend fun decodeWebmAnimationBlocking(
             ?.takeIf { it.size >= 16 }
             ?: DefaultYuvToRgb
 
-        val frames = ArrayList<ImageBitmap>(totalFrames)
+        val frames = ArrayList<ImageBitmap>(totalFrames.coerceAtMost(MaxAnimationFrames))
 
-        for (index in 0 until totalFrames) {
+        for (index in 0 until totalFrames.coerceAtMost(MaxAnimationFrames)) {
             currentCoroutineContext().ensureActive()
 
             val frame = WebMAlphaPlayerNative.nativeGetFrame(playerId, index)
                 ?: continue
-            frames += frame.toImageBitmap(sizePx, matrix)
+            frames += frame.toImageBitmap(widthPx, heightPx, matrix)
         }
 
         if (frames.isEmpty()) {
@@ -73,16 +87,18 @@ private suspend fun decodeWebmAnimationBlocking(
         } else {
             WebmAnimation(
                 frames = frames,
-                frameRate = frameRate
+                frameRate = frameRate,
+                width = widthPx,
+                height = heightPx
             )
         }
     } catch (exception: CancellationException) {
         throw exception
     } catch (exception: Exception) {
-        println("Failed to decode WebM folder emoji: ${exception.message}")
+        println("Failed to decode animation: ${exception.message}")
         null
     } catch (exception: LinkageError) {
-        println("Failed to load WebM folder emoji decoder: ${exception.message}")
+        println("Failed to load animation decoder: ${exception.message}")
         null
     } finally {
         if (playerId != 0L) {
@@ -91,8 +107,86 @@ private suspend fun decodeWebmAnimationBlocking(
     }
 }
 
+private fun decodeWithMediaMetadataRetriever(
+    bytes: ByteArray,
+    widthPx: Int,
+    heightPx: Int
+): WebmAnimation? {
+    if (bytes.isEmpty()) return null
+
+    val context = AndroidAppContext.context
+    val file = runCatching {
+        File.createTempFile("animation", ".bin", context.cacheDir)
+    }.getOrNull() ?: return null
+
+    val retriever = MediaMetadataRetriever()
+
+    return try {
+        file.writeBytes(bytes)
+        retriever.setDataSource(file.absolutePath)
+
+        val durationMs = retriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_DURATION
+        )?.toLongOrNull() ?: 0L
+
+        val frameRate = retriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE
+        )?.toFloatOrNull()
+            ?.takeIf { it.isFinite() && it > 0f }
+            ?: DefaultFrameRate
+
+        val frameCount = if (durationMs > 0L) {
+            (durationMs * frameRate / 1000f)
+                .toInt()
+                .coerceIn(1, MaxAnimationFrames)
+        } else {
+            1
+        }
+
+        val frames = ArrayList<ImageBitmap>(frameCount)
+
+        for (index in 0 until frameCount) {
+            val timeUs = if (durationMs > 0L) {
+                index * durationMs * 1000L / frameCount
+            } else {
+                0L
+            }
+
+            val frame = retriever.getFrameAtTime(
+                timeUs,
+                MediaMetadataRetriever.OPTION_CLOSEST
+            ) ?: continue
+
+            frames += Bitmap.createScaledBitmap(
+                frame,
+                widthPx,
+                heightPx,
+                true
+            ).asImageBitmap()
+        }
+
+        if (frames.isEmpty()) {
+            null
+        } else {
+            WebmAnimation(
+                frames = frames,
+                frameRate = frameRate,
+                width = widthPx,
+                height = heightPx
+            )
+        }
+    } catch (exception: Exception) {
+        println("Failed to extract animation frames: ${exception.message}")
+        null
+    } finally {
+        runCatching { retriever.release() }
+        runCatching { file.delete() }
+    }
+}
+
 private fun WebMFrame.toImageBitmap(
-    sizePx: Int,
+    widthPx: Int,
+    heightPx: Int,
     matrix: FloatArray
 ): ImageBitmap {
     val sourceWidth = this.width
@@ -103,14 +197,14 @@ private fun WebMFrame.toImageBitmap(
     val alphaPlane: ByteBuffer? = this.aPlane
     val uvWidth = (sourceWidth + 1) / 2
     val uvHeight = (sourceHeight + 1) / 2
-    val pixels = IntArray(sizePx * sizePx)
+    val pixels = IntArray(widthPx * heightPx)
 
-    for (y in 0 until sizePx) {
-        val sourceY = (y * sourceHeight / sizePx).coerceIn(0, sourceHeight - 1)
+    for (y in 0 until heightPx) {
+        val sourceY = (y * sourceHeight / heightPx).coerceIn(0, sourceHeight - 1)
         val chromaY = (sourceY / 2).coerceIn(0, uvHeight - 1)
 
-        for (x in 0 until sizePx) {
-            val sourceX = (x * sourceWidth / sizePx).coerceIn(0, sourceWidth - 1)
+        for (x in 0 until widthPx) {
+            val sourceX = (x * sourceWidth / widthPx).coerceIn(0, sourceWidth - 1)
             val chromaX = (sourceX / 2).coerceIn(0, uvWidth - 1)
             val lumaIndex = sourceY * sourceWidth + sourceX
             val chromaIndex = chromaY * uvWidth + chromaX
@@ -140,7 +234,7 @@ private fun WebMFrame.toImageBitmap(
                     matrix[14]
             ).coerceIn(0f, 1f)
 
-            pixels[y * sizePx + x] =
+            pixels[y * widthPx + x] =
                 (alpha shl 24) or
                     ((red * 255f).toInt() shl 16) or
                     ((green * 255f).toInt() shl 8) or
@@ -148,8 +242,8 @@ private fun WebMFrame.toImageBitmap(
         }
     }
 
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    bitmap.setPixels(pixels, 0, sizePx, 0, 0, sizePx, sizePx)
+    val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+    bitmap.setPixels(pixels, 0, widthPx, 0, 0, widthPx, heightPx)
     return bitmap.asImageBitmap()
 }
 

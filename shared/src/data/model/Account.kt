@@ -21,3 +21,13 @@ data class AccountProfile(
     val nickname: String? = null,
     val avatar: Avatar? = null
 )
+
+data class UserProfileDetails(
+    val displayName: String? = null,
+    val avatar: Avatar? = null,
+    val username: String? = null,
+    val phoneNumber: String? = null,
+    val bio: String? = null,
+    val birthdate: String? = null,
+    val status: String? = null
+)

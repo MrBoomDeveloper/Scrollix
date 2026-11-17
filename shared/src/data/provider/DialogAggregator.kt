@@ -38,8 +38,8 @@ object DialogAggregator {
                 compareByDescending<AccountDialogEntry> {
                     if (it.dialog.isPinned) 1 else 0
                 }
-                    .thenByDescending { it.dialog.timestamp }
                     .thenByDescending { it.dialog.order }
+                    .thenByDescending { it.dialog.timestamp }
                     .thenBy { it.dialog.title.lowercase() }
             )
     }

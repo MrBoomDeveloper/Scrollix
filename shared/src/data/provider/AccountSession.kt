@@ -6,6 +6,7 @@ import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import kotlinx.coroutines.flow.StateFlow
 
 interface AccountSession {
@@ -33,6 +34,26 @@ interface AccountSession {
         asPhoto: Boolean
     ): Result<Unit>
     suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray)
+    suspend fun setDialogPinned(
+        providerDialogId: String,
+        isPinned: Boolean,
+        folderId: Int? = null
+    ): Result<Unit>
+    suspend fun loadUserProfile(
+        providerDialogId: String,
+        userId: Long? = null
+    ): Result<UserProfileDetails>
+    suspend fun searchMessages(
+        providerDialogId: String,
+        query: String,
+        limit: Int = 50
+    ): Result<List<ChatMessage>>
+    suspend fun loadCustomEmoji(emojiId: Long): ByteArray?
+    suspend fun editMessage(
+        providerDialogId: String,
+        messageId: Long,
+        text: String
+    ): Result<Unit>
     suspend fun logout()
     suspend fun close()
 }
