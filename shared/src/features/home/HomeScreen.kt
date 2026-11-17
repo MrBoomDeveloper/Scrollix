@@ -106,9 +106,20 @@ fun HomeScreen(
     val entries by ApiManager.dialogs.collectAsState()
     val folders by ApiManager.folders.collectAsState()
 
-    val selectedNativeFolder = folders.firstOrNull {
-        it.key == selectedNativeFolderKey
+    val selectedNativeFolder = remember(
+        selectedNativeFolderKey,
+        folders,
+        isAllShown
+    ) {
+        if(selectedNativeFolderKey == null && !isAllShown) {
+            return@remember folders.firstOrNull()
+        }
+        
+        folders.firstOrNull {
+            it.key == selectedNativeFolderKey
+        }
     }
+    
     val duplicateFolderNames = remember(folders) {
         folders.groupingBy { it.folder.name }
             .eachCount()
@@ -238,13 +249,15 @@ fun HomeScreen(
                         } else Modifier.weight(1f)
                         
                         if(isUsingNativeFolders) {
-                            HomeTab(
-                                modifier = chipModifier,
-                                selected = selectedNativeFolder == null,
-                                label = "All",
-                                icon = home_icon,
-                                onClick = { selectedNativeFolderKey = null }
-                            )
+                            if(isAllShown) {
+                                HomeTab(
+                                    modifier = chipModifier,
+                                    selected = selectedNativeFolder == null,
+                                    label = "All",
+                                    icon = home_icon,
+                                    onClick = { selectedNativeFolderKey = null }
+                                )   
+                            }
 
                             folders.forEach { folder ->
                                 NativeFolderTab(
@@ -468,13 +481,6 @@ private fun NativeFolderTab(
                     )
                 }
             }
-        },
-
-        leadingIcon = {
-            FolderIcon(
-                folder = folder,
-                isSelected = selected
-            )
         }
     )
 }

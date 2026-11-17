@@ -53,8 +53,8 @@ fun MessageBubble(
                 MessageBubbleConnection.NONE -> RoundedCornerShape(32.dp)
                 
                 MessageBubbleConnection.BOTTOM -> RoundedCornerShape(
-                    topStart = 32.dp,
-                    topEnd = 4.dp,
+                    topStart = if(message.isOutgoing) 32.dp else 4.dp,
+                    topEnd = if(message.isOutgoing) 4.dp else 32.dp,
                     bottomEnd = 32.dp,
                     bottomStart = 32.dp
                 )
@@ -62,15 +62,15 @@ fun MessageBubble(
                 MessageBubbleConnection.TOP -> RoundedCornerShape(
                     topStart = 32.dp,
                     topEnd = 32.dp,
-                    bottomEnd = 4.dp,
-                    bottomStart = 32.dp
+                    bottomEnd = if(message.isOutgoing) 4.dp else 32.dp,
+                    bottomStart = if(message.isOutgoing) 32.dp else 4.dp
                 )
                 
                 MessageBubbleConnection.BOTH -> RoundedCornerShape(
-                    topStart = 32.dp,
-                    topEnd = 4.dp,
-                    bottomEnd = 4.dp,
-                    bottomStart = 32.dp
+                    topStart = if(message.isOutgoing) 32.dp else 4.dp,
+                    topEnd = if(message.isOutgoing) 4.dp else 32.dp,
+                    bottomEnd = if(message.isOutgoing) 4.dp else 32.dp,
+                    bottomStart = if(message.isOutgoing) 32.dp else 4.dp
                 )
             },
 
