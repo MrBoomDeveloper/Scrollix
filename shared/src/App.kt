@@ -2,10 +2,15 @@ package com.mrboomdev.scrollix
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkOut
+import androidx.compose.animation.slideIn
+import androidx.compose.animation.slideOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
@@ -158,163 +164,163 @@ fun App() {
             color = MaterialTheme.colorScheme.background
         ) {
             Box(Modifier.fillMaxSize()) {
-            Row {
-                AnimatedVisibility(showNavigation && isExpanded) {
-                    Row {
-                        NavigationRail(
-                            containerColor = MaterialTheme.colorScheme.background,
-                            header = {
-                                Box {
-                                    var expand by remember { mutableStateOf(false) }
-                                    
-                                    IconButton(
-                                        modifier = Modifier.padding(vertical = 6.dp),
-                                        onClick = {
-                                            expand = !expand
-                                        }
-                                    ) {
-                                        Icon(
-                                            tint = MaterialTheme.colorScheme.secondary,
-                                            imageVector = menu_icon,
-                                            contentDescription = null
-                                        )
-                                    }
+                Row {
+                    AnimatedVisibility(showNavigation && isExpanded) {
+                        Row {
+                            NavigationRail(
+                                containerColor = MaterialTheme.colorScheme.background,
+                                header = {
+                                    Box {
+                                        var expand by remember { mutableStateOf(false) }
 
-                                    DropdownMenu(
-                                        expanded = expand,
-                                        onDismissRequest = { expand = false },
-                                        shape = RoundedCornerShape(16.dp)
-                                    ) {
-                                        DropdownMenuItem(
-                                            leadingIcon = {
-                                                Icon(
-                                                    imageVector = settings_icon,
-                                                    contentDescription = null
-                                                )
-                                            },
-
-                                            text = {
-                                                Text(
-                                                    text = "Settings"
-                                                )
-                                            },
-
+                                        IconButton(
+                                            modifier = Modifier.padding(vertical = 6.dp),
                                             onClick = {
-                                                if (backStack.lastOrNull() != Route.Settings) {
-                                                    backStack.add(Route.Settings)
-                                                }
-                                                
-                                                expand = false
+                                                expand = !expand
                                             }
-                                        )
+                                        ) {
+                                            Icon(
+                                                tint = MaterialTheme.colorScheme.secondary,
+                                                imageVector = menu_icon,
+                                                contentDescription = null
+                                            )
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = expand,
+                                            onDismissRequest = { expand = false },
+                                            shape = RoundedCornerShape(16.dp)
+                                        ) {
+                                            DropdownMenuItem(
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = settings_icon,
+                                                        contentDescription = null
+                                                    )
+                                                },
+
+                                                text = {
+                                                    Text(
+                                                        text = "Settings"
+                                                    )
+                                                },
+
+                                                onClick = {
+                                                    if(backStack.lastOrNull() != Route.Settings) {
+                                                        backStack.add(Route.Settings)
+                                                    }
+
+                                                    expand = false
+                                                }
+                                            )
+                                        }
                                     }
                                 }
+                            ) {
+                                tabs.forEach { tab ->
+                                    NavigationRailItem(
+                                        selected = tab.isActive,
+                                        onClick = tab.onClick,
+
+                                        colors = NavigationRailItemDefaults.colors(
+                                            indicatorColor = MaterialTheme.colorScheme.primary,
+                                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary
+                                        ),
+
+                                        icon = {
+                                            Icon(
+                                                imageVector = tab.icon,
+                                                contentDescription = null
+                                            )
+                                        },
+
+                                        label = {
+                                            Text(
+                                                text = tab.title
+                                            )
+                                        }
+                                    )
+                                }
                             }
-                        ) {
-                            tabs.forEach { tab ->
-                                NavigationRailItem(
-                                    selected = tab.isActive,
-                                    onClick = tab.onClick,
 
-                                    colors = NavigationRailItemDefaults.colors(
-                                        indicatorColor = MaterialTheme.colorScheme.primary,
-                                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                                        selectedTextColor = MaterialTheme.colorScheme.primary
-                                    ),
-
-                                    icon = {
-                                        Icon(
-                                            imageVector = tab.icon,
-                                            contentDescription = null
-                                        )
-                                    },
-
-                                    label = {
-                                        Text(
-                                            text = tab.title
-                                        )
-                                    }
-                                )
-                            }
+                            VerticalDivider(
+                                color = MaterialTheme.colorScheme.surfaceContainer
+                            )
                         }
-
-                        VerticalDivider(
-                            color = MaterialTheme.colorScheme.surfaceContainer
-                        )
                     }
-                }
-                
-                Column(Modifier.fillMaxSize()) {
-                    NavDisplay(
-                        modifier = Modifier.weight(1f),
-                        backStack = backStack,
-                        
-                        entryProvider = rememberAppEntryProvider(
+
+                    Column(Modifier.fillMaxSize()) {
+                        NavDisplay(
+                            modifier = Modifier.weight(1f),
                             backStack = backStack,
-                            selectedDialog = selectedDialog,
-                            onSelectDialog = { selectedDialog.value = it }
-                        ),
 
-                        transitionSpec = {
-                            ContentTransform(
-                                fadeIn() + expandIn(),
-                                fadeOut() + shrinkOut()
-                            )
-                        },
+                            entryProvider = rememberAppEntryProvider(
+                                backStack = backStack,
+                                selectedDialog = selectedDialog,
+                                onSelectDialog = { selectedDialog.value = it }
+                            ),
 
-                        popTransitionSpec = {
-                            ContentTransform(
-                                fadeIn() + expandIn(),
-                                fadeOut() + shrinkOut()
-                            )
-                        },
-
-                        predictivePopTransitionSpec = {
-                            ContentTransform(
-                                fadeIn(),
-                                fadeOut()
-                            )
-                        },
-
-                        entryDecorators = listOf(
-                            rememberViewModelStoreNavEntryDecorator(),
-                            rememberSaveableStateHolderNavEntryDecorator()
-                        )
-                    )
-
-                    AnimatedVisibility(showNavigation && !isExpanded) {
-                        ShortNavigationBar(
-                            containerColor = MaterialTheme.colorScheme.background
-                        ) {
-                            tabs.forEach { tab ->
-                                ShortNavigationBarItem(
-                                    selected = tab.isActive,
-                                    onClick = tab.onClick,
-
-                                    colors = ShortNavigationBarItemDefaults.colors(
-                                        selectedIndicatorColor = MaterialTheme.colorScheme.primary,
-                                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                                        selectedTextColor = MaterialTheme.colorScheme.primary
-                                    ),
-
-                                    icon = {
-                                        Icon(
-                                            imageVector = tab.icon,
-                                            contentDescription = null
-                                        )
-                                    },
-
-                                    label = {
-                                        Text(
-                                            text = tab.title
-                                        )
-                                    }
+                            transitionSpec = {
+                                ContentTransform(
+                                    fadeIn() + scaleIn(animationSpec = spring(stiffness = Spring.StiffnessHigh), initialScale = 1.1f) + slideIn(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(it.width, 0) },
+                                    fadeOut() + slideOut(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(-it.width, 0) }
                                 )
+                            },
+
+                            popTransitionSpec = {
+                                ContentTransform(
+                                    fadeIn() + slideIn(spring()) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
+                                    fadeOut() + slideOut(spring()) { IntOffset(it.width, 0) }
+                                )
+                            },
+
+                            predictivePopTransitionSpec = {
+                                ContentTransform(
+                                    fadeIn() + slideIn(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
+                                    fadeOut() + slideOut(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(it.width, 0) }
+                                )
+                            },
+
+                            entryDecorators = listOf(
+                                rememberViewModelStoreNavEntryDecorator(),
+                                rememberSaveableStateHolderNavEntryDecorator()
+                            )
+                        )
+
+                        AnimatedVisibility(showNavigation && !isExpanded) {
+                            ShortNavigationBar(
+                                containerColor = MaterialTheme.colorScheme.background
+                            ) {
+                                tabs.forEach { tab ->
+                                    ShortNavigationBarItem(
+                                        selected = tab.isActive,
+                                        onClick = tab.onClick,
+
+                                        colors = ShortNavigationBarItemDefaults.colors(
+                                            selectedIndicatorColor = MaterialTheme.colorScheme.primary,
+                                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary
+                                        ),
+
+                                        icon = {
+                                            Icon(
+                                                imageVector = tab.icon,
+                                                contentDescription = null
+                                            )
+                                        },
+
+                                        label = {
+                                            Text(
+                                                text = tab.title
+                                            )
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
                 MediaViewerOverlay()
             }
