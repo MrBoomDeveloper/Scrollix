@@ -83,12 +83,13 @@ fun MessageBubble(
 ) {
     val clipboard = LocalClipboardManager.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
+    
     val isMediaOnly = message.replyTo == null && message.text.isBlank() && (
         message.media?.kind == MessageMediaKind.Sticker ||
             message.media?.kind == MessageMediaKind.VideoNote ||
             message.media?.kind == MessageMediaKind.Animation ||
             message.media?.kind == MessageMediaKind.Photo
-    ) || (message.replyTo != null && message.media?.kind == MessageMediaKind.Sticker)
+    ) || (message.replyTo != null && (message.media?.kind == MessageMediaKind.Sticker || message.media?.kind == MessageMediaKind.VideoNote))
 
     BoxWithConstraints(modifier = modifier) {
         val maxBubbleWidth = maxWidth * 0.75f
@@ -240,7 +241,26 @@ fun MessageBubble(
                             }
 
                             if (isMediaOnly && mediaContent != null) {
-                                mediaContent()
+                                Box {
+                                    mediaContent()
+
+                                    if(message.reactions.isEmpty()) {
+                                        MessageFooter(
+                                            message = message,
+                                            onMedia = true,
+                                            isChannel = dialogKind == DialogKind.Channel,
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .then(
+                                                    if (message.reactions.isNotEmpty()) {
+                                                        Modifier.fillMaxWidth()
+                                                    } else {
+                                                        Modifier
+                                                    }
+                                                ).padding(4.dp)
+                                        )
+                                    }
+                                }
                             } else {
                                 if(mediaContent != null && isSenderNameShown) {
                                     Spacer(Modifier.height(4.dp))
@@ -257,23 +277,13 @@ fun MessageBubble(
 
                             if (message.text.isNotBlank()) {
                                 SelectionContainer {
-                                    if (message.customEmojis.isEmpty() || customEmojiData.isEmpty()) {
-                                        Text(
-                                            modifier = Modifier.padding(bottom = 2.dp),
-                                            lineHeight = 20.sp,
-                                            text = buildAnnotatedString {
-                                                appendTextWithLinks(message.text)
-                                            }
-                                        )
-                                    } else {
-                                        CustomEmojiMessageText(
-                                            modifier = Modifier.padding(bottom = 2.dp),
-                                            lineHeight = 20.sp,
-                                            text = message.text,
-                                            emojis = message.customEmojis,
-                                            data = customEmojiData
-                                        )
-                                    }
+                                    CustomEmojiMessageText(
+                                        modifier = Modifier.padding(bottom = 2.dp),
+                                        lineHeight = 20.sp,
+                                        text = message.text,
+                                        emojis = message.customEmojis,
+                                        data = customEmojiData
+                                    )
                                 }
                             }
 
@@ -293,7 +303,7 @@ fun MessageBubble(
                                 )
                             }
                             
-                            if(isMediaOnly) {
+                            if(isMediaOnly && message.reactions.isNotEmpty()) {
                                 MessageFooter(
                                     message = message,
                                     onMedia = true,

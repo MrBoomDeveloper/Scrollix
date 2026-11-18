@@ -51,15 +51,15 @@ internal fun CustomEmojiMessageText(
     val annotated = buildAnnotatedString {
         var index = 0
 
-        for (span in spans) {
-            if (span.start < index) continue
+        for ((start, end, emojiId) in spans) {
+            if (start < index) continue
 
-            appendTextWithLinks(text.substring(index, span.start))
+            appendTextWithLinks(text.substring(index, start))
             appendInlineContent(
-                alternateText = text.substring(span.start, span.end),
-                id = span.emojiId.toString()
+                alternateText = text.substring(start, end),
+                id = emojiId.toString()
             )
-            index = span.end
+            index = end
         }
 
         appendTextWithLinks(text.substring(index))
