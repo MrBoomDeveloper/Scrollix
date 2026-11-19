@@ -42,6 +42,8 @@ internal fun RichMessageContent(
     blocks: List<MessageRichBlock>,
     isOutgoing: Boolean,
     modifier: Modifier = Modifier,
+    onMentionClick: ((String) -> Unit)? = null,
+    onPhoneClick: ((String) -> Unit)? = null,
     media: (@Composable (MessageMedia) -> Unit)? = null
 ) {
     Column(
@@ -50,7 +52,12 @@ internal fun RichMessageContent(
     ) {
         blocks.forEach { block ->
             when (block) {
-                is MessageRichBlock.Text -> RichBlockText(block = block, isOutgoing = isOutgoing)
+                is MessageRichBlock.Text -> RichBlockText(
+                    block = block,
+                    isOutgoing = isOutgoing,
+                    onMentionClick = onMentionClick,
+                    onPhoneClick = onPhoneClick
+                )
 
                 is MessageRichBlock.Media -> Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -80,7 +87,9 @@ internal fun RichMessageContent(
 @Composable
 private fun RichBlockText(
     block: MessageRichBlock.Text,
-    isOutgoing: Boolean
+    isOutgoing: Boolean,
+    onMentionClick: ((String) -> Unit)?,
+    onPhoneClick: ((String) -> Unit)?
 ) {
     val accent = accentColor(isOutgoing)
     val contentColor = if (isOutgoing) {
@@ -89,7 +98,9 @@ private fun RichBlockText(
         MaterialTheme.colorScheme.onSurface
     }
 
-    val annotated = remember(block, accent) { buildRichBlockText(block, accent) }
+    val annotated = remember(block, accent, onMentionClick, onPhoneClick) {
+        buildRichBlockText(block, accent, onMentionClick, onPhoneClick)
+    }
 
     val style = when (block.style) {
         MessageRichTextStyle.Title -> MaterialTheme.typography.titleMedium.copy(
@@ -163,7 +174,9 @@ private fun RichBlockText(
 
 private fun buildRichBlockText(
     block: MessageRichBlock.Text,
-    accent: Color
+    accent: Color,
+    onMentionClick: ((String) -> Unit)?,
+    onPhoneClick: ((String) -> Unit)?
 ): AnnotatedString = buildAnnotatedString {
     val offset = block.bullet?.let { bullet ->
         append(bullet)
@@ -171,7 +184,7 @@ private fun buildRichBlockText(
         length
     } ?: 0
 
-    appendTextWithLinks(block.text)
+    appendTextWithLinks(block.text, onMentionClick, onPhoneClick)
 
     block.spans.forEach { span ->
         val start = (span.start + offset).coerceIn(0, length)

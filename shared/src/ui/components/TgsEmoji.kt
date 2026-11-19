@@ -20,12 +20,13 @@ internal fun TgsFolderEmoji(
     size: Dp,
     color: Color,
     colorFilter: ColorFilter?,
-    contentModifier: Modifier? = null
+    contentModifier: Modifier? = null,
+    showFallback: Boolean = true
 ) {
     val data = emoji.data
 
     if (data == null) {
-        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
         return
     }
 
@@ -36,7 +37,7 @@ internal fun TgsFolderEmoji(
     val composition = compositionResult.value
 
     if (composition == null) {
-        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
         return
     }
 

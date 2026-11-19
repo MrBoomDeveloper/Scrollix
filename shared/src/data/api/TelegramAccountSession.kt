@@ -24,18 +24,25 @@ import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
+import com.mrboomdev.scrollix.data.model.DownloadedFile
+import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageRichTextStyle
 import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.PersonalChannel
+import com.mrboomdev.scrollix.data.model.StickerPack
+import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
 import com.mrboomdev.scrollix.data.model.RichTextSpan
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.MessageHistoryController
+import com.mrboomdev.scrollix.data.provider.MessagePageLoader
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
+import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.data.storage.readFileBytes
@@ -78,8 +85,18 @@ class TelegramAccountSession(
     private val scope = CoroutineScope(
         parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job])
     )
-    private val historyPageLoader = HistoryPageLoader<Message>(idOf = { it.id })
-    private val historyMutex = Mutex()
+    /**
+     * Per-dialog message windows. Every dialog owns its pagination cursor,
+     * so paging one chat cannot disturb another chat's loaded range.
+     */
+    private val histories = MutableStateFlow<Map<String, MessageHistoryController>>(emptyMap())
+
+    private val emptyHistory = MutableStateFlow(
+        MessageHistory(
+            hasMoreOlder = false,
+            isLoadingInitial = false
+        )
+    ).asStateFlow()
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Initializing)
     override val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -96,10 +113,12 @@ class TelegramAccountSession(
     private val _isLoadingDialogs = MutableStateFlow(false)
     override val isLoadingDialogs: StateFlow<Boolean> = _isLoadingDialogs.asStateFlow()
 
-    private val messagesByChat = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
     private val avatarCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
     private val avatarRequests = MutableStateFlow<Set<Int>>(emptySet())
     private val fileCache = MutableStateFlow<Map<Int, ByteArray>>(emptyMap())
+    private val mediaFileNames = MutableStateFlow<Map<Int, String>>(emptyMap())
+    private val _downloads = MutableStateFlow<List<DownloadedFile>>(emptyList())
+    override val downloads: StateFlow<List<DownloadedFile>> = _downloads.asStateFlow()
     private val customEmojiCache = mutableMapOf<Long, Sticker>()
     private val customEmojiCacheMutex = Mutex()
     private var folderEmojiJob: Job? = null
@@ -123,113 +142,67 @@ class TelegramAccountSession(
     private var currentChallenge: AuthChallenge? = null
     private var currentUserId: Long? = null
 
-    override fun messages(providerDialogId: String): StateFlow<List<ChatMessage>> {
-        return messagesByChat
-            .map { it[providerDialogId].orEmpty() }
-            .distinctUntilChanged()
-            .stateIn(
-                scope = scope,
-                started = SharingStarted.Eagerly,
-                initialValue = messagesByChat.value[providerDialogId].orEmpty()
-            )
+    override fun messageHistory(providerDialogId: String): StateFlow<MessageHistory> {
+        return historyFor(providerDialogId)?.state ?: emptyHistory
     }
 
     override suspend fun loadMessages(providerDialogId: String, limit: Int): Result<Unit> {
-        val chatId = providerDialogId.toLongOrNull()
+        val history = historyFor(providerDialogId)
             ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
-        return historyMutex.withLock {
-            loadLatestMessagesLocked(
-                providerDialogId = providerDialogId,
-                chatId = chatId,
-                limit = limit
-            )
-        }
+        return history.loadLatest(limit)
     }
 
     override suspend fun loadOlderMessages(providerDialogId: String, limit: Int): Result<Boolean> {
-        val chatId = providerDialogId.toLongOrNull()
+        val history = historyFor(providerDialogId)
             ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
-        return historyMutex.withLock {
-            try {
-                val existing = messagesByChat.value[providerDialogId].orEmpty()
-
-                if (existing.isEmpty()) {
-                    return@withLock loadLatestMessagesLocked(
-                        providerDialogId = providerDialogId,
-                        chatId = chatId,
-                        limit = limit
-                    ).map { true }
-                }
-
-                val oldestMessageId = existing.minOf { it.messageId }
-                val result = historyPageLoader.load(
-                    fromMessageId = oldestMessageId,
-                    limit = limit,
-                    accept = { message -> message.id < oldestMessageId }
-                ) { fromMessageId, pageLimit ->
-                    fetchChatHistory(
-                        chatId = chatId,
-                        fromMessageId = fromMessageId,
-                        limit = pageLimit
-                    )
-                }
-
-                val olderMessages = result.items.map(::mapMessage)
-
-                if (olderMessages.isNotEmpty()) {
-                    messagesByChat.update { messages ->
-                        messages + (
-                            providerDialogId to mergeMessages(
-                                messages[providerDialogId].orEmpty() + olderMessages
-                            )
-                        )
-                    }
-                }
-
-                Result.success(result.hasMore)
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                Result.failure(exception)
-            }
-        }
+        return history.loadOlder(limit)
     }
 
-    private suspend fun loadLatestMessagesLocked(
+    override suspend fun loadMessagesUntil(
         providerDialogId: String,
-        chatId: Long,
-        limit: Int
-    ): Result<Unit> {
-        return try {
-            val result = historyPageLoader.load(
-                fromMessageId = 0,
-                limit = limit
-            ) { fromMessageId, pageLimit ->
-                fetchChatHistory(
-                    chatId = chatId,
-                    fromMessageId = fromMessageId,
-                    limit = pageLimit
-                )
+        messageId: Long
+    ): Result<Boolean> {
+        val history = historyFor(providerDialogId)
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return history.loadUntilLoaded(messageId)
+    }
+
+    private fun historyFor(providerDialogId: String): MessageHistoryController? {
+        val chatId = providerDialogId.toLongOrNull() ?: return null
+
+        histories.value[providerDialogId]?.let { return it }
+
+        val created = MessageHistoryController(
+            pageLoader = object : MessagePageLoader {
+                override suspend fun load(
+                    fromMessageId: Long,
+                    limit: Int
+                ): Result<List<ChatMessage>> {
+                    return try {
+                        Result.success(
+                            fetchChatHistory(
+                                chatId = chatId,
+                                fromMessageId = fromMessageId,
+                                limit = limit
+                            ).map(::mapMessage)
+                        )
+                    } catch (exception: CancellationException) {
+                        throw exception
+                    } catch (exception: Exception) {
+                        Result.failure(exception)
+                    }
+                }
             }
+        )
 
-            val messages = result.items.map(::mapMessage)
-
-            messagesByChat.update { existing ->
-                existing + (
-                    providerDialogId to mergeMessages(
-                        existing[providerDialogId].orEmpty() + messages
-                    )
-                )
-            }
-
-            Result.success(Unit)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: Exception) {
-            Result.failure(exception)
+        histories.update { existing ->
+            existing + (providerDialogId to (existing[providerDialogId] ?: created))
         }
+
+        return histories.value[providerDialogId]
     }
 
     private suspend fun fetchChatHistory(
@@ -271,6 +244,7 @@ class TelegramAccountSession(
 
                     if (bytes != null && bytes.isNotEmpty()) {
                         fileCache.update { it + (fileId to bytes) }
+                        registerDownload(fileId, bytes.size.toLong())
                         Result.success(bytes)
                     } else {
                         Result.failure(Exception("File is not available"))
@@ -289,7 +263,8 @@ class TelegramAccountSession(
     override suspend fun sendMessage(
         providerDialogId: String,
         text: String,
-        replyToMessageId: Long?
+        replyToMessageId: Long?,
+        customEmojis: List<CustomEmojiSpan>
     ): Result<Unit> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
@@ -313,7 +288,7 @@ class TelegramAccountSession(
                 inputMessageContent = InputMessageText(
                     text = FormattedText(
                         text = trimmed,
-                        entities = emptyArray<TextEntity>()
+                        entities = customEmojiEntities(text, customEmojis)
                     ),
                     linkPreviewOptions = null,
                     clearDraft = true
@@ -519,7 +494,8 @@ class TelegramAccountSession(
     override suspend fun editMessage(
         providerDialogId: String,
         messageId: Long,
-        text: String
+        text: String,
+        customEmojis: List<CustomEmojiSpan>
     ): Result<Unit> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
@@ -536,7 +512,7 @@ class TelegramAccountSession(
                 inputMessageContent = InputMessageText(
                     text = FormattedText(
                         text = trimmed,
-                        entities = emptyArray<TextEntity>()
+                        entities = customEmojiEntities(text, customEmojis)
                     ),
                     linkPreviewOptions = null,
                     clearDraft = false
@@ -662,6 +638,16 @@ class TelegramAccountSession(
             is TdlResult.Failure -> null
         }
 
+        val isSubscribed = resolveCurrentUserId()?.let { meId ->
+            when (val result = client.getChatMember(
+                chatId = chat.id,
+                memberId = MessageSenderUser(meId)
+            )) {
+                is TdlResult.Success -> result.result.status.isSubscribed()
+                is TdlResult.Failure -> null
+            }
+        }
+
         return UserProfileDetails(
             displayName = chat.title,
             avatar = chatAvatar(chat),
@@ -669,7 +655,9 @@ class TelegramAccountSession(
             memberCount = fullInfo?.memberCount?.takeIf { it > 0 },
             description = fullInfo?.description?.ifBlank { null },
             emojiStatusId = emojiStatusId(chat.emojiStatus),
-            members = loadChatMembers(chat.id)
+            members = loadChatMembers(chat.id),
+            isSubscribed = isSubscribed,
+            discussionChatId = fullInfo?.linkedChatId?.takeIf { it != 0L }?.toString()
         )
     }
 
@@ -814,6 +802,111 @@ class TelegramAccountSession(
             .joinToString(" ")
     }
 
+    override suspend fun votePoll(
+        providerDialogId: String,
+        messageId: Long,
+        optionIds: List<String>
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val numericOptionIds = IntArray(optionIds.size) { index ->
+                optionIds[index].toIntOrNull()
+                    ?: return Result.failure(
+                        IllegalArgumentException("Unsupported poll option id")
+                    )
+            }
+
+            when (val result = client.setPollAnswer(chatId, messageId, numericOptionIds)) {
+                is TdlResult.Success -> {
+                    refreshMessage(chatId, messageId)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun setChatSubscribed(
+        providerDialogId: String,
+        subscribed: Boolean
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val result = if (subscribed) client.joinChat(chatId) else client.leaveChat(chatId)
+
+            when (result) {
+                is TdlResult.Success -> {
+                    // Membership lives on the chat, so refresh it for the lists.
+                    refreshChat(chatId)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> {
+                    // A pending join request still means the user subscribed.
+                    if (subscribed && result.message.contains("INVITE_REQUEST_SENT")) {
+                        refreshChat(chatId)
+                        return Result.success(Unit)
+                    }
+
+                    // The join may fail because the user is already there (or
+                    // already gone); trust the actual membership in that case.
+                    val isMember = resolveCurrentUserId()?.let { meId ->
+                        when (val member = client.getChatMember(
+                            chatId = chatId,
+                            memberId = MessageSenderUser(meId)
+                        )) {
+                            is TdlResult.Success -> member.result.status.isSubscribed()
+                            is TdlResult.Failure -> false
+                        }
+                    } ?: false
+
+                    if (isMember == subscribed) {
+                        refreshChat(chatId)
+                        Result.success(Unit)
+                    } else {
+                        Result.failure(Exception(result.message))
+                    }
+                }
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    /** Re-reads a chat and pushes it into the dialog list. */
+    private suspend fun refreshChat(chatId: Long) {
+        when (val chat = client.getChat(chatId)) {
+            is TdlResult.Success -> upsertChat(chat.result)
+            is TdlResult.Failure -> Unit
+        }
+    }
+
+    /** Re-reads a single message and pushes it into the open history window. */
+    private suspend fun refreshMessage(chatId: Long, messageId: Long) {
+        val message = when (val result = client.getMessage(
+            chatId = chatId,
+            messageId = messageId
+        )) {
+            is TdlResult.Success -> mapMessage(result.result)
+            is TdlResult.Failure -> return
+        }
+
+        histories.value[chatId.toString()]?.mutate { cached ->
+            if (cached.messageId == messageId) message else cached
+        }
+    }
+
     override suspend fun loadMessage(
         providerDialogId: String,
         messageId: Long
@@ -864,6 +957,110 @@ class TelegramAccountSession(
 
                 is TdlResult.Failure -> Result.failure(Exception(result.message))
             }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun searchGlobalMessages(
+        query: String,
+        limit: Int
+    ): Result<List<ChatMessage>> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return Result.success(emptyList())
+
+        return try {
+            val pageSize = limit.coerceIn(1, 100)
+            val found = mutableListOf<ChatMessage>()
+            var offset = ""
+
+            // TDLib pages global results; ask for more until the limit is met.
+            while (found.size < pageSize) {
+                val page = when (val result = client.searchMessages(
+                    // null searches every chat, archived ones included.
+                    chatList = null,
+                    query = trimmed,
+                    offset = offset,
+                    limit = pageSize - found.size,
+                    filter = SearchMessagesFilterEmpty(),
+                    minDate = 0,
+                    maxDate = 0
+                )) {
+                    is TdlResult.Success -> result.result
+                    is TdlResult.Failure -> return Result.failure(
+                        Exception(result.message)
+                    )
+                }
+
+                if (page.messages.isEmpty()) break
+
+                found += page.messages
+                    .filterNotNull()
+                    .map(::mapMessage)
+
+                val nextOffset = page.nextOffset
+                if (nextOffset.isEmpty() || nextOffset == offset) break
+                offset = nextOffset
+            }
+
+            // Chats that were never opened still need to be known, so the
+            // search results can show their titles and avatars.
+            found.asSequence()
+                .mapNotNull { message -> message.providerDialogId.toLongOrNull() }
+                .distinct()
+                .filterNot { chatId -> _chats.value.containsKey(chatId) }
+                .forEach { chatId ->
+                    when (val chat = client.getChat(chatId)) {
+                        is TdlResult.Success -> upsertChat(chat.result)
+                        is TdlResult.Failure -> Unit
+                    }
+                }
+
+            Result.success(found)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun searchChats(
+        query: String,
+        limit: Int
+    ): Result<List<Dialog>> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return Result.success(emptyList())
+
+        return try {
+            val chatIds = when (val result = client.searchChatsOnServer(
+                query = trimmed,
+                limit = limit.coerceIn(1, 100)
+            )) {
+                is TdlResult.Success -> result.result.chatIds.toList()
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            // Fetch the chats so they can be shown with their real metadata.
+            chatIds.forEach { chatId ->
+                when (val chat = client.getChat(chatId)) {
+                    is TdlResult.Success -> upsertChat(chat.result)
+                    is TdlResult.Failure -> Unit
+                }
+            }
+
+            if (chatIds.isNotEmpty()) {
+                emitDialogs()
+            }
+
+            val dialogs = chatIds.mapNotNull { chatId ->
+                _dialogs.value.firstOrNull { dialog ->
+                    dialog.providerDialogId == chatId.toString()
+                }
+            }
+
+            Result.success(dialogs)
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
@@ -2219,22 +2416,20 @@ class TelegramAccountSession(
     private fun refreshReactionAvatars() {
         val users = _users.value
 
-        messagesByChat.update { existing ->
-            existing.mapValues { (_, messages) ->
-                messages.map { message ->
-                    if (message.reactions.none { it.reactorIds.isNotEmpty() }) {
-                        message
-                    } else {
-                        message.copy(
-                            reactions = message.reactions.map { reaction ->
-                                reaction.copy(
-                                    reactorAvatars = reaction.reactorIds.mapNotNull { userId ->
-                                        users[userId]?.let(::userAvatar)
-                                    }
-                                )
-                            }
-                        )
-                    }
+        histories.value.values.forEach { history ->
+            history.mutate { message ->
+                if (message.reactions.none { it.reactorIds.isNotEmpty() }) {
+                    message
+                } else {
+                    message.copy(
+                        reactions = message.reactions.map { reaction ->
+                            reaction.copy(
+                                reactorAvatars = reaction.reactorIds.mapNotNull { userId ->
+                                    users[userId]?.let(::userAvatar)
+                                }
+                            )
+                        }
+                    )
                 }
             }
         }
@@ -2243,13 +2438,13 @@ class TelegramAccountSession(
     private fun refreshMessageSenders() {
         val users = _users.value
 
-        messagesByChat.update { existing ->
-            existing.mapValues { (_, messages) ->
-                messages.map { message ->
-                    if (message.isOutgoing) return@map message
+        histories.value.values.forEach { history ->
+            history.mutate { message ->
+                val user = if (message.isOutgoing) null else users[message.senderId]
 
-                    val user = users[message.senderId] ?: return@map message
-
+                if (user == null) {
+                    message
+                } else {
                     message.copy(
                         senderName = userDisplayName(user),
                         senderAvatar = userAvatar(user),
@@ -2265,24 +2460,16 @@ class TelegramAccountSession(
         messageId: Long,
         interactionInfo: MessageInteractionInfo?
     ) {
-        val dialogId = chatId.toString()
-
-        messagesByChat.update { existing ->
-            if (dialogId !in existing) return@update existing
-
-            existing + (
-                dialogId to existing[dialogId].orEmpty().map { message ->
-                    if (message.messageId == messageId) {
-                        message.copy(
-                            reactions = mapReactions(interactionInfo),
-                            viewCount = interactionInfo?.viewCount ?: 0,
-                            shareCount = interactionInfo?.forwardCount ?: 0
-                        )
-                    } else {
-                        message
-                    }
-                }
-            )
+        histories.value[chatId.toString()]?.mutate { message ->
+            if (message.messageId == messageId) {
+                message.copy(
+                    reactions = mapReactions(interactionInfo),
+                    viewCount = interactionInfo?.viewCount ?: 0,
+                    shareCount = interactionInfo?.forwardCount ?: 0
+                )
+            } else {
+                message
+            }
         }
     }
 
@@ -2291,21 +2478,33 @@ class TelegramAccountSession(
         messageId: Long,
         reactions: Array<out MessageReaction>
     ) {
-        val dialogId = chatId.toString()
-
-        messagesByChat.update { existing ->
-            if (dialogId !in existing) return@update existing
-
-            existing + (
-                dialogId to existing[dialogId].orEmpty().map { message ->
-                    if (message.messageId == messageId) {
-                        message.copy(reactions = mapReactions(reactions))
-                    } else {
-                        message
-                    }
-                }
-            )
+        histories.value[chatId.toString()]?.mutate { message ->
+            if (message.messageId == messageId) {
+                message.copy(reactions = mapReactions(reactions))
+            } else {
+                message
+            }
         }
+    }
+
+    /** Returns the signed in user id, asking TDLib if it isn't cached yet. */
+    private suspend fun resolveCurrentUserId(): Long? {
+        currentUserId?.let { return it }
+
+        return when (val result = client.getMe()) {
+            is TdlResult.Success -> result.result.id.also { currentUserId = it }
+            is TdlResult.Failure -> null
+        }
+    }
+
+    private fun ChatMemberStatus.isSubscribed(): Boolean = when (this) {
+        is ChatMemberStatusMember,
+        is ChatMemberStatusCreator,
+        is ChatMemberStatusAdministrator -> true
+
+        is ChatMemberStatusRestricted -> isMember
+
+        else -> false
     }
 
     private fun mapPoll(content: MessageContent): MessagePollInfo? {
@@ -2584,6 +2783,33 @@ class TelegramAccountSession(
             }
 
             else -> null
+        }.also { media ->
+            media?.let(::rememberMediaFileName)
+        }
+    }
+
+    private fun rememberMediaFileName(media: MessageMedia) {
+        val fileId = media.fileId ?: return
+        val name = media.fileName?.takeIf { it.isNotBlank() } ?: return
+
+        mediaFileNames.update { names -> names + (fileId to name) }
+    }
+
+    private fun registerDownload(fileId: Int, size: Long) {
+        val name = mediaFileNames.value[fileId] ?: return
+
+        _downloads.update { current ->
+            (
+                listOf(
+                    DownloadedFile(
+                        accountId = accountId,
+                        fileId = fileId,
+                        fileName = name,
+                        size = size,
+                        downloadedAt = currentTimeMillis()
+                    )
+                ) + current.filterNot { file -> file.fileId == fileId }
+            ).take(200)
         }
     }
 
@@ -2656,6 +2882,8 @@ class TelegramAccountSession(
                                     fileId = sticker.sticker.id,
                                     stickerFileId = sticker.sticker.id,
                                     stickerSetId = sticker.setId,
+                                    stickerId = sticker.id,
+                                    stickerEmoji = sticker.emoji,
                                     size = sticker.sticker.size,
                                     width = sticker.width,
                                     height = sticker.height,
@@ -2697,6 +2925,225 @@ class TelegramAccountSession(
         }
     }
 
+    override suspend fun loadStickerPacks(kind: StickerPackKind): Result<List<StickerPack>> {
+        return try {
+            val type = when (kind) {
+                StickerPackKind.Sticker -> StickerTypeRegular()
+                StickerPackKind.CustomEmoji -> StickerTypeCustomEmoji()
+            }
+
+            when (val response = client.getInstalledStickerSets(stickerType = type)) {
+                is TdlResult.Success -> Result.success(
+                    response.result.sets.map { set ->
+                        StickerPack(
+                            id = set.id,
+                            title = set.title,
+                            isInstalled = true,
+                            thumbnailFileId = set.thumbnail?.file?.id
+                        )
+                    }
+                )
+
+                is TdlResult.Failure -> Result.failure(
+                    IllegalStateException(response.message)
+                )
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadRecentStickers(kind: StickerPackKind): Result<List<MessageMedia>> {
+        return try {
+            when (val response = client.getRecentStickers(isAttached = false)) {
+                is TdlResult.Success -> Result.success(
+                    response.result.stickers.map(::mapSticker)
+                )
+
+                is TdlResult.Failure -> Result.failure(
+                    IllegalStateException(response.message)
+                )
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun removeRecentSticker(sticker: MessageMedia): Result<Unit> {
+        val fileId = sticker.stickerFileId ?: sticker.fileId
+            ?: return Result.failure(IllegalArgumentException("Sticker has no file"))
+
+        return try {
+            when (val response = client.removeRecentSticker(
+                isAttached = false,
+                sticker = InputFileId(fileId)
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(IllegalStateException(response.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun clearRecentStickers(): Result<Unit> {
+        return try {
+            when (val response = client.clearRecentStickers(isAttached = false)) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(IllegalStateException(response.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadSavedAnimations(): Result<List<MessageMedia>> {
+        return try {
+            when (val response = client.getSavedAnimations()) {
+                is TdlResult.Success -> Result.success(
+                    response.result.animations.map(::mapAnimation)
+                )
+
+                is TdlResult.Failure -> Result.failure(
+                    IllegalStateException(response.message)
+                )
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun removeSavedAnimation(animation: MessageMedia): Result<Unit> {
+        val fileId = animation.fileId
+            ?: return Result.failure(IllegalArgumentException("Animation has no file"))
+
+        return try {
+            when (val response = client.removeSavedAnimation(
+                animation = InputFileId(fileId)
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(IllegalStateException(response.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun clearSavedAnimations(): Result<Unit> {
+        return try {
+            val animations = when (val response = client.getSavedAnimations()) {
+                is TdlResult.Success -> response.result.animations.map(::mapAnimation)
+                is TdlResult.Failure -> return Result.failure(
+                    IllegalStateException(response.message)
+                )
+            }
+
+            for (saved in animations) {
+                val fileId = saved.fileId ?: continue
+
+                when (val response = client.removeSavedAnimation(
+                    animation = InputFileId(fileId)
+                )) {
+                    is TdlResult.Success -> Unit
+                    is TdlResult.Failure -> return Result.failure(
+                        IllegalStateException(response.message)
+                    )
+                }
+            }
+
+            Result.success(Unit)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun sendSticker(
+        providerDialogId: String,
+        sticker: MessageMedia
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+        val fileId = sticker.stickerFileId ?: sticker.fileId
+            ?: return Result.failure(IllegalArgumentException("Sticker has no file"))
+
+        return sendContent(
+            chatId = chatId,
+            content = InputMessageSticker(
+                sticker = InputSticker(
+                    sticker = InputFileId(fileId),
+                    thumbnail = null,
+                    width = sticker.width,
+                    height = sticker.height
+                ),
+                emoji = ""
+            )
+        )
+    }
+
+    override suspend fun sendAnimation(
+        providerDialogId: String,
+        animation: MessageMedia
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+        val fileId = animation.fileId
+            ?: return Result.failure(IllegalArgumentException("Animation has no file"))
+
+        return sendContent(
+            chatId = chatId,
+            content = InputMessageAnimation(
+                animation = InputAnimation(
+                    animation = InputFileId(fileId),
+                    thumbnail = null,
+                    duration = animation.durationSeconds,
+                    width = animation.width,
+                    height = animation.height,
+                    addedStickerFileIds = intArrayOf()
+                ),
+                caption = null,
+                showCaptionAboveMedia = false,
+                hasSpoiler = false
+            )
+        )
+    }
+
+    private suspend fun sendContent(
+        chatId: Long,
+        content: InputMessageContent
+    ): Result<Unit> {
+        return try {
+            when (val result = client.sendMessage(
+                chatId = chatId,
+                inputMessageContent = content
+            )) {
+                is TdlResult.Success -> {
+                    upsertMessage(result.result)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun loadCustomEmoji(emojiId: Long): ByteArray? {
         return try {
             val sticker = customEmojiCacheMutex.withLock {
@@ -2725,6 +3172,68 @@ class TelegramAccountSession(
         }
     }
 
+    /** Builds the custom emoji entities for outgoing formatted text. */
+    private fun customEmojiEntities(
+        text: String,
+        customEmojis: List<CustomEmojiSpan>
+    ): Array<TextEntity> {
+        if (customEmojis.isEmpty()) return emptyArray()
+
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return emptyArray()
+
+        val leading = text.indexOf(trimmed).coerceAtLeast(0)
+
+        return customEmojis.mapNotNull { span ->
+            val start = span.start - leading
+            val end = span.end - leading
+
+            if (start < 0 || end > trimmed.length || start >= end) {
+                null
+            } else {
+                TextEntity(
+                    offset = start,
+                    length = end - start,
+                    type = TextEntityTypeCustomEmoji(customEmojiId = span.emojiId)
+                )
+            }
+        }.toTypedArray()
+    }
+
+    private fun mapSticker(sticker: Sticker): MessageMedia {
+        return MessageMedia(
+            kind = MessageMediaKind.Sticker,
+            previewFileId = sticker.thumbnail?.file?.id,
+            fileId = sticker.sticker.id,
+            stickerFileId = sticker.sticker.id,
+            stickerSetId = sticker.setId,
+            stickerId = sticker.id,
+            stickerEmoji = sticker.emoji,
+            size = sticker.sticker.size,
+            width = sticker.width,
+            height = sticker.height,
+            stickerFormat = when (sticker.format) {
+                is StickerFormatTgs -> MessageStickerFormat.Tgs
+                is StickerFormatWebm -> MessageStickerFormat.Webm
+                else -> MessageStickerFormat.Webp
+            }
+        )
+    }
+
+    private fun mapAnimation(animation: Animation): MessageMedia {
+        return MessageMedia(
+            kind = MessageMediaKind.Animation,
+            previewFileId = animation.thumbnail?.file?.id,
+            fileId = animation.animation.id,
+            fileName = animation.fileName.ifBlank { "GIF" },
+            mimeType = animation.mimeType,
+            size = animation.animation.size,
+            width = animation.width,
+            height = animation.height,
+            minithumbnail = animation.minithumbnail?.data
+        )
+    }
+
     private fun Photo.previewSize(): PhotoSize? {
         return sizes
             .filter { it.width in 1..800 }
@@ -2733,95 +3242,45 @@ class TelegramAccountSession(
     }
 
     private fun upsertMessage(message: Message) {
-        val dialogId = message.chatId.toString()
-        val mapped = mapMessage(message)
+        val history = histories.value[message.chatId.toString()] ?: return
 
-        messagesByChat.update { existing ->
-            if (dialogId !in existing) return@update existing
-
-            existing + (
-                dialogId to mergeMessages(existing[dialogId].orEmpty() + mapped)
-            )
-        }
+        history.merge(listOf(mapMessage(message)))
     }
 
     private fun replaceMessage(chatId: Long, oldMessageId: Long, message: Message) {
-        val dialogId = chatId.toString()
-        val mapped = mapMessage(message)
-
-        messagesByChat.update { existing ->
-            if (dialogId !in existing) return@update existing
-
-            existing + (
-                dialogId to mergeMessages(
-                    existing[dialogId].orEmpty().filterNot {
-                        it.messageId == oldMessageId || it.messageId == mapped.messageId
-                    } + mapped
-                )
-            )
-        }
+        histories.value[chatId.toString()]?.replace(oldMessageId, mapMessage(message))
     }
 
     private fun updateMessageContent(chatId: Long, messageId: Long, content: MessageContent) {
-        val dialogId = chatId.toString()
-
-        messagesByChat.update { existing ->
-            if (dialogId !in existing) return@update existing
-
-            existing + (
-                dialogId to existing[dialogId].orEmpty().map { message ->
-                    if (message.messageId == messageId) {
-                        message.copy(
-                            text = messageText(content),
-                            media = mapMedia(content)
-                        )
-                    } else {
-                        message
-                    }
-                }
-            )
+        histories.value[chatId.toString()]?.mutate { message ->
+            if (message.messageId == messageId) {
+                message.copy(
+                    text = messageText(content),
+                    media = mapMedia(content)
+                )
+            } else {
+                message
+            }
         }
     }
 
     private fun removeMessages(chatId: Long, messageIds: LongArray) {
-        val dialogId = chatId.toString()
-        val ids = messageIds.toSet()
-
-        messagesByChat.update { existing ->
-            if (dialogId !in existing) return@update existing
-
-            existing + (
-                dialogId to existing[dialogId].orEmpty().filterNot { it.messageId in ids }
-            )
-        }
-    }
-
-    private fun mergeMessages(messages: List<ChatMessage>): List<ChatMessage> {
-        return messages
-            .associateBy { it.messageId }
-            .values
-            .sortedBy { it.messageId }
+        histories.value[chatId.toString()]?.remove(messageIds.toSet())
     }
 
     private fun handleChatReadOutbox(chatId: Long, lastReadOutboxMessageId: Long) {
         updateChat(chatId) { it.copy(lastReadOutboxMessageId = lastReadOutboxMessageId) }
 
-        val dialogId = chatId.toString()
-
-        messagesByChat.update { chats ->
-            val messages = chats[dialogId] ?: return@update chats
-
-            chats + (dialogId to messages.map { message ->
-                if (
-                    message.isOutgoing &&
-                    !message.isRead &&
-                    message.messageId <= lastReadOutboxMessageId
-                ) {
-                    message.copy(isRead = true)
-                } else {
-                    message
-                }
-            })
+        histories.value[chatId.toString()]?.mutate { message ->
+            if (
+                message.isOutgoing &&
+                !message.isRead &&
+                message.messageId <= lastReadOutboxMessageId
+            ) {
+                message.copy(isRead = true)
+            } else {
+                message
+            }
         }
     }
 
@@ -3335,7 +3794,9 @@ class TelegramAccountSession(
                 it.list is ChatListMain && it.order != 0L
             } ?: return@mapNotNull null
 
-            val user = (entry.type as? ChatTypePrivate)?.let { users[it.userId] }
+            val privateUserId = (entry.type as? ChatTypePrivate)?.userId
+            val isSavedMessages = privateUserId != null && privateUserId == currentUserId
+            val user = privateUserId?.let { users[it] }
             val kind = when (val type = entry.type) {
                 is ChatTypePrivate -> {
                     if (user?.type is UserTypeBot) DialogKind.Bot else DialogKind.Direct
@@ -3383,10 +3844,13 @@ class TelegramAccountSession(
                 providerDialogId = entry.chatId.toString(),
                 identity = identity,
                 kind = kind,
-                title = entry.title,
-                statusText = user?.let(::userStatusText),
-                emojiStatusId = emojiStatusId(entry.emojiStatus)
-                    ?: emojiStatusId(user?.emojiStatus),
+                title = if (isSavedMessages) "Saved Messages" else entry.title,
+                statusText = if (isSavedMessages) null else user?.let(::userStatusText),
+                emojiStatusId = if (isSavedMessages) {
+                    null
+                } else {
+                    emojiStatusId(entry.emojiStatus) ?: emojiStatusId(user?.emojiStatus)
+                },
                 preview = messagePreview(lastMessage),
                 lastMessageMedia = lastMessage?.let { message ->
                     mapMedia(message.content)
@@ -3402,6 +3866,7 @@ class TelegramAccountSession(
                 canSendMessages = entry.permissions.canSendBasicMessages,
                 isPinned = mainPosition.isPinned,
                 isMarkedAsUnread = entry.isMarkedAsUnread,
+                isSavedMessages = isSavedMessages,
                 order = mainPosition.order,
                 folderIds = entry.positions.mapNotNull { position ->
                     (position.list as? ChatListFolder)?.chatFolderId
@@ -3417,13 +3882,17 @@ class TelegramAccountSession(
                     )
                 },
                 wallpaper = entry.background?.let(::toChatWallpaper),
-                avatar = imageBytes?.let { image ->
-                    Avatar(
-                        initials = Avatar.fromName(entry.title).initials,
-                        colorSeed = entry.title.hashCode(),
-                        image = image
-                    )
-                } ?: Avatar.fromName(entry.title)
+                avatar = if (isSavedMessages) {
+                    null
+                } else {
+                    imageBytes?.let { image ->
+                        Avatar(
+                            initials = Avatar.fromName(entry.title).initials,
+                            colorSeed = entry.title.hashCode(),
+                            image = image
+                        )
+                    } ?: Avatar.fromName(entry.title)
+                }
             )
         }.sortedWith(
             compareByDescending<Dialog> {

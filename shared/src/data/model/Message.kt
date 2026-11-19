@@ -43,7 +43,11 @@ data class MessageMedia(
     val waveform: ByteArray? = null,
     val stickerFileId: Int? = null,
     val stickerFormat: MessageStickerFormat = MessageStickerFormat.Webp,
-    val stickerSetId: Long? = null
+    val stickerSetId: Long? = null,
+    /** The TDLib sticker id, which is also the custom emoji entity id. */
+    val stickerId: Long? = null,
+    /** The emoji a custom emoji sticker stands for. */
+    val stickerEmoji: String? = null
 )
 
 data class MessageReactionInfo(

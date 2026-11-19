@@ -24,12 +24,13 @@ internal fun WebmFolderEmoji(
     size: Dp,
     color: Color,
     colorFilter: ColorFilter?,
-    contentModifier: Modifier? = null
+    contentModifier: Modifier? = null,
+    showFallback: Boolean = true
 ) {
     val data = emoji.data
 
     if (data == null) {
-        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
         return
     }
 
@@ -53,7 +54,7 @@ internal fun WebmFolderEmoji(
     val webm = animation
 
     if (webm == null || webm.frames.isEmpty()) {
-        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+        StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
         return
     }
 

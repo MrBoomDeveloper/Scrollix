@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -58,6 +60,9 @@ fun ChatVideoPreview(
     }
     var videoBytes by remember(media.fileId, session, isRound) {
         mutableStateOf<ByteArray?>(null)
+    }
+    var isLoading by remember(media.fileId, session, isRound) {
+        mutableStateOf(isRound)
     }
     val roundSizePx = with(LocalDensity.current) {
         RoundVideoNoteSize.roundToPx()
@@ -107,6 +112,8 @@ fun ChatVideoPreview(
                 }
             }
         }
+
+        isLoading = false
     }
 
     val aspectRatio = if (media.width > 0 && media.height > 0) {
@@ -214,14 +221,32 @@ fun ChatVideoPreview(
             bitmap != null -> Image(
                 bitmap = bitmap,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (isRound && isLoading) {
+                            Modifier.blur(12.dp)
+                        } else {
+                            Modifier
+                        }
+                    ),
                 contentScale = ContentScale.Crop
             )
+
+            isRound && isLoading -> Unit
 
             else -> Text(
                 text = "Video",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.secondary
+            )
+        }
+
+        // The poster stays visible underneath while the round video is being
+        // downloaded and decoded.
+        if (isRound && webm == null && isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp)
             )
         }
 

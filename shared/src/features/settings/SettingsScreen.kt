@@ -1,13 +1,24 @@
 package com.mrboomdev.scrollix.features.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -16,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -26,11 +38,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.ui.components.EmojiCatalog
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import kotlinx.coroutines.Dispatchers
@@ -252,6 +268,70 @@ private fun SettingsCategoryContent(
                         AppSettingsStore.update { it.copy(useNativeFolders = value) }
                     }
                 )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+                SettingsSwitch(
+                    title = "Recent emoji and stickers",
+                    description = "Show recently used emoji and stickers at the top of the picker.",
+                    checked = settings.showRecentStickersAndEmojis,
+                    onCheckedChange = { value ->
+                        AppSettingsStore.update {
+                            it.copy(showRecentStickersAndEmojis = value)
+                        }
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+                SettingsSwitch(
+                    title = "System emoji",
+                    description = "Show the standard emoji categories in the picker.",
+                    checked = settings.showSystemEmojis,
+                    onCheckedChange = { value ->
+                        AppSettingsStore.update { it.copy(showSystemEmojis = value) }
+                    }
+                )
+
+                var emojiEditorOpen by remember { mutableStateOf(false) }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { emojiEditorOpen = true },
+                        enabled = settings.showSystemEmojis
+                    ) {
+                        Text("Choose emoji")
+                    }
+
+                    if (settings.disabledEmojis.isNotEmpty()) {
+                        Button(
+                            onClick = {
+                                AppSettingsStore.update { it.copy(disabledEmojis = emptySet()) }
+                            },
+                            enabled = settings.showSystemEmojis
+                        ) {
+                            Text("Enable all")
+                        }
+                    }
+                }
+
+                if (emojiEditorOpen) {
+                    SystemEmojiDialog(
+                        disabled = settings.disabledEmojis,
+                        onToggle = { emoji ->
+                            AppSettingsStore.update { current ->
+                                val disabled = if (emoji in current.disabledEmojis) {
+                                    current.disabledEmojis - emoji
+                                } else {
+                                    current.disabledEmojis + emoji
+                                }
+
+                                current.copy(disabledEmojis = disabled)
+                            }
+                        },
+                        onDismiss = { emojiEditorOpen = false }
+                    )
+                }
             }
 
             SettingsCategory.Accounts -> {
@@ -280,6 +360,75 @@ private fun SettingsCategoryContent(
             }
         }
     }
+}
+
+@Composable
+private fun SystemEmojiDialog(
+    disabled: Set<String>,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("System emoji") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Tap an emoji to hide it from the picker.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                LazyVerticalGrid(
+                    modifier = Modifier.height(360.dp),
+                    columns = GridCells.Adaptive(40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    EmojiCatalog.forEach { category ->
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                modifier = Modifier.padding(top = 6.dp),
+                                text = category.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+
+                        items(category.emojis) { emoji ->
+                            val isDisabled = emoji in disabled
+
+                            Box(
+                                modifier = Modifier
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(
+                                        if (isDisabled) {
+                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                        } else {
+                                            Color.Transparent
+                                        }
+                                    )
+                                    .clickable { onToggle(emoji) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = emoji,
+                                    fontSize = 20.sp,
+                                    modifier = Modifier.alpha(if (isDisabled) 0.3f else 1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
 }
 
 @Composable

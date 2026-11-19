@@ -52,16 +52,23 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.scene.DialogSceneStrategy.Companion.dialog
 import com.mrboomdev.scrollix.data.api.ApiManager
@@ -78,6 +85,9 @@ import com.mrboomdev.scrollix.isWideLayout
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 import com.mrboomdev.scrollix.ui.icons.cake_icon
 import com.mrboomdev.scrollix.ui.icons.call_icon
 import com.mrboomdev.scrollix.ui.icons.campaign_icon
@@ -217,8 +227,12 @@ private fun CommonGroupsSection(
 @Composable
 private fun ProfileScreenActions(
     dialog: Dialog?,
+    isChannel: Boolean,
+    isSubscribed: Boolean,
+    isUpdatingSubscription: Boolean,
     stretch: Boolean,
-    onMessage: () -> Unit
+    onMessage: () -> Unit,
+    onToggleSubscription: () -> Unit
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -226,27 +240,26 @@ private fun ProfileScreenActions(
         val actionModifier = if(stretch) {
             Modifier.weight(1f)
         } else Modifier
-        
-        if(dialog?.kind != DialogKind.Channel) {
-            OutlinedButton(
-                modifier = actionModifier,
-                enabled = dialog?.canSendMessages == true,
-                onClick = onMessage
-            ) {
-                Icon(
-                    modifier = Modifier.size(ButtonDefaults.IconSize),
-                    imageVector = chat_bubble_icon,
-                    contentDescription = null
-                )
-            }
-        } else {
-            Button(
-                onClick = {
 
-                }
+        OutlinedButton(
+            modifier = actionModifier,
+            onClick = onMessage
+        ) {
+            Icon(
+                modifier = Modifier.size(ButtonDefaults.IconSize),
+                imageVector = chat_bubble_icon,
+                contentDescription = null
+            )
+        }
+
+        if(isChannel) {
+            Button(
+                modifier = actionModifier,
+                enabled = !isUpdatingSubscription,
+                onClick = onToggleSubscription
             ) {
                 Text(
-                    "Follow"
+                    if(isSubscribed) "Unfollow" else "Follow"
                 )
             }
         }
@@ -297,6 +310,72 @@ private fun ProfileScreenActions(
     }
 }
 
+private val ProfileUrlPattern = Regex(
+    """(?:https?://|www\.|t\.me/)[^\s]+""",
+    RegexOption.IGNORE_CASE
+)
+
+/** Renders profile text, turning every URL in it into a clickable link. */
+@Composable
+private fun ProfileLinkText(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val uriHandler = LocalUriHandler.current
+    val linkColor = MaterialTheme.colorScheme.primary
+
+    val annotated = remember(text, linkColor) {
+        buildAnnotatedString {
+            var cursor = 0
+
+            for (match in ProfileUrlPattern.findAll(text)) {
+                val url = match.value.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '{', '}')
+
+                if (url.isEmpty()) continue
+
+                if (match.range.first > cursor) {
+                    append(text.substring(cursor, match.range.first))
+                }
+
+                val target = if (url.startsWith("http://", ignoreCase = true) ||
+                    url.startsWith("https://", ignoreCase = true)
+                ) {
+                    url
+                } else {
+                    "https://$url"
+                }
+
+                withLink(
+                    LinkAnnotation.Url(
+                        url = target,
+                        styles = TextLinkStyles(
+                            style = SpanStyle(
+                                color = linkColor,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        ),
+                        linkInteractionListener = { uriHandler.openUri(target) }
+                    )
+                ) {
+                    append(url)
+                }
+
+                cursor = match.range.first + url.length
+            }
+
+            if (cursor < text.length) {
+                append(text.substring(cursor))
+            }
+        }
+    }
+
+    Text(
+        modifier = modifier,
+        text = annotated,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}
+
 @Composable
 private fun ProfileScreenInfo(
     profile: UserProfileDetails?,
@@ -308,18 +387,16 @@ private fun ProfileScreenInfo(
             LocalTextStyle provides MaterialTheme.typography.bodyMedium
         ) {
             profile?.bio?.takeIf { it.isNotBlank() }?.let { bio ->
-                Text(
-                    modifier = Modifier.padding(top = 4.dp),
+                ProfileLinkText(
                     text = bio,
-                    color = MaterialTheme.colorScheme.onSurface
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
 
             profile?.description?.takeIf { it.isNotBlank() }?.let { description ->
-                Text(
-                    modifier = Modifier.padding(top = 4.dp),
+                ProfileLinkText(
                     text = description,
-                    color = MaterialTheme.colorScheme.onSurface
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
 
@@ -423,7 +500,7 @@ fun ProfileScreen(
     providerDialogId: String,
     userId: Long? = null,
     onOpenChannelProfile: (String) -> Unit = {},
-    onMessage: () -> Unit = {},
+    onMessage: (String) -> Unit = {},
     onBack: () -> Unit
 ) {
     val isWide = isWideLayout()
@@ -436,6 +513,16 @@ fun ProfileScreen(
     var details by remember(accountId, providerDialogId, userId) {
         mutableStateOf<UserProfileDetails?>(null)
     }
+    val scope = rememberCoroutineScope()
+    var subscriptionOverride by remember(accountId, providerDialogId) {
+        mutableStateOf<Boolean?>(null)
+    }
+    var isUpdatingSubscription by remember(accountId, providerDialogId) {
+        mutableStateOf(false)
+    }
+    var actionError by remember(accountId, providerDialogId) {
+        mutableStateOf<String?>(null)
+    }
 
     LaunchedEffect(accountId, providerDialogId, userId) {
         details = ApiManager.loadUserProfile(
@@ -443,6 +530,65 @@ fun ProfileScreen(
             providerDialogId = providerDialogId,
             userId = userId
         ).getOrNull()
+    }
+
+    val isSubscribed = subscriptionOverride ?: details?.isSubscribed == true
+
+    fun toggleSubscription() {
+        val currentSession = session
+
+        if (currentSession == null) {
+            actionError = "Account session is not available"
+            return
+        }
+
+        val subscribe = !isSubscribed
+        val previous = isSubscribed
+
+        // Flip the label right away and revert it if the request fails.
+        subscriptionOverride = subscribe
+        details = details?.copy(isSubscribed = subscribe)
+
+        fun revert(message: String?) {
+            subscriptionOverride = previous
+            details = details?.copy(isSubscribed = previous)
+
+            if (message != null) {
+                actionError = message
+            }
+        }
+
+        scope.launch {
+            isUpdatingSubscription = true
+            actionError = null
+
+            try {
+                val result = withTimeoutOrNull(15_000.milliseconds) {
+                    currentSession.setChatSubscribed(providerDialogId, subscribe)
+                }
+
+                when {
+                    result == null -> revert("The server took too long to respond")
+
+                    result.isSuccess -> {
+                        // Re-read the membership from the server so reopening
+                        // the profile keeps showing the updated state.
+                        details = ApiManager.loadUserProfile(
+                            accountId = accountId,
+                            providerDialogId = providerDialogId,
+                            userId = userId
+                        ).getOrNull() ?: details
+                    }
+
+                    else -> revert(
+                        result.exceptionOrNull()?.message
+                            ?: "Failed to update subscription"
+                    )
+                }
+            } finally {
+                isUpdatingSubscription = false
+            }
+        }
     }
 
     Column(
@@ -476,6 +622,7 @@ fun ProfileScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
         val dialog = entry?.dialog
+        val isChannel = (details?.kind ?: dialog?.kind) == DialogKind.Channel
         val profile = details
 
         if (entry == null && profile == null) {
@@ -521,8 +668,14 @@ fun ProfileScreen(
                     AnimatedVisibility(isWide) {
                         ProfileScreenActions(
                             dialog = dialog,
+                            isChannel = isChannel,
+                            isSubscribed = isSubscribed,
+                            isUpdatingSubscription = isUpdatingSubscription,
                             stretch = false,
-                            onMessage = onMessage
+                            onMessage = {
+                                onMessage(details?.discussionChatId ?: providerDialogId)
+                            },
+                            onToggleSubscription = ::toggleSubscription
                         )
                     }
 
@@ -572,8 +725,14 @@ fun ProfileScreen(
             AnimatedVisibility(!isWide) {
                 ProfileScreenActions(
                     dialog = dialog,
+                    isChannel = isChannel,
+                    isSubscribed = isSubscribed,
+                    isUpdatingSubscription = isUpdatingSubscription,
                     stretch = true,
-                    onMessage = onMessage
+                    onMessage = {
+                        onMessage(details?.discussionChatId ?: providerDialogId)
+                    },
+                    onToggleSubscription = ::toggleSubscription
                 )
             }
             
@@ -581,6 +740,15 @@ fun ProfileScreen(
                 profile = profile,
                 fallbackStatus = dialog?.statusText
             )
+
+            actionError?.let { message ->
+                Text(
+                    modifier = Modifier.padding(top = 8.dp),
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
             AnimatedVisibility(!isWide) {
                 profile?.personalChannel?.let { channel ->

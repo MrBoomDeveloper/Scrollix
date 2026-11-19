@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -59,6 +61,7 @@ internal fun StickerSetDialog(
     var isUpdating by remember(setId) { mutableStateOf(false) }
     var error by remember(setId) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(setId) {
         isLoading = true
@@ -97,12 +100,28 @@ internal fun StickerSetDialog(
                         )
 
                         val count = info?.stickers?.size ?: 0
+                        val shortName = info?.name?.takeIf { it.isNotBlank() }
 
                         if (count > 0) {
                             Text(
                                 text = "$count stickers",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+
+                        // TDLib doesn't expose the pack's creator, so the pack's
+                        // public handle is the nickname linking to its page.
+                        if (shortName != null) {
+                            Text(
+                                modifier = Modifier.clickable {
+                                    uriHandler.openUri("https://t.me/addstickers/$shortName")
+                                },
+                                text = "@$shortName",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

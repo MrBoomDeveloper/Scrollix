@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -85,10 +86,32 @@ fun MessageBubble(
     onDelete: (() -> Unit)? = null,
     onPin: (() -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
-    onMentionClick: ((String) -> Unit)? = null
+    onMentionClick: ((String) -> Unit)? = null,
+    onReplyClick: ((Long) -> Unit)? = null
 ) {
     val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
+
+    // Entering selection mode closes whatever menu was already open; the menu
+    // itself cannot be opened again until the selection is cleared.
+    LaunchedEffect(isSelectionMode) {
+        if (isSelectionMode) {
+            menuExpanded = false
+        }
+    }
+
+    val onPhoneClick: (String) -> Unit = { raw ->
+        val number = raw.filter { character -> character.isDigit() || character == '+' }
+
+        // Desktop systems may have no dialer registered for tel: links,
+        // in that case at least make the number easy to copy.
+        runCatching {
+            uriHandler.openUri("tel:$number")
+        }.onFailure {
+            clipboard.setText(AnnotatedString(number))
+        }
+    }
     
     val isMediaOnly = message.replyTo == null && message.text.isBlank() && (
         message.media?.kind == MessageMediaKind.Sticker ||
@@ -149,7 +172,11 @@ fun MessageBubble(
                                 }
                             }
                         )
-                        .onSecondaryClick { menuExpanded = true },
+                        .onSecondaryClick {
+                            if (!isSelectionMode) {
+                                menuExpanded = true
+                            }
+                        },
 
                     shape = when (connection) {
                         MessageBubbleConnection.NONE -> RoundedCornerShape(cornerRadius)
@@ -201,7 +228,10 @@ fun MessageBubble(
                                                 .background(MaterialTheme.colorScheme.primary),
                                             reply = data,
                                             thumbnail = replyThumbnail,
-                                            isOutgoing = true
+                                            isOutgoing = true,
+                                            onClick = onReplyClick?.let { click ->
+                                                { click(data.messageId) }
+                                            }
                                         )
                                     }
                                 }
@@ -260,7 +290,10 @@ fun MessageBubble(
                                             .padding(bottom = 4.dp),
                                         reply = data,
                                         thumbnail = replyThumbnail,
-                                        isOutgoing = message.isOutgoing
+                                        isOutgoing = message.isOutgoing,
+                                        onClick = onReplyClick?.let { click ->
+                                            { click(data.messageId) }
+                                        }
                                     )
                                 }
                             }
@@ -308,6 +341,8 @@ fun MessageBubble(
                                         modifier = Modifier.padding(bottom = 2.dp),
                                         blocks = message.richBlocks,
                                         isOutgoing = message.isOutgoing,
+                                        onMentionClick = onMentionClick,
+                                        onPhoneClick = onPhoneClick,
                                         media = richMedia
                                     )
                                 }
@@ -320,6 +355,7 @@ fun MessageBubble(
                                         emojis = message.customEmojis,
                                         data = customEmojiData,
                                         onMentionClick = onMentionClick,
+                                        onPhoneClick = onPhoneClick,
                                         trailingContent = if (isFooterInline) {
                                             {
                                                 MessageStatusRow(
@@ -388,13 +424,31 @@ fun MessageBubble(
                                                 .background(MaterialTheme.colorScheme.surfaceContainer),
                                             reply = data,
                                             thumbnail = replyThumbnail,
-                                            isOutgoing = false
+                                            isOutgoing = false,
+                                            onClick = onReplyClick?.let { click ->
+                                                { click(data.messageId) }
+                                            }
                                         )
                                     }
                                 }
                             }
                         }
                     }
+                }
+
+                // While selecting messages, the bubble is covered by this
+                // transparent layer: taps and long presses toggle the
+                // selection, and embeds (stickers, polls, photos, files,
+                // links) no longer react to input.
+                if (isSelectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .combinedClickable(
+                                onClick = { onToggleSelection?.invoke() },
+                                onLongClick = { onToggleSelection?.invoke() }
+                            )
+                    )
                 }
 
                 DropdownMenu(
@@ -487,7 +541,8 @@ private fun ReplyQuote(
     modifier: Modifier = Modifier,
     reply: MessageReply,
     thumbnail: (@Composable () -> Unit)? = null,
-    isOutgoing: Boolean
+    isOutgoing: Boolean,
+    onClick: (() -> Unit)? = null
 ) {
     val accent = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -499,6 +554,13 @@ private fun ReplyQuote(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(accent.copy(alpha = 0.12f))
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
             .height(IntrinsicSize.Min)
     ) {
         Spacer(
@@ -830,57 +892,83 @@ private fun MessageStatusRow(
 }
 
 private val LinkRegex = Regex(
-    """(https?://[^\s]+|www\.[^\s]+)|(?<![\w@])@[A-Za-z][A-Za-z0-9_]{2,31}""",
+    """(https?://[^\s]+|www\.[^\s]+)|(?<![\w@])@[A-Za-z][A-Za-z0-9_]{2,31}|(?<![\w+])\+?\d[\d\s().-]{7,}\d(?!\w)""",
     RegexOption.IGNORE_CASE
 )
 
 internal fun AnnotatedString.Builder.appendTextWithLinks(
     text: String,
-    onMentionClick: ((String) -> Unit)? = null
+    onMentionClick: ((String) -> Unit)? = null,
+    onPhoneClick: ((String) -> Unit)? = null
 ) {
     var index = 0
 
     LinkRegex.findAll(text).forEach { match ->
         val linkText = match.value
         val isMention = linkText.startsWith("@")
+        val isUrl = linkText.startsWith("http", ignoreCase = true) ||
+            linkText.startsWith("www.", ignoreCase = true)
+        val isPhone = !isMention && !isUrl
 
-        // Mentions are only rendered as links when someone can react to them.
+        // Mentions and phone numbers are only rendered as links when someone
+        // can react to them.
         if (isMention && onMentionClick == null) return@forEach
+        if (isPhone && onPhoneClick == null) return@forEach
 
         if (match.range.first > index) {
             append(text.substring(index, match.range.first))
         }
 
-        if (isMention) {
-            val username = linkText.removePrefix("@")
+        val styles = TextLinkStyles(
+            style = SpanStyle(textDecoration = TextDecoration.Underline)
+        )
 
-            withLink(
-                LinkAnnotation.Clickable(
-                    tag = "mention:$username",
-                    styles = TextLinkStyles(
-                        style = SpanStyle(textDecoration = TextDecoration.Underline)
-                    ),
-                    linkInteractionListener = { onMentionClick?.invoke(username) }
-                )
-            ) {
-                append(linkText)
-            }
-        } else {
-            val url = if (linkText.startsWith("http", ignoreCase = true)) {
-                linkText
-            } else {
-                "https://$linkText"
-            }
+        when {
+            isMention -> {
+                val username = linkText.removePrefix("@")
 
-            withLink(
-                LinkAnnotation.Url(
-                    url = url,
-                    styles = TextLinkStyles(
-                        style = SpanStyle(textDecoration = TextDecoration.Underline)
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "mention:$username",
+                        styles = styles,
+                        linkInteractionListener = { onMentionClick?.invoke(username) }
                     )
-                )
-            ) {
-                append(linkText)
+                ) {
+                    append(linkText)
+                }
+            }
+
+            isUrl -> {
+                val url = if (linkText.startsWith("http", ignoreCase = true)) {
+                    linkText
+                } else {
+                    "https://$linkText"
+                }
+
+                withLink(
+                    LinkAnnotation.Url(
+                        url = url,
+                        styles = styles
+                    )
+                ) {
+                    append(linkText)
+                }
+            }
+
+            else -> {
+                val phone = linkText.filter { character ->
+                    character.isDigit() || character == '+'
+                }
+
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "phone:$phone",
+                        styles = styles,
+                        linkInteractionListener = { onPhoneClick?.invoke(linkText) }
+                    )
+                ) {
+                    append(linkText)
+                }
             }
         }
 

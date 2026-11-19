@@ -17,6 +17,19 @@ fun isWideLayout(): Boolean {
     )
 }
 
+/**
+ * @param condition Return true to not remove an item
+ */
+fun <T> MutableIterable<T>.clearExcept(condition: (T) -> Boolean) {
+    val iterator = this.iterator()
+    
+    while (iterator.hasNext()) {
+        if (!condition(iterator.next())) {
+            iterator.remove()
+        }
+    }
+}
+
 @Composable
 @Deprecated("Use currentAdaptiveLayoutInfo instead!")
 fun isTwoPaneLayout(): Boolean {

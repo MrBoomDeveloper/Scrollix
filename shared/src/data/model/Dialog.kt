@@ -59,6 +59,7 @@ data class Dialog(
     val canSendMessages: Boolean = true,
     val isPinned: Boolean = false,
     val isMarkedAsUnread: Boolean = false,
+    val isSavedMessages: Boolean = false,
     val order: Long = 0,
     val folderIds: Set<Int> = emptySet(),
     val folderPositions: List<DialogFolderPosition> = emptyList(),

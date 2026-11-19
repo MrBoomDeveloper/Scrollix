@@ -41,7 +41,8 @@ internal fun CustomEmojiMessageText(
     emojis: List<CustomEmojiSpan>,
     data: Map<Long, ByteArray>,
     trailingContent: (@Composable () -> Unit)? = null,
-    onMentionClick: ((String) -> Unit)? = null
+    onMentionClick: ((String) -> Unit)? = null,
+    onPhoneClick: ((String) -> Unit)? = null
 ) {
     val spans = emojis
         .filter { span ->
@@ -52,7 +53,12 @@ internal fun CustomEmojiMessageText(
         }
         .sortedBy { it.start }
 
-    if (spans.isEmpty() && trailingContent == null && onMentionClick == null) {
+    if (
+        spans.isEmpty() &&
+        trailingContent == null &&
+        onMentionClick == null &&
+        onPhoneClick == null
+    ) {
         Text(
             modifier = modifier,
             lineHeight = lineHeight,
@@ -67,14 +73,16 @@ internal fun CustomEmojiMessageText(
 
     val annotated = buildAnnotatedString {
         if (spans.isEmpty()) {
-            append(text)
+            // Most messages have no custom emoji, so this is the path that
+            // decides whether mentions, links and phone numbers are tappable.
+            appendTextWithLinks(text, onMentionClick, onPhoneClick)
         } else {
             var index = 0
 
             for ((start, end, emojiId) in spans) {
                 if (start < index) continue
 
-                appendTextWithLinks(text.substring(index, start), onMentionClick)
+                appendTextWithLinks(text.substring(index, start), onMentionClick, onPhoneClick)
                 appendInlineContent(
                     alternateText = text.substring(start, end),
                     id = emojiId.toString()
@@ -82,7 +90,7 @@ internal fun CustomEmojiMessageText(
                 index = end
             }
 
-            appendTextWithLinks(text.substring(index), onMentionClick)
+            appendTextWithLinks(text.substring(index), onMentionClick, onPhoneClick)
         }
 
         if (trailingContent != null) {

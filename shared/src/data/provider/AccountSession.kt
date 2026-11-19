@@ -4,8 +4,14 @@ import com.mrboomdev.scrollix.data.model.AccountProfile
 import com.mrboomdev.scrollix.data.model.AuthAction
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.DownloadedFile
+import com.mrboomdev.scrollix.data.model.MessageHistory
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.model.StickerPack
+import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import kotlinx.coroutines.flow.StateFlow
@@ -19,19 +25,27 @@ interface AccountSession {
     val dialogs: StateFlow<List<Dialog>>
     val folders: StateFlow<List<DialogFolder>>
     val isLoadingDialogs: StateFlow<Boolean>
+    val downloads: StateFlow<List<DownloadedFile>>
 
-    fun messages(providerDialogId: String): StateFlow<List<ChatMessage>>
+    /**
+     * The message window of a dialog together with its pagination state.
+     * The returned flow is stable for the lifetime of the dialog, so the UI
+     * can remember it and never lose the loaded range on recomposition.
+     */
+    fun messageHistory(providerDialogId: String): StateFlow<MessageHistory>
 
     suspend fun start()
     suspend fun submitAuth(values: Map<String, String>)
     suspend fun performAuthAction(action: AuthAction)
     suspend fun loadMessages(providerDialogId: String, limit: Int = 50): Result<Unit>
     suspend fun loadOlderMessages(providerDialogId: String, limit: Int = 50): Result<Boolean>
+    suspend fun loadMessagesUntil(providerDialogId: String, messageId: Long): Result<Boolean>
     suspend fun loadFile(fileId: Int): Result<ByteArray>
     suspend fun sendMessage(
         providerDialogId: String,
         text: String,
-        replyToMessageId: Long? = null
+        replyToMessageId: Long? = null,
+        customEmojis: List<CustomEmojiSpan> = emptyList()
     ): Result<Unit>
     suspend fun sendFile(
         providerDialogId: String,
@@ -48,11 +62,25 @@ interface AccountSession {
         providerDialogId: String,
         userId: Long? = null
     ): Result<UserProfileDetails>
+    suspend fun setChatSubscribed(providerDialogId: String, subscribed: Boolean): Result<Unit>
+    suspend fun votePoll(
+        providerDialogId: String,
+        messageId: Long,
+        optionIds: List<String>
+    ): Result<Unit>
     suspend fun searchMessages(
         providerDialogId: String,
         query: String,
         limit: Int = 50
     ): Result<List<ChatMessage>>
+    suspend fun searchGlobalMessages(
+        query: String,
+        limit: Int = 50
+    ): Result<List<ChatMessage>>
+    suspend fun searchChats(
+        query: String,
+        limit: Int = 50
+    ): Result<List<Dialog>>
     suspend fun loadMessage(
         providerDialogId: String,
         messageId: Long
@@ -61,10 +89,20 @@ interface AccountSession {
     suspend fun resolveUsername(username: String): Result<Long>
     suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>
     suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit>
+    suspend fun loadStickerPacks(kind: StickerPackKind): Result<List<StickerPack>>
+    suspend fun loadRecentStickers(kind: StickerPackKind): Result<List<MessageMedia>>
+    suspend fun removeRecentSticker(sticker: MessageMedia): Result<Unit>
+    suspend fun clearRecentStickers(): Result<Unit>
+    suspend fun loadSavedAnimations(): Result<List<MessageMedia>>
+    suspend fun removeSavedAnimation(animation: MessageMedia): Result<Unit>
+    suspend fun clearSavedAnimations(): Result<Unit>
+    suspend fun sendSticker(providerDialogId: String, sticker: MessageMedia): Result<Unit>
+    suspend fun sendAnimation(providerDialogId: String, animation: MessageMedia): Result<Unit>
     suspend fun editMessage(
         providerDialogId: String,
         messageId: Long,
-        text: String
+        text: String,
+        customEmojis: List<CustomEmojiSpan> = emptyList()
     ): Result<Unit>
     suspend fun forwardMessages(
         providerDialogId: String,

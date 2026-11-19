@@ -115,10 +115,9 @@ fun App() {
                 title = "Home",
                 onClick = {
                     selectedDialog.value = null
-
-                    if (backStack.lastOrNull() != Route.Home) {
-                        backStack.clear()
-                        backStack.add(Route.Home)
+                    
+                    backStack.clearExcept {
+                        it is Route.Home 
                     }
                 }
             ),
@@ -133,11 +132,13 @@ fun App() {
             ),
 
             AppNavTab(
-                isActive = false,
+                isActive = currentRoute is Route.Search,
                 icon = search_icon,
                 title = "Search",
                 onClick = {
-                    
+                    if (backStack.lastOrNull() != Route.Search) {
+                        backStack.add(Route.Search)
+                    }
                 }
             ),
 
@@ -265,6 +266,13 @@ fun App() {
                             ),
 
                             transitionSpec = {
+                                if(useRail) {
+                                    return@NavDisplay ContentTransform(
+                                        fadeIn(spring(stiffness = Spring.StiffnessHigh)),
+                                        fadeOut(spring(stiffness = Spring.StiffnessHigh))
+                                    ) 
+                                }
+                                
                                 ContentTransform(
                                     fadeIn() + scaleIn(animationSpec = spring(stiffness = Spring.StiffnessHigh), initialScale = 1.1f) + slideIn(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(it.width, 0) },
                                     fadeOut() + slideOut(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(-it.width, 0) }
@@ -272,6 +280,13 @@ fun App() {
                             },
 
                             popTransitionSpec = {
+                                if(useRail) {
+                                    return@NavDisplay ContentTransform(
+                                        fadeIn(spring(stiffness = Spring.StiffnessHigh)),
+                                        fadeOut(spring(stiffness = Spring.StiffnessHigh))
+                                    )
+                                }
+                                
                                 ContentTransform(
                                     fadeIn() + slideIn(spring()) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
                                     fadeOut() + slideOut(spring()) { IntOffset(it.width, 0) }
@@ -279,6 +294,13 @@ fun App() {
                             },
 
                             predictivePopTransitionSpec = {
+                                if(useRail) {
+                                    return@NavDisplay ContentTransform(
+                                        fadeIn(spring(stiffness = Spring.StiffnessHigh)),
+                                        fadeOut(spring(stiffness = Spring.StiffnessHigh))
+                                    )
+                                }
+                                
                                 ContentTransform(
                                     fadeIn() + slideIn(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
                                     fadeOut() + slideOut(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(it.width, 0) }

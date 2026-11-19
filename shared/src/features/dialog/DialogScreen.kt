@@ -1,10 +1,19 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -28,7 +37,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -57,6 +65,7 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,38 +74,47 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.test.microphone_icon
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.ChatWallpaper
+import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
@@ -105,6 +123,7 @@ import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.DialogScrollPositionStore
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.resources.Res
 import com.mrboomdev.scrollix.resources.wallpaper
@@ -113,9 +132,11 @@ import com.mrboomdev.scrollix.ui.components.ChatAnimationPreview
 import com.mrboomdev.scrollix.ui.components.ChatSticker
 import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
 import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
+import com.mrboomdev.scrollix.ui.components.EmojiPicker
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MessageDatePill
 import com.mrboomdev.scrollix.ui.components.MessageBubble
@@ -137,12 +158,99 @@ import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
+
+/**
+ * Keeps decoded wallpapers outside the composition: switching dialogs (or
+ * recreating the dialog screen) can show the previous image immediately
+ * instead of flashing the default wallpaper.
+ */
+private object WallpaperImageCache {
+    private val byDialog = mutableMapOf<String, ImageBitmap>()
+
+    var last: ImageBitmap? = null
+        private set
+
+    fun exact(key: String): ImageBitmap? = byDialog[key]
+
+    fun put(key: String, image: ImageBitmap) {
+        byDialog[key] = image
+        last = image
+    }
+}
+
+@Composable
+private fun PickerPopupAnimation(
+    visibleState: MutableTransitionState<Boolean>,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = fadeIn(tween(160)) + scaleIn(
+            initialScale = 0.94f,
+            animationSpec = tween(160)
+        ),
+        exit = fadeOut(tween(120)) + scaleOut(
+            targetScale = 0.94f,
+            animationSpec = tween(120)
+        )
+    ) {
+        content()
+    }
+}
+
+/**
+ * Shifts or drops custom emoji spans after the draft was edited, so the
+ * entities keep pointing at the text they were inserted with.
+ */
+private fun adjustCustomEmojiSpans(
+    oldText: String,
+    newText: String,
+    spans: List<CustomEmojiSpan>
+): List<CustomEmojiSpan> {
+    if (spans.isEmpty() || oldText == newText) return spans
+
+    var prefix = 0
+    while (
+        prefix < oldText.length &&
+        prefix < newText.length &&
+        oldText[prefix] == newText[prefix]
+    ) {
+        prefix++
+    }
+
+    var suffix = 0
+    while (
+        suffix < oldText.length - prefix &&
+        suffix < newText.length - prefix &&
+        oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]
+    ) {
+        suffix++
+    }
+
+    val removed = oldText.length - prefix - suffix
+    val inserted = newText.length - prefix - suffix
+    val delta = inserted - removed
+    val editEnd = prefix + removed
+
+    return spans.mapNotNull { span ->
+        when {
+            span.end <= prefix -> span
+
+            span.start >= editEnd -> span.copy(
+                start = span.start + delta,
+                end = span.end + delta
+            )
+
+            else -> null
+        }
+    }
+}
 
 private fun wallpaperBrush(wallpaper: ChatWallpaper): Brush {
     val colors = wallpaper.colors.map { color ->
@@ -160,6 +268,7 @@ private fun wallpaperBrush(wallpaper: ChatWallpaper): Brush {
 fun DialogScreen(
     accountId: String,
     providerDialogId: String,
+    initialMessageId: Long? = null,
     onOpenProfile: () -> Unit = {},
     onOpenUserProfile: (Long) -> Unit = {},
     onBack: () -> Unit
@@ -167,13 +276,21 @@ fun DialogScreen(
     val isTwoPaneWindow = isTwoPaneLayout()
     val session = remember(accountId) { ApiManager.session(accountId) }
     val fallbackDialogs = remember { MutableStateFlow<List<Dialog>>(emptyList()) }
-    val fallbackMessages = remember { MutableStateFlow<List<ChatMessage>>(emptyList()) }
+    val fallbackHistory = remember {
+        MutableStateFlow(
+            MessageHistory(
+                hasMoreOlder = false,
+                isLoadingInitial = false
+            )
+        )
+    }
 
     val dialogs by (session?.dialogs ?: fallbackDialogs).collectAsState()
-    val messagesFlow = remember(session, providerDialogId) {
-        session?.messages(providerDialogId) ?: fallbackMessages
+    val historyFlow = remember(session, providerDialogId) {
+        session?.messageHistory(providerDialogId) ?: fallbackHistory
     }
-    val messages by messagesFlow.collectAsState()
+    val history by historyFlow.collectAsState()
+    val messages = history.messages
     val dialog = dialogs.firstOrNull { it.providerDialogId == providerDialogId }
     val settings by AppSettingsStore.state.collectAsState()
     var appWallpaper by remember(settings.wallpaperUpdatedAt) {
@@ -195,63 +312,84 @@ fun DialogScreen(
             null
         }
     }
-    var wallpaperImage by remember(providerDialogId) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
+    // Starts with the last decoded wallpaper, so even a fresh composition for
+    // a new dialog doesn't flash the default one while the image loads.
+    var wallpaperImage by remember { mutableStateOf(WallpaperImageCache.last) }
 
-    LaunchedEffect(dialog?.wallpaper, session) {
-        val wallpaper = dialog?.wallpaper
-        wallpaperImage = null
+    LaunchedEffect(dialog?.providerDialogId, dialog?.wallpaper, session) {
+        val currentDialog = dialog ?: return@LaunchedEffect
+        val wallpaper = currentDialog.wallpaper
 
-        if (wallpaper == null) return@LaunchedEffect
+        if (wallpaper == null) {
+            wallpaperImage = null
+            return@LaunchedEffect
+        }
 
+        val cacheKey = buildString {
+            append(currentDialog.providerDialogId)
+            append(':')
+            append(wallpaper.fileId)
+            append(':')
+            append(wallpaper.thumbnailFileId)
+        }
+
+        WallpaperImageCache.exact(cacheKey)?.let { cached ->
+            wallpaperImage = cached
+            return@LaunchedEffect
+        }
+
+        var image: ImageBitmap? = null
         val thumbnailFileId = wallpaper.thumbnailFileId
 
         if (thumbnailFileId != null) {
             val bytes = session?.loadFile(thumbnailFileId)?.getOrNull()
 
             if (bytes != null) {
-                val image = withContext(Dispatchers.Default) {
+                image = withContext(Dispatchers.Default) {
                     decodeImageBitmap(bytes)
                 }
-
-                if (image != null) wallpaperImage = image
             }
         }
 
         val fileId = wallpaper.fileId
 
-        if (fileId != null && fileId != thumbnailFileId) {
+        if (image == null && fileId != null && fileId != thumbnailFileId) {
             val bytes = session?.loadFile(fileId)?.getOrNull()
 
             if (bytes != null) {
-                val image = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(bytes)
-                }
-
                 // Animated wallpapers (video/TGS) can't be decoded as a bitmap,
                 // in that case the thumbnail stays as the wallpaper.
-                if (image != null) wallpaperImage = image
+                image = withContext(Dispatchers.Default) {
+                    decodeImageBitmap(bytes)
+                }
             }
+        }
+
+        image?.let { decoded ->
+            WallpaperImageCache.put(cacheKey, decoded)
+            wallpaperImage = decoded
         }
     }
 
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
-    val listState = rememberLazyListState()
 
     var input by remember(providerDialogId) { mutableStateOf("") }
+    var inputCustomEmojis by remember(providerDialogId) {
+        mutableStateOf<List<CustomEmojiSpan>>(emptyList())
+    }
+
+    // Drafts reset to an empty string programmatically, which never reaches
+    // onValueChange, so their custom emoji spans are dropped here.
+    LaunchedEffect(input) {
+        if (input.isEmpty() && inputCustomEmojis.isNotEmpty()) {
+            inputCustomEmojis = emptyList()
+        }
+    }
     var error by remember(providerDialogId) { mutableStateOf<String?>(null) }
-    var isLoading by remember(providerDialogId) { mutableStateOf(true) }
     var isSending by remember(providerDialogId) { mutableStateOf(false) }
-    var isLoadingMore by remember(providerDialogId) { mutableStateOf(false) }
-    var canLoadMore by remember(providerDialogId) { mutableStateOf(true) }
-    var initialScrollDone by remember(providerDialogId) { mutableStateOf(false) }
-    var previousLastMessageId by remember(providerDialogId) { mutableStateOf<Long?>(null) }
-    var showNewMessages by remember(providerDialogId) { mutableStateOf(false) }
-    var scrollToLatestRequested by remember(providerDialogId) { mutableStateOf(false) }
-    var isAtBottom by remember(providerDialogId) { mutableStateOf(true) }
     var searchOpen by remember(providerDialogId) { mutableStateOf(false) }
+    var scrollRequest by remember(providerDialogId) { mutableStateOf<ScrollRequest?>(null) }
     var searchQuery = rememberTextFieldState()
     var editingMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
@@ -268,49 +406,92 @@ fun DialogScreen(
     var attemptedReplyIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
     var showMoreMenu by remember(providerDialogId) { mutableStateOf(false) }
     var openedStickerSetId by remember(providerDialogId) { mutableStateOf<Long?>(null) }
+    var showEmojiPicker by remember(providerDialogId) { mutableStateOf(false) }
+    var emojiPickerAnchor by remember { mutableStateOf<Rect?>(null) }
+    var showHoverPicker by remember { mutableStateOf(false) }
+    val emojiButtonInteraction = remember { MutableInteractionSource() }
+    val emojiPickerInteraction = remember { MutableInteractionSource() }
+    val isEmojiButtonHovered by emojiButtonInteraction.collectIsHoveredAsState()
+    val isEmojiPickerHovered by emojiPickerInteraction.collectIsHoveredAsState()
+    val useEmojiPickerPopup = isTwoPaneWindow
 
-    fun scrollToMessage(messageId: Long) {
-        if (searchQuery.text.isNotBlank()) return
+    LaunchedEffect(useEmojiPickerPopup, isEmojiButtonHovered, isEmojiPickerHovered) {
+        if (!useEmojiPickerPopup) {
+            showHoverPicker = false
+            return@LaunchedEffect
+        }
 
-        val index = messages.indexOfFirst { message -> message.messageId == messageId }
-        if (index < 0) return
-
-        scope.launch {
-            listState.animateScrollToItem(index)
+        if (isEmojiButtonHovered || isEmojiPickerHovered) {
+            showHoverPicker = true
+        } else {
+            // Give the pointer time to travel from the button into the popup.
+            delay(200)
+            showHoverPicker = false
         }
     }
 
-    fun scrollToFirstMessage() {
-        if (searchQuery.text.isNotBlank()) return
+    // The unread boundary is captured once per opened dialog. Marking the
+    // messages read must not remove the header while the dialog stays open.
+    var unreadAtOpen by remember(providerDialogId) { mutableStateOf<Int?>(null) }
+    var unreadAnchorMessageId by remember(providerDialogId) {
+        mutableStateOf<Long?>(null)
+    }
+    var unreadAnchorResolved by remember(providerDialogId) {
+        mutableStateOf(false)
+    }
 
-        scope.launch {
-            val currentSession = session ?: return@launch
-
-            // Jump to the top without animations and page the whole history in,
-            // so that the very first message of the chat is reached even when
-            // it hasn't been loaded yet.
-            while (true) {
-                if (messages.isEmpty() || isLoadingMore) return@launch
-
-                listState.scrollToItem(0)
-
-                if (!canLoadMore) break
-
-                val sizeBefore = messages.size
-
-                isLoadingMore = true
-                val hasMore = currentSession.loadOlderMessages(providerDialogId)
-                    .getOrDefault(false)
-                isLoadingMore = false
-
-                canLoadMore = hasMore
-
-                if (!hasMore || messages.size == sizeBefore) break
-            }
-
-            listState.scrollToItem(0)
+    LaunchedEffect(providerDialogId, dialog?.unreadCount) {
+        if (unreadAtOpen == null && dialog != null) {
+            unreadAtOpen = dialog.unreadCount
         }
     }
+
+    LaunchedEffect(providerDialogId, unreadAtOpen, messages.size) {
+        if (unreadAnchorResolved) return@LaunchedEffect
+
+        val unread = unreadAtOpen ?: return@LaunchedEffect
+        if (messages.isEmpty()) return@LaunchedEffect
+
+        unreadAnchorResolved = true
+        if (unread <= 0) return@LaunchedEffect
+
+        // The unread tail starts this many messages before the newest one.
+        val start = (messages.size - unread).coerceIn(0, messages.lastIndex)
+        val anchorIndex = (start until messages.size).firstOrNull { index ->
+            !messages[index].isOutgoing
+        } ?: start
+
+        unreadAnchorMessageId = messages[anchorIndex].messageId
+    }
+
+    val messageListState = rememberDialogMessageListState(
+        providerDialogId = providerDialogId,
+        history = history,
+        initialMessageId = initialMessageId,
+        savedPosition = remember(accountId, providerDialogId) {
+            DialogScrollPositionStore.get(accountId, providerDialogId)
+        },
+        trackPosition = searchQuery.text.isBlank(),
+        loadOlder = {
+            session?.loadOlderMessages(providerDialogId)
+                ?: Result.failure(IllegalStateException("Account session not found"))
+        },
+        loadUntilLoaded = { messageId ->
+            session?.loadMessagesUntil(providerDialogId, messageId)
+                ?: Result.failure(IllegalStateException("Account session not found"))
+        },
+        loadLatest = {
+            session?.loadMessages(providerDialogId)
+                ?: Result.failure(IllegalStateException("Account session not found"))
+        },
+        onPositionChanged = { position ->
+            DialogScrollPositionStore.save(accountId, providerDialogId, position)
+        },
+        onError = { throwable ->
+            error = throwable.message ?: "Failed to load messages"
+        }
+    )
+    val listState = messageListState.listState
 
     fun sendAttachment(picked: PickedFile, asPhoto: Boolean) {
         if (session == null) return
@@ -325,7 +506,7 @@ fun DialogScreen(
                 path = picked.path,
                 asPhoto = asPhoto
             ).onSuccess {
-                scrollToLatestRequested = true
+                scrollRequest = ScrollRequest.Latest
             }.onFailure {
                 error = it.message ?: "Failed to send file"
             }
@@ -378,24 +559,14 @@ fun DialogScreen(
 
     LaunchedEffect(session, providerDialogId) {
         error = null
-        isLoading = true
-        isLoadingMore = false
-        canLoadMore = true
-        initialScrollDone = false
-        previousLastMessageId = null
-        showNewMessages = false
-        scrollToLatestRequested = false
-        isAtBottom = true
 
         if (session == null) {
             error = "Account session not found"
-            isLoading = false
             return@LaunchedEffect
         }
 
         session.loadMessages(providerDialogId)
             .onFailure { error = it.message ?: "Failed to load messages" }
-        isLoading = false
     }
 
     LaunchedEffect(session, providerDialogId) {
@@ -496,58 +667,30 @@ fun DialogScreen(
         }
     }
 
-    LaunchedEffect(providerDialogId, isLoading, messages.isNotEmpty()) {
-        if (isLoading || messages.isEmpty() || initialScrollDone) return@LaunchedEffect
+    // All scrolling intents go through one queue. Waiting for the search
+    // field to be cleared here guarantees that the LazyColumn already shows
+    // the full history again before a jump starts animating.
+    //
+    // The jump runs in the screen scope on purpose: clearing the request below
+    // restarts this effect, and a restart cancels its body — which would stop
+    // the jump animation on its first frame and make the buttons do nothing.
+    LaunchedEffect(scrollRequest, searchQuery.text) {
+        val request = scrollRequest ?: return@LaunchedEffect
         if (searchQuery.text.isNotBlank()) return@LaunchedEffect
 
-        listState.scrollToItem(messages.lastIndex)
-        previousLastMessageId = messages.lastOrNull()?.messageId
-        initialScrollDone = true
-    }
+        scrollRequest = null
 
-    LaunchedEffect(listState, providerDialogId) {
-        snapshotFlow {
-            val info = listState.layoutInfo
-            val lastVisible = info.visibleItemsInfo.lastOrNull()
+        scope.launch {
+            when (request) {
+                is ScrollRequest.Message -> {
+                    if (!messageListState.jumpToMessage(request.messageId)) {
+                        error = "Couldn't load the message"
+                    }
+                }
 
-            lastVisible != null && lastVisible.index >= info.totalItemsCount - 1
-        }.collect { atBottom ->
-            isAtBottom = atBottom
-
-            if (atBottom) {
-                showNewMessages = false
+                ScrollRequest.Latest -> messageListState.jumpToLatest()
+                ScrollRequest.First -> messageListState.jumpToFirstMessage()
             }
-        }
-    }
-
-    LaunchedEffect(lastMessageId, initialScrollDone, scrollToLatestRequested) {
-        if (!initialScrollDone) return@LaunchedEffect
-        if (searchQuery.text.isNotBlank()) return@LaunchedEffect
-
-        val newLastMessageId = lastMessageId ?: return@LaunchedEffect
-
-        if (scrollToLatestRequested) {
-            scrollToLatestRequested = false
-            previousLastMessageId = newLastMessageId
-            showNewMessages = false
-            listState.scrollToItem(messages.lastIndex)
-            return@LaunchedEffect
-        }
-
-        val oldLastMessageId = previousLastMessageId
-            ?: return@LaunchedEffect
-
-        if (oldLastMessageId == newLastMessageId) return@LaunchedEffect
-        previousLastMessageId = newLastMessageId
-
-        val oldLastMessageWasVisible = listState.layoutInfo.visibleItemsInfo
-            .any { it.key == oldLastMessageId }
-
-        if (isAtBottom || oldLastMessageWasVisible) {
-            showNewMessages = false
-            listState.scrollToItem(messages.lastIndex)
-        } else {
-            showNewMessages = true
         }
     }
 
@@ -564,56 +707,6 @@ fun DialogScreen(
         )
     }
 
-    LaunchedEffect(session, providerDialogId, listState, initialScrollDone) {
-        if (session == null || !initialScrollDone) return@LaunchedEffect
-
-        snapshotFlow {
-            listState.firstVisibleItemIndex == 0 &&
-                listState.firstVisibleItemScrollOffset == 0
-        }
-            .distinctUntilChanged()
-            .collect { atTop ->
-                if (!atTop || isLoading || isLoadingMore || !canLoadMore) return@collect
-                if (searchQuery.text.isNotBlank()) return@collect
-                if (listState.layoutInfo.totalItemsCount == 0) return@collect
-
-                var keepLoading = true
-
-                while (keepLoading && !isLoading && canLoadMore) {
-                    val itemCountBefore = listState.layoutInfo.totalItemsCount
-
-                    isLoadingMore = true
-                    val result = session.loadOlderMessages(providerDialogId)
-                    isLoadingMore = false
-
-                    val hasMore = result.getOrNull()
-
-                    if (hasMore == null) {
-                        error = result.exceptionOrNull()?.message
-                            ?: "Failed to load older messages"
-                        break
-                    }
-
-                    canLoadMore = hasMore
-
-                    withFrameNanos { }
-
-                    val info = listState.layoutInfo
-                    val stillAtTop = listState.firstVisibleItemIndex == 0 &&
-                        listState.firstVisibleItemScrollOffset == 0
-                    val viewportFilled = info.visibleItemsInfo.lastOrNull()?.let { item ->
-                        item.offset + item.size >= info.viewportEndOffset
-                    } ?: false
-                    val itemCountChanged = info.totalItemsCount > itemCountBefore
-
-                    keepLoading = hasMore &&
-                        stillAtTop &&
-                        !viewportFilled &&
-                        itemCountChanged
-                }
-            }
-    }
-
     fun send() {
         val text = input.trim()
         if (text.isEmpty() || session == null) return
@@ -626,7 +719,12 @@ fun DialogScreen(
             val editing = editingMessage
 
             if (editing != null) {
-                session.editMessage(providerDialogId, editing.messageId, text)
+                session.editMessage(
+                    providerDialogId = providerDialogId,
+                    messageId = editing.messageId,
+                    text = text,
+                    customEmojis = inputCustomEmojis
+                )
                     .onSuccess {
                         input = ""
                         editingMessage = null
@@ -636,12 +734,13 @@ fun DialogScreen(
                 session.sendMessage(
                     providerDialogId = providerDialogId,
                     text = text,
-                    replyToMessageId = replyingTo?.messageId
+                    replyToMessageId = replyingTo?.messageId,
+                    customEmojis = inputCustomEmojis
                 )
                     .onSuccess {
                         input = ""
                         replyingTo = null
-                        scrollToLatestRequested = true
+                        scrollRequest = ScrollRequest.Latest
                     }
                     .onFailure { error = it.message ?: "Failed to send message" }
             }
@@ -682,10 +781,14 @@ fun DialogScreen(
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AvatarImage(
-                                avatar = target.avatar ?: Avatar.fromName(target.title),
-                                size = 36.dp
-                            )
+                            if (target.isSavedMessages) {
+                                SavedMessagesAvatar(size = 36.dp)
+                            } else {
+                                AvatarImage(
+                                    avatar = target.avatar ?: Avatar.fromName(target.title),
+                                    size = 36.dp
+                                )
+                            }
 
                             Text(
                                 modifier = Modifier
@@ -780,10 +883,14 @@ fun DialogScreen(
                 }
             }
 
-            AvatarImage(
-                avatar = dialog?.avatar ?: Avatar.fromName(dialog?.title ?: "Dialog"),
-                size = 40.dp
-            )
+            if (dialog?.isSavedMessages == true) {
+                SavedMessagesAvatar(size = 40.dp)
+            } else {
+                AvatarImage(
+                    avatar = dialog?.avatar ?: Avatar.fromName(dialog?.title ?: "Dialog"),
+                    size = 40.dp
+                )
+            }
 
             Column(
                 modifier = Modifier
@@ -810,12 +917,24 @@ fun DialogScreen(
                 }
 
                 dialog?.let {
-                    val statusText = it.statusText
+                    if(it.isSavedMessages) {
+                        return@let
+                    }
+                    
+                    var statusText = it.statusText
                     val memberCount = it.memberCount
+                    
+                    if(it.kind == DialogKind.Bot) {
+                        statusText = null
+                    }
 
                     Text(
                         text = statusText ?: when (it.kind) {
-                            DialogKind.Direct -> "Direct message"
+                            DialogKind.Direct -> if (it.isSavedMessages) {
+                                "Saved Messages"
+                            } else {
+                                "Direct message"
+                            }
                             DialogKind.Group -> memberCount?.let { count ->
                                 "${formatCount(count)} ${if (count == 1) "member" else "members"}"
                             } ?: "Group"
@@ -886,7 +1005,7 @@ fun DialogScreen(
                         text = { Text("Scroll to first message") },
                         onClick = {
                             showMoreMenu = false
-                            scrollToFirstMessage()
+                            scrollRequest = ScrollRequest.First
                         }
                     )
                 }
@@ -908,7 +1027,11 @@ fun DialogScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
-                    .clickable { scrollToMessage(pinnedId) }
+                    .clickable {
+                        searchOpen = false
+                        searchQuery.clearText()
+                        scrollRequest = ScrollRequest.Message(pinnedId)
+                    }
                     .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1075,7 +1198,7 @@ fun DialogScreen(
                         .weight(1f)
                 ) {
                     when {
-                        isLoading -> {
+                        history.isLoadingInitial -> {
                             LoadingContent(
                                 modifier = Modifier.align(Alignment.Center),
                                 text = "Loading messages..."
@@ -1090,6 +1213,16 @@ fun DialogScreen(
                             )
                         }
 
+                        // The list is revealed only after it has been scrolled
+                        // to its restored anchor, so it never flashes the wrong
+                        // part of the history while switching dialogs.
+                        !messageListState.isReady -> {
+                            LoadingContent(
+                                modifier = Modifier.align(Alignment.Center),
+                                text = "Restoring position..."
+                            )
+                        }
+
                         else -> {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
@@ -1101,6 +1234,10 @@ fun DialogScreen(
                                     items = visibleMessages,
                                     key = { _, it -> it.messageId }
                                 ) { index, message ->
+                                    if (message.messageId == unreadAnchorMessageId) {
+                                        UnreadMessagesHeader()
+                                    }
+
                                     val previousMessage = if (index > 0) {
                                         visibleMessages[index - 1]
                                     } else {
@@ -1135,7 +1272,51 @@ fun DialogScreen(
                                                     poll = poll,
                                                     isOutgoing = message.isOutgoing,
                                                     session = session,
-                                                    customEmojiData = customEmojiData
+                                                    customEmojiData = customEmojiData,
+                                                    onOptionClick = { option ->
+                                                        val currentSession = session
+
+                                                        if (currentSession != null) {
+                                                            scope.launch {
+                                                                val optionIds = if (poll.allowsMultipleAnswers) {
+                                                                    val chosen = poll.options
+                                                                        .filter { it.isChosen }
+                                                                        .map { it.id }
+
+                                                                    if (option.isChosen) {
+                                                                        chosen - option.id
+                                                                    } else {
+                                                                        chosen + option.id
+                                                                    }
+                                                                } else {
+                                                                    listOf(option.id)
+                                                                }
+
+                                                                currentSession.votePoll(
+                                                                    providerDialogId = providerDialogId,
+                                                                    messageId = message.messageId,
+                                                                    optionIds = optionIds
+                                                                ).onFailure { throwable ->
+                                                                    error = throwable.message ?: "Failed to vote"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    onRetractVote = {
+                                                        val currentSession = session
+
+                                                        if (currentSession != null) {
+                                                            scope.launch {
+                                                                currentSession.votePoll(
+                                                                    providerDialogId = providerDialogId,
+                                                                    messageId = message.messageId,
+                                                                    optionIds = emptyList()
+                                                                ).onFailure { throwable ->
+                                                                    error = throwable.message ?: "Failed to retract vote"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 )
                                             }
                                         }
@@ -1254,7 +1435,7 @@ fun DialogScreen(
                                             ) {
                                                 {
                                                     editingMessage = message
-                                                    input = message.text
+                                                    input = message.text; inputCustomEmojis = message.customEmojis
                                                 }
                                             } else {
                                                 null
@@ -1267,6 +1448,13 @@ fun DialogScreen(
                                                             onOpenUserProfile(targetUserId)
                                                         }
                                                 }
+                                            },
+
+                                            onReplyClick = { replyMessageId ->
+                                                searchOpen = false
+                                                searchQuery.clearText()
+                                                scrollRequest =
+                                                    ScrollRequest.Message(replyMessageId)
                                             },
 
                                             connection = run {
@@ -1298,17 +1486,10 @@ fun DialogScreen(
                     }
 
                     MessageListOverlays(
-                        isLoadingMore = isLoadingMore,
-                        showNewMessages = showNewMessages,
-                        onScrollToLatest = {
-                            showNewMessages = false
-
-                            if (messages.isNotEmpty()) {
-                                scope.launch {
-                                    listState.animateScrollToItem(messages.lastIndex)
-                                }
-                            }
-                        }
+                        isLoadingMore = history.isLoadingOlder,
+                        showNewMessages = messageListState.hasNewMessages,
+                        isAtBottom = messageListState.isAtBottom,
+                        onScrollToLatest = { scrollRequest = ScrollRequest.Latest }
                     )
 
                 }
@@ -1372,6 +1553,96 @@ fun DialogScreen(
                     }
                 }
 
+                val currentSession = session
+                val emojiPickerContent: @Composable (Modifier) -> Unit = { pickerModifier ->
+                    if (currentSession != null) {
+                        EmojiPicker(
+                            modifier = pickerModifier,
+                            session = currentSession,
+                            onEmojiSelected = { emoji -> input += emoji },
+                            onCustomEmojiSelected = { emojiId, fallback ->
+                                val start = input.length
+
+                                input += fallback
+                                inputCustomEmojis = inputCustomEmojis + CustomEmojiSpan(
+                                    start = start,
+                                    end = start + fallback.length,
+                                    emojiId = emojiId
+                                )
+                            },
+                            onStickerSelected = { sticker ->
+                                showEmojiPicker = false
+                                showHoverPicker = false
+
+                                scope.launch {
+                                    currentSession.sendSticker(providerDialogId, sticker)
+                                        .onSuccess {
+                                            scrollRequest = ScrollRequest.Latest
+                                        }
+                                        .onFailure {
+                                            error = it.message ?: "Failed to send the sticker"
+                                        }
+                                }
+                            },
+                            onAnimationSelected = { animation ->
+                                showEmojiPicker = false
+                                showHoverPicker = false
+
+                                scope.launch {
+                                    currentSession.sendAnimation(providerDialogId, animation)
+                                        .onSuccess {
+                                            scrollRequest = ScrollRequest.Latest
+                                        }
+                                        .onFailure {
+                                            error = it.message ?: "Failed to send the GIF"
+                                        }
+                                }
+                            }
+                        )
+                    }
+                }
+
+                if (!useEmojiPickerPopup && showEmojiPicker && currentSession != null) {
+                    emojiPickerContent(Modifier)
+                }
+
+                // On large screens the picker floats above the composer and is
+                // driven by the pointer hovering the emoji button.
+                if (useEmojiPickerPopup && currentSession != null) {
+                    val pickerTransition = remember { MutableTransitionState(false) }
+                    pickerTransition.targetState = showEmojiPicker || showHoverPicker
+
+                    // Keep the popup mounted until the exit animation finishes.
+                    if (pickerTransition.currentState || !pickerTransition.isIdle) {
+                        val density = LocalDensity.current
+                        val pickerWidth = 340.dp
+                        val pickerWidthPx = with(density) { pickerWidth.roundToPx() }
+                        val pickerHeightPx = with(density) { 300.dp.roundToPx() }
+                        val gapPx = with(density) { 8.dp.roundToPx() }
+                        val anchor = emojiPickerAnchor
+
+                        if (anchor != null) {
+                            Popup(
+                                alignment = Alignment.TopStart,
+                                offset = IntOffset(
+                                    x = (anchor.left + anchor.width - pickerWidthPx).roundToInt(),
+                                    y = (anchor.top - pickerHeightPx - gapPx)
+                                        .coerceAtLeast(0f)
+                                        .roundToInt()
+                                ),
+                                properties = PopupProperties(focusable = false),
+                                onDismissRequest = { showHoverPicker = false }
+                            ) {
+                                Box(modifier = Modifier.hoverable(emojiPickerInteraction)) {
+                                    PickerPopupAnimation(pickerTransition) {
+                                        emojiPickerContent(Modifier.width(pickerWidth))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (dialog?.canSendMessages == false) {
                     NotSendableNotice()
                 } else Row(
@@ -1423,7 +1694,15 @@ fun DialogScreen(
                                         }
                                     },
                                 value = input,
-                                onValueChange = { input = it },
+                                onValueChange = { value ->
+                                    inputCustomEmojis = adjustCustomEmojiSpans(
+                                        oldText = input,
+                                        newText = value,
+                                        spans = inputCustomEmojis
+                                    )
+
+                                    input = value
+                                },
                                 enabled = !isSending,
                                 maxLines = 10,
                                 cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
@@ -1447,14 +1726,23 @@ fun DialogScreen(
                             )
 
                             IconButton(
+                                modifier = Modifier
+                                    .onGloballyPositioned { coordinates ->
+                                        emojiPickerAnchor = coordinates.boundsInWindow()
+                                    }
+                                    .hoverable(emojiButtonInteraction),
                                 onClick = {
-
+                                    showEmojiPicker = !showEmojiPicker
                                 }
                             ) {
                                 Icon(
-                                    tint = MaterialTheme.colorScheme.secondary,
+                                    tint = if (showEmojiPicker) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.secondary
+                                    },
                                     imageVector = mood_icon,
-                                    contentDescription = null
+                                    contentDescription = "Emoji and stickers"
                                 )
                             }
 
@@ -1500,9 +1788,33 @@ fun DialogScreen(
 }
 
 @Composable
+private fun UnreadMessagesHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.primary
+        ) {
+            Text(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                text = "Unread messages",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimary
+            )
+        }
+    }
+}
+
+@Composable
 private fun BoxScope.MessageListOverlays(
     isLoadingMore: Boolean,
     showNewMessages: Boolean,
+    isAtBottom: Boolean,
     onScrollToLatest: () -> Unit
 ) {
     AnimatedVisibility(
@@ -1523,16 +1835,37 @@ private fun BoxScope.MessageListOverlays(
         }
     }
 
+    // Floating jump back to the newest message while the list is scrolled up.
     AnimatedVisibility(
-        visible = showNewMessages,
+        visible = showNewMessages || !isAtBottom,
         modifier = Modifier
-            .align(Alignment.BottomCenter)
+            .align(Alignment.BottomEnd)
             .padding(12.dp)
     ) {
-        Button(onClick = onScrollToLatest) {
-            Text("New messages")
+        if (showNewMessages) {
+            Button(onClick = onScrollToLatest) {
+                Text("New messages")
+            }
+        } else {
+            SmallFloatingActionButton(
+                onClick = onScrollToLatest,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
+                Icon(
+                    modifier = Modifier.rotate(-90f),
+                    imageVector = arrow_back_icon,
+                    contentDescription = "Scroll to the latest message"
+                )
+            }
         }
     }
+}
+
+private sealed interface ScrollRequest {
+    data class Message(val messageId: Long) : ScrollRequest
+    data object Latest : ScrollRequest
+    data object First : ScrollRequest
 }
 
 private fun replyFor(
@@ -1829,7 +2162,9 @@ private fun MessagePollCard(
     poll: MessagePollInfo,
     isOutgoing: Boolean,
     session: AccountSession?,
-    customEmojiData: Map<Long, ByteArray>
+    customEmojiData: Map<Long, ByteArray>,
+    onOptionClick: (MessagePollOptionInfo) -> Unit,
+    onRetractVote: () -> Unit
 ) {
     val contentColor = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -1849,6 +2184,9 @@ private fun MessagePollCard(
 
     val hasVotes = poll.totalVoterCount > 0 || poll.options.any { option -> option.isChosen }
     val showResults = poll.canSeeResults && (hasVotes || poll.isClosed)
+    val canVote = !poll.isClosed && session != null
+    val hasChosenOption = poll.options.any { option -> option.isChosen }
+    val canRetractVote = canVote && hasChosenOption && !poll.isQuiz
 
     Column(
         modifier = Modifier
@@ -1886,7 +2224,25 @@ private fun MessagePollCard(
                 session = session,
                 accent = accent,
                 contentColor = contentColor,
-                secondaryColor = secondaryColor
+                secondaryColor = secondaryColor,
+                onClick = if (canVote && !(poll.isQuiz && hasChosenOption)) {
+                    { onOptionClick(option) }
+                } else {
+                    null
+                }
+            )
+        }
+
+        if (canRetractVote) {
+            Text(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onRetractVote)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                text = "Retract vote",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = accent
             )
         }
 
@@ -1919,7 +2275,8 @@ private fun PollOptionRow(
     session: AccountSession?,
     accent: Color,
     contentColor: Color,
-    secondaryColor: Color
+    secondaryColor: Color,
+    onClick: (() -> Unit)? = null
 ) {
     val fraction = (option.votePercentage / 100f).coerceIn(0f, 1f)
     val isHighlighted = option.isChosen || isCorrect
@@ -1929,6 +2286,13 @@ private fun PollOptionRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(accent.copy(alpha = 0.06f))
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (showResults && fraction > 0f) {
                     Modifier.drawBehind {

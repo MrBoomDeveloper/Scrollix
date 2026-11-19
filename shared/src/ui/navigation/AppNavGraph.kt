@@ -30,6 +30,7 @@ import com.mrboomdev.scrollix.features.dialog.DialogScreen
 import com.mrboomdev.scrollix.features.home.HomeScreen
 import com.mrboomdev.scrollix.features.login.LoginScreen
 import com.mrboomdev.scrollix.features.profile.ProfileScreen
+import com.mrboomdev.scrollix.features.search.SearchScreen
 import com.mrboomdev.scrollix.features.settings.SettingsScreen
 import com.mrboomdev.scrollix.isTwoPaneLayout
 import kotlinx.coroutines.launch
@@ -125,6 +126,7 @@ fun rememberAppEntryProvider(
                 DialogScreen(
                     accountId = route.accountId,
                     providerDialogId = route.providerDialogId,
+                    initialMessageId = route.messageId,
                     onOpenProfile = {
                         backStack += Route.Profile(
                             accountId = route.accountId,
@@ -145,6 +147,34 @@ fun rememberAppEntryProvider(
             }
         }
 
+        entry<Route.Search> {
+            SearchScreen(
+                onBack = {
+                    backStack.removeLastOrNull()
+                },
+                onOpenDialog = { accountId, providerDialogId, messageId ->
+                    backStack += Route.Dialog(
+                        accountId = accountId,
+                        providerDialogId = providerDialogId,
+                        messageId = messageId
+                    )
+                },
+                onOpenProfile = { accountId, providerDialogId ->
+                    backStack += Route.Profile(
+                        accountId = accountId,
+                        providerDialogId = providerDialogId
+                    )
+                },
+                onOpenUserProfile = { accountId, providerDialogId, userId ->
+                    backStack += Route.Profile(
+                        accountId = accountId,
+                        providerDialogId = providerDialogId,
+                        userId = userId
+                    )
+                }
+            )
+        }
+
         entry<Route.Settings> {
             SettingsScreen(
                 onOpenAccountsScreen = { backStack += Route.Accounts }
@@ -152,15 +182,31 @@ fun rememberAppEntryProvider(
         }
 
         entry<Route.Profile> { route ->
+            val isTwoPane = isTwoPaneLayout()
+
             ProfileScreen(
                 accountId = route.accountId,
                 providerDialogId = route.providerDialogId,
                 userId = route.userId,
-                onMessage = {
-                    backStack += Route.Dialog(
+                onMessage = { targetDialogId ->
+                    val target = Route.Dialog(
                         accountId = route.accountId,
-                        providerDialogId = route.providerDialogId
+                        providerDialogId = targetDialogId
                     )
+
+                    // The profile is a full screen entry, so it has to be
+                    // dismissed for the chat to become visible.
+                    backStack.removeLastOrNull()
+
+                    if (isTwoPane) {
+                        // On wide layouts the chat lives in the home pane;
+                        // drop whatever covered it (search, profile, ...).
+                        onSelectDialog(target)
+                        backStack.clear()
+                        backStack.add(Route.Home)
+                    } else if (backStack.lastOrNull() != target) {
+                        backStack += target
+                    }
                 },
                 onOpenChannelProfile = { channelId ->
                     backStack += Route.Profile(
@@ -234,10 +280,15 @@ private fun WideDialogsScreen(
                     .fillMaxHeight()
             ) {
                 if (selectedDialog != null) {
-                    key(selectedDialog.accountId, selectedDialog.providerDialogId) {
+                    key(
+                        selectedDialog.accountId,
+                        selectedDialog.providerDialogId,
+                        selectedDialog.messageId
+                    ) {
                         DialogScreen(
                             accountId = selectedDialog.accountId,
                             providerDialogId = selectedDialog.providerDialogId,
+                            initialMessageId = selectedDialog.messageId,
                             onOpenProfile = { onOpenProfile(selectedDialog) },
                             onOpenUserProfile = { userId ->
                                 onOpenUserProfile(selectedDialog, userId)

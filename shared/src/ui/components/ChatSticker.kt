@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -90,6 +93,14 @@ internal fun ChatSticker(
         )
     }
 
+    // Nothing is drawn in place of the sticker while it loads; the sticker
+    // itself fades in once its bytes (or preview) are available.
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (data != null || media.minithumbnail != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "stickerFadeIn"
+    )
+
     Box(
         modifier = Modifier
             .size(width, height)
@@ -106,7 +117,9 @@ internal fun ChatSticker(
             decoded != null -> Image(
                 bitmap = decoded,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(contentAlpha),
                 contentScale = ContentScale.Fit
             )
 
@@ -116,15 +129,12 @@ internal fun ChatSticker(
                     data = animationData,
                     width = width,
                     height = height,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(contentAlpha)
                 ) {
-                    FolderEmojiImage(
-                        emoji = emoji,
-                        animate = false,
-                        size = height,
-                        color = Color.Unspecified,
-                        contentModifier = Modifier.fillMaxSize()
-                    )
+                    // An empty fallback: no emoji placeholder, just the blank
+                    // reserved space until the animation is ready.
                 }
             }
 
@@ -133,7 +143,10 @@ internal fun ChatSticker(
                 animate = true,
                 size = height,
                 color = Color.Unspecified,
-                contentModifier = Modifier.fillMaxSize()
+                contentModifier = Modifier
+                    .fillMaxSize()
+                    .alpha(contentAlpha),
+                showFallback = false
             )
 
             isLoading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))

@@ -78,6 +78,7 @@ import com.mrboomdev.scrollix.ui.components.DialogMediaPreview
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.FolderNameText
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
 import com.mrboomdev.scrollix.ui.icons.check_icon
@@ -534,11 +535,18 @@ private fun DialogItem(
             modifier = Modifier.padding(8.dp)
         ) {
             Box {
-                AvatarImage(
-                    modifier = Modifier.padding(end = 2.dp),
-                    avatar = dialog.avatar ?: Avatar.fromName(dialog.title),
-                    size = 48.dp
-                )
+                if (dialog.isSavedMessages) {
+                    SavedMessagesAvatar(
+                        modifier = Modifier.padding(end = 2.dp),
+                        size = 48.dp
+                    )
+                } else {
+                    AvatarImage(
+                        modifier = Modifier.padding(end = 2.dp),
+                        avatar = dialog.avatar ?: Avatar.fromName(dialog.title),
+                        size = 48.dp
+                    )
+                }
 
                 if (dialog.statusText == "online" && dialog.kind != DialogKind.Bot) {
                     Box(
@@ -629,7 +637,7 @@ private fun DialogItem(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (dialog.lastMessageIsOutgoing) {
+                    if (dialog.lastMessageIsOutgoing && !dialog.isSavedMessages) {
                         Icon(
                             modifier = Modifier.size(14.dp),
                             tint = if (dialog.lastMessageIsRead) {

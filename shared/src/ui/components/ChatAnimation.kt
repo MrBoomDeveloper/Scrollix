@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -105,9 +106,11 @@ fun ChatAnimationPreview(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
+        val isReady = webm != null && webm.frames.isNotEmpty()
+
         when {
-            webm != null && webm.frames.isNotEmpty() -> WebmFrames(
-                animation = webm,
+            isReady -> WebmFrames(
+                animation = webm!!,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
@@ -115,9 +118,25 @@ fun ChatAnimationPreview(
             poster != null -> Image(
                 bitmap = poster,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (!isReady && isLoading) {
+                            Modifier.blur(12.dp)
+                        } else {
+                            Modifier
+                        }
+                    ),
                 contentScale = ContentScale.Crop
             )
+
+            else -> Unit
+        }
+
+        // The poster stays visible underneath while the GIF itself is still
+        // downloading and decoding, with a spinner on top of it.
+        when {
+            isReady -> Unit
 
             isLoading -> CircularProgressIndicator(
                 modifier = Modifier.size(24.dp)

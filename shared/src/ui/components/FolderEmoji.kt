@@ -33,7 +33,8 @@ internal fun FolderEmojiImage(
     animate: Boolean,
     size: Dp,
     color: Color,
-    contentModifier: Modifier? = null
+    contentModifier: Modifier? = null,
+    showFallback: Boolean = true
 ) {
     val colorFilter = if (emoji.needsRepainting) {
         ColorFilter.tint(color)
@@ -43,16 +44,16 @@ internal fun FolderEmojiImage(
 
     when {
         !animate || LocalInspectionMode.current ->
-            StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+            StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
 
         emoji.format == DialogFolderEmojiFormat.Tgs ->
-            TgsFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+            TgsFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
 
         emoji.format == DialogFolderEmojiFormat.Webm ->
-            WebmFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+            WebmFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
 
         else ->
-            StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier)
+            StaticFolderEmoji(emoji, size, color, colorFilter, contentModifier, showFallback)
     }
 }
 
@@ -62,7 +63,8 @@ internal fun StaticFolderEmoji(
     size: Dp,
     color: Color,
     colorFilter: ColorFilter?,
-    contentModifier: Modifier? = null
+    contentModifier: Modifier? = null,
+    showFallback: Boolean = true
 ) {
     val bytes = when (emoji.format) {
         DialogFolderEmojiFormat.Webp -> emoji.data ?: emoji.thumbnail
@@ -89,7 +91,7 @@ internal fun StaticFolderEmoji(
             contentScale = ContentScale.Fit,
             colorFilter = colorFilter
         )
-    } else {
+    } else if (showFallback) {
         FolderEmojiFallback(emoji, size, color)
     }
 }

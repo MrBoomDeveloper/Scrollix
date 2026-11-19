@@ -2,7 +2,10 @@ package com.mrboomdev.scrollix.data.api
 
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.AccountDialogFolder
+import com.mrboomdev.scrollix.data.model.AccountDownloadedFile
 import com.mrboomdev.scrollix.data.model.AccountRecord
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.model.Dialog
@@ -47,9 +50,13 @@ object ApiManager {
     private val _dialogsLoading = MutableStateFlow<Set<String>>(emptySet())
     val dialogsLoading: StateFlow<Set<String>> = _dialogsLoading.asStateFlow()
 
+    private val _downloads = MutableStateFlow<List<AccountDownloadedFile>>(emptyList())
+    val downloads: StateFlow<List<AccountDownloadedFile>> = _downloads.asStateFlow()
+
     private val _sessions = MutableStateFlow<Map<String, AccountSession>>(emptyMap())
     private val _dialogsByAccount = MutableStateFlow<Map<String, List<Dialog>>>(emptyMap())
     private val _foldersByAccount = MutableStateFlow<Map<String, List<DialogFolder>>>(emptyMap())
+    private val _downloadsByAccount = MutableStateFlow<Map<String, List<DownloadedFile>>>(emptyMap())
 
     private var appScope = newScope()
     private var platformStorage: PlatformStorage? = null
@@ -155,10 +162,12 @@ object ApiManager {
         _dialogsLoading.update { it - accountId }
         _dialogsByAccount.update { it - accountId }
         _foldersByAccount.update { it - accountId }
+        _downloadsByAccount.update { it - accountId }
         platformStorage?.delete("accounts/$accountId")
         accountStore?.remove(accountId)
         recomputeDialogs()
         recomputeFolders()
+        recomputeDownloads()
     }
 
     suspend fun cancelPendingAccount(accountId: String) {
@@ -191,6 +200,72 @@ object ApiManager {
         return session.loadUserProfile(providerDialogId, userId)
     }
 
+    suspend fun setChatSubscribed(
+        accountId: String,
+        providerDialogId: String,
+        subscribed: Boolean
+    ): Result<Unit> {
+        val session = session(accountId)
+            ?: return Result.failure(IllegalStateException("Account session not found"))
+
+        return session.setChatSubscribed(providerDialogId, subscribed)
+    }
+
+    suspend fun votePoll(
+        accountId: String,
+        providerDialogId: String,
+        messageId: Long,
+        optionIds: List<String>
+    ): Result<Unit> {
+        val session = session(accountId)
+            ?: return Result.failure(IllegalStateException("Account session not found"))
+
+        return session.votePoll(providerDialogId, messageId, optionIds)
+    }
+
+    suspend fun searchGlobalMessages(
+        query: String,
+        limit: Int = 50
+    ): Result<List<ChatMessage>> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return Result.success(emptyList())
+
+        val sessions = _sessions.value.values.toList()
+        if (sessions.isEmpty()) return Result.success(emptyList())
+
+        val results = sessions.flatMap { session ->
+            session.searchGlobalMessages(trimmed, limit).getOrDefault(emptyList())
+        }
+
+        return Result.success(
+            results
+                .sortedByDescending { message -> message.timestamp }
+                .take(limit)
+        )
+    }
+
+    /** Server side chat search across every signed in account. */
+    suspend fun searchChats(
+        query: String,
+        limit: Int = 50
+    ): List<AccountDialogEntry> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        val accounts = accountStore?.state?.value?.accounts ?: _accountState.value.accounts
+
+        return _sessions.value.entries.flatMap { (accountId, session) ->
+            val account = accounts.firstOrNull { it.id == accountId }
+                ?: return@flatMap emptyList()
+
+            session.searchChats(trimmed, limit)
+                .getOrDefault(emptyList())
+                .map { dialog ->
+                    AccountDialogEntry(account = account, dialog = dialog)
+                }
+        }
+    }
+
     suspend fun setActiveAccount(accountId: String) {
         val store = accountStore ?: return
         store.updateAccount(accountId) {
@@ -213,8 +288,10 @@ object ApiManager {
         _dialogsLoading.value = emptySet()
         _dialogsByAccount.value = emptyMap()
         _foldersByAccount.value = emptyMap()
+        _downloadsByAccount.value = emptyMap()
         _dialogs.value = emptyList()
         _folders.value = emptyList()
+        _downloads.value = emptyList()
         appScope.cancel()
         initialized = false
     }
@@ -343,6 +420,14 @@ object ApiManager {
                 }
             }
         }
+
+        appScope.launch {
+            session.downloads.collect { downloads ->
+                if (_sessions.value[accountId] !== session) return@collect
+                _downloadsByAccount.update { it + (accountId to downloads) }
+                recomputeDownloads()
+            }
+        }
     }
 
     private fun recomputeDialogs() {
@@ -351,6 +436,19 @@ object ApiManager {
             accounts = accounts,
             dialogsByAccount = _dialogsByAccount.value
         )
+    }
+
+    private fun recomputeDownloads() {
+        val accounts = accountStore?.state?.value?.accounts ?: _accountState.value.accounts
+        val downloadsByAccount = _downloadsByAccount.value
+
+        _downloads.value = accounts
+            .flatMap { account ->
+                downloadsByAccount[account.id].orEmpty().map { file ->
+                    AccountDownloadedFile(account = account, file = file)
+                }
+            }
+            .sortedByDescending { entry -> entry.file.downloadedAt }
     }
 
     private fun recomputeFolders() {

@@ -10,6 +10,9 @@ import kotlinx.serialization.json.Json
 data class AppSettings(
     val showAllChatsTab: Boolean = false,
     val singleRowFilters: Boolean = false,
+    val showRecentStickersAndEmojis: Boolean = true,
+    val showSystemEmojis: Boolean = true,
+    val disabledEmojis: Set<String> = emptySet(),
     val useNativeFolders: Boolean = true,
     val hasCustomWallpaper: Boolean = false,
     val wallpaperUpdatedAt: Long = 0
