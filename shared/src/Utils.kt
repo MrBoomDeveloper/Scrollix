@@ -8,6 +8,7 @@ import androidx.window.core.layout.WindowSizeClass
 expect fun Modifier.onSecondaryClick(action: () -> Unit): Modifier
 
 @Composable
+@Deprecated("Use currentAdaptiveLayoutInfo instead!")
 fun isWideLayout(): Boolean {
     val windowSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass
     
@@ -17,6 +18,7 @@ fun isWideLayout(): Boolean {
 }
 
 @Composable
+@Deprecated("Use currentAdaptiveLayoutInfo instead!")
 fun isTwoPaneLayout(): Boolean {
     val windowSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass
 

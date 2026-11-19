@@ -30,6 +30,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import com.mrboomdev.scrollix.ui.components.StickerSetDialog
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -39,11 +46,15 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -64,7 +75,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
@@ -81,10 +94,15 @@ import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.ChatWallpaper
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
+import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessagePollInfo
+import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
+import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
@@ -94,6 +112,9 @@ import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.ChatAnimationPreview
 import com.mrboomdev.scrollix.ui.components.ChatSticker
 import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
+import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
+import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
+import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MessageDatePill
@@ -121,6 +142,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 import kotlin.time.Duration.Companion.milliseconds
+
 
 private fun wallpaperBrush(wallpaper: ChatWallpaper): Brush {
     val colors = wallpaper.colors.map { color ->
@@ -244,6 +266,51 @@ fun DialogScreen(
         mutableStateOf<Map<Long, ChatMessage>>(emptyMap())
     }
     var attemptedReplyIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
+    var showMoreMenu by remember(providerDialogId) { mutableStateOf(false) }
+    var openedStickerSetId by remember(providerDialogId) { mutableStateOf<Long?>(null) }
+
+    fun scrollToMessage(messageId: Long) {
+        if (searchQuery.text.isNotBlank()) return
+
+        val index = messages.indexOfFirst { message -> message.messageId == messageId }
+        if (index < 0) return
+
+        scope.launch {
+            listState.animateScrollToItem(index)
+        }
+    }
+
+    fun scrollToFirstMessage() {
+        if (searchQuery.text.isNotBlank()) return
+
+        scope.launch {
+            val currentSession = session ?: return@launch
+
+            // Jump to the top without animations and page the whole history in,
+            // so that the very first message of the chat is reached even when
+            // it hasn't been loaded yet.
+            while (true) {
+                if (messages.isEmpty() || isLoadingMore) return@launch
+
+                listState.scrollToItem(0)
+
+                if (!canLoadMore) break
+
+                val sizeBefore = messages.size
+
+                isLoadingMore = true
+                val hasMore = currentSession.loadOlderMessages(providerDialogId)
+                    .getOrDefault(false)
+                isLoadingMore = false
+
+                canLoadMore = hasMore
+
+                if (!hasMore || messages.size == sizeBefore) break
+            }
+
+            listState.scrollToItem(0)
+        }
+    }
 
     fun sendAttachment(picked: PickedFile, asPhoto: Boolean) {
         if (session == null) return
@@ -364,8 +431,13 @@ fun DialogScreen(
         if (session == null) return@LaunchedEffect
 
         val ids = messages
-            .flatMap { message -> message.customEmojis }
-            .map { span -> span.emojiId }
+            .flatMap { message ->
+                message.customEmojis.map { span -> span.emojiId } +
+                    message.reactions.mapNotNull { reaction -> reaction.customEmojiId } +
+                    message.poll?.options.orEmpty().flatMap { option ->
+                        option.customEmojis.map { span -> span.emojiId }
+                    }
+            }
             .distinct()
             .filter { id -> id !in customEmojiData }
 
@@ -583,23 +655,48 @@ fun DialogScreen(
             onDismissRequest = { forwardingMessageIds = null },
             title = { Text("Forward to") },
             text = {
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                    itemsIndexed(dialogs) { _, target ->
-                        if (target.providerDialogId == providerDialogId) {
-                            return@itemsIndexed
-                        }
+                // Only chats that accept messages can be a forwarding target.
+                val forwardTargets = dialogs.filter { target ->
+                    target.canSendMessages && target.providerDialogId != providerDialogId
+                }
 
-                        Text(
+                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    if (forwardTargets.isEmpty()) {
+                        item {
+                            Text(
+                                text = "No chats to forward to",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+
+                    itemsIndexed(forwardTargets) { _, target ->
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     forwardingMessageIds = null
                                     forwardMessages(messageIds, target.providerDialogId)
                                 }
-                                .padding(vertical = 12.dp),
-                            text = target.title,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AvatarImage(
+                                avatar = target.avatar ?: Avatar.fromName(target.title),
+                                size = 36.dp
+                            )
+
+                            Text(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 12.dp),
+                                text = target.title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             },
@@ -645,6 +742,17 @@ fun DialogScreen(
         )
     }
 
+    val stickerSetId = openedStickerSetId
+    val stickerSession = session
+
+    if (stickerSetId != null && stickerSession != null) {
+        StickerSetDialog(
+            setId = stickerSetId,
+            session = stickerSession,
+            onDismiss = { openedStickerSetId = null }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -682,13 +790,24 @@ fun DialogScreen(
                     .weight(1f)
                     .padding(horizontal = 12.dp)
             ) {
-                Text(
-                    text = dialog?.title ?: "Dialog",
-                    style = MaterialTheme.typography.titleMedium,
-                    lineHeight = MaterialTheme.typography.titleMedium.fontSize,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        modifier = Modifier.weight(1f, fill = false),
+                        text = dialog?.title ?: "Dialog",
+                        style = MaterialTheme.typography.titleMedium,
+                        lineHeight = MaterialTheme.typography.titleMedium.fontSize,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    dialog?.emojiStatusId?.let { emojiId ->
+                        EmojiStatusIcon(
+                            modifier = Modifier.padding(start = 4.dp),
+                            emojiId = emojiId,
+                            session = session
+                        )
+                    }
+                }
 
                 dialog?.let {
                     val statusText = it.statusText
@@ -749,16 +868,28 @@ fun DialogScreen(
                 }
             }
 
-            IconButton(
-                onClick = {
-
+            Box {
+                IconButton(onClick = { showMoreMenu = true }) {
+                    Icon(
+                        tint = MaterialTheme.colorScheme.secondary,
+                        imageVector = more_vertical_icon,
+                        contentDescription = null
+                    )
                 }
-            ) {
-                Icon(
-                    tint = MaterialTheme.colorScheme.secondary,
-                    imageVector = more_vertical_icon,
-                    contentDescription = null
-                )
+
+                DropdownMenu(
+                    expanded = showMoreMenu,
+                    onDismissRequest = { showMoreMenu = false },
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Scroll to first message") },
+                        onClick = {
+                            showMoreMenu = false
+                            scrollToFirstMessage()
+                        }
+                    )
+                }
             }
         }
 
@@ -777,6 +908,7 @@ fun DialogScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
+                    .clickable { scrollToMessage(pinnedId) }
                     .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -995,7 +1127,18 @@ fun DialogScreen(
                                             { ReplyImageThumbnail(replyImage, session) }
                                         }
 
+                                    val poll = message.poll
                                     val mediaContent: (@Composable () -> Unit)? = when {
+                                        poll != null -> {
+                                            {
+                                                MessagePollCard(
+                                                    poll = poll,
+                                                    isOutgoing = message.isOutgoing,
+                                                    session = session,
+                                                    customEmojiData = customEmojiData
+                                                )
+                                            }
+                                        }
                                         media == null -> null
                                         media.kind == MessageMediaKind.Photo -> {
                                             {
@@ -1009,7 +1152,17 @@ fun DialogScreen(
                                             }
                                         }
                                         media.kind == MessageMediaKind.Sticker -> {
-                                            { ChatSticker(media, session) }
+                                            {
+                                                ChatSticker(
+                                                    media = media,
+                                                    session = session,
+                                                    onClick = {
+                                                        media.stickerSetId?.let { setId ->
+                                                            openedStickerSetId = setId
+                                                        }
+                                                    }
+                                                )
+                                            }
                                         }
                                         media.kind == MessageMediaKind.Animation -> {
                                             {
@@ -1051,7 +1204,11 @@ fun DialogScreen(
                                             dialogKind = dialog?.kind ?: DialogKind.Direct,
                                             message = message,
                                             mediaContent = mediaContent,
+                                            richMedia = { richBlockMedia ->
+                                                RichBlockMediaPreview(richBlockMedia, session)
+                                            },
                                             customEmojiData = customEmojiData,
+                                            session = session,
                                             reply = reply,
                                             replyThumbnail = replyThumbnail,
                                             isSelectionMode = selectedMessageIds.isNotEmpty(),
@@ -1101,6 +1258,15 @@ fun DialogScreen(
                                                 }
                                             } else {
                                                 null
+                                            },
+
+                                            onMentionClick = { username ->
+                                                scope.launch {
+                                                    session?.resolveUsername(username)
+                                                        ?.onSuccess { targetUserId ->
+                                                            onOpenUserProfile(targetUserId)
+                                                        }
+                                                }
                                             },
 
                                             connection = run {
@@ -1243,7 +1409,19 @@ fun DialogScreen(
                             BasicTextField(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(min = 32.dp),
+                                    .heightIn(min = 32.dp)
+                                    .onPreviewKeyEvent { event ->
+                                        if (
+                                            event.type == KeyEventType.KeyDown &&
+                                            (event.key == Key.Enter || event.key == Key.NumPadEnter) &&
+                                            !event.isShiftPressed
+                                        ) {
+                                            send()
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    },
                                 value = input,
                                 onValueChange = { input = it },
                                 enabled = !isSending,
@@ -1379,6 +1557,7 @@ private fun replyFor(
 
 private fun ChatMessage.replySnippet(): String {
     if (text.isNotBlank()) return text
+    if (poll != null) return "Poll"
 
     val media = media ?: return "Message"
 
@@ -1525,6 +1704,34 @@ private fun MessageImagePreview(
 }
 
 @Composable
+private fun RichBlockMediaPreview(
+    media: MessageMedia,
+    session: AccountSession?
+) {
+    when (media.kind) {
+        MessageMediaKind.Photo -> MessageImagePreview(
+            media = media,
+            session = session,
+            fillWidth = false
+        ) {
+            MediaViewer.showImage(media, session)
+        }
+
+        MessageMediaKind.Video -> ChatVideoPreview(media, session) {
+            MediaViewer.showVideo(media, session)
+        }
+
+        MessageMediaKind.Animation -> ChatAnimationPreview(media, session) {
+            MediaViewer.showVideo(media, session)
+        }
+
+        MessageMediaKind.Sticker -> ChatSticker(media, session)
+
+        else -> Unit
+    }
+}
+
+@Composable
 private fun MessageFilePreview(
     media: MessageMedia,
     isOutgoing: Boolean
@@ -1615,6 +1822,262 @@ private fun formatFileSize(bytes: Long): String {
         bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
         else -> "${bytes / (1024 * 1024 * 1024)} GB"
     }
+}
+
+@Composable
+private fun MessagePollCard(
+    poll: MessagePollInfo,
+    isOutgoing: Boolean,
+    session: AccountSession?,
+    customEmojiData: Map<Long, ByteArray>
+) {
+    val contentColor = if (isOutgoing) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val secondaryColor = if (isOutgoing) {
+        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
+    val accent = if (isOutgoing) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    val hasVotes = poll.totalVoterCount > 0 || poll.options.any { option -> option.isChosen }
+    val showResults = poll.canSeeResults && (hasVotes || poll.isClosed)
+
+    Column(
+        modifier = Modifier
+            .width(260.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isOutgoing) {
+                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = poll.question.ifBlank { "Poll" },
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = contentColor
+        )
+
+        Text(
+            text = pollTypeLabel(poll),
+            style = MaterialTheme.typography.labelSmall,
+            color = secondaryColor
+        )
+
+        poll.options.forEachIndexed { index, option ->
+            PollOptionRow(
+                option = option,
+                showResults = showResults,
+                isCorrect = poll.isQuiz && index in poll.correctOptionIds,
+                customEmojiData = customEmojiData,
+                session = session,
+                accent = accent,
+                contentColor = contentColor,
+                secondaryColor = secondaryColor
+            )
+        }
+
+        poll.explanation?.takeIf { text -> text.isNotBlank() }?.let { explanation ->
+            Text(
+                text = explanation,
+                style = MaterialTheme.typography.bodySmall,
+                color = secondaryColor
+            )
+        }
+
+        Text(
+            text = when {
+                poll.totalVoterCount == 1 -> "1 vote"
+                poll.totalVoterCount > 1 -> "${formatCount(poll.totalVoterCount)} votes"
+                else -> "No votes yet"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = secondaryColor
+        )
+    }
+}
+
+@Composable
+private fun PollOptionRow(
+    option: MessagePollOptionInfo,
+    showResults: Boolean,
+    isCorrect: Boolean,
+    customEmojiData: Map<Long, ByteArray>,
+    session: AccountSession?,
+    accent: Color,
+    contentColor: Color,
+    secondaryColor: Color
+) {
+    val fraction = (option.votePercentage / 100f).coerceIn(0f, 1f)
+    val isHighlighted = option.isChosen || isCorrect
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(accent.copy(alpha = 0.06f))
+            .then(
+                if (showResults && fraction > 0f) {
+                    Modifier.drawBehind {
+                        drawRect(
+                            color = accent.copy(
+                                alpha = if (option.isChosen) 0.28f else 0.16f
+                            ),
+                            size = Size(size.width * fraction, size.height)
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            option.media?.let { optionMedia ->
+                PollOptionMedia(media = optionMedia, session = session)
+            }
+
+            CompositionLocalProvider(
+                LocalTextStyle provides MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = if (isHighlighted) FontWeight.SemiBold else FontWeight.Normal
+                ),
+                LocalContentColor provides if (option.isChosen) accent else contentColor
+            ) {
+                CustomEmojiMessageText(
+                    modifier = Modifier.weight(1f),
+                    text = option.text,
+                    emojis = option.customEmojis,
+                    data = customEmojiData
+                )
+            }
+
+            if (showResults) {
+                Text(
+                    text = "${option.votePercentage}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (isHighlighted) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (option.isChosen) accent else secondaryColor
+                )
+            }
+
+            if (isCorrect) {
+                Text(
+                    text = "✓",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = accent
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PollOptionMedia(
+    media: MessageMedia,
+    session: AccountSession?
+) {
+    if (media.kind == MessageMediaKind.Sticker) {
+        var data by remember(media.fileId, session) { mutableStateOf<ByteArray?>(null) }
+
+        LaunchedEffect(media.fileId, session) {
+            data = media.fileId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
+        }
+
+        val emoji = remember(media.fileId, data, media.stickerFormat) {
+            DialogFolderEmoji(
+                customEmojiId = (media.fileId ?: 0).toLong(),
+                offset = 0,
+                length = 0,
+                fallback = "",
+                format = when (media.stickerFormat) {
+                    MessageStickerFormat.Tgs -> DialogFolderEmojiFormat.Tgs
+                    MessageStickerFormat.Webm -> DialogFolderEmojiFormat.Webm
+                    MessageStickerFormat.Webp -> DialogFolderEmojiFormat.Webp
+                },
+                data = data
+            )
+        }
+
+        FolderEmojiImage(
+            emoji = emoji,
+            animate = true,
+            size = 28.dp,
+            color = Color.Unspecified,
+            contentModifier = Modifier.size(28.dp)
+        )
+
+        return
+    }
+
+    var image by remember(media.previewFileId, media.minithumbnail, session) {
+        mutableStateOf<ImageBitmap?>(null)
+    }
+
+    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
+        image = media.minithumbnail?.let { bytes ->
+            withContext(Dispatchers.Default) {
+                decodeImageBitmap(bytes)
+            }
+        }
+
+        val bytes = (media.previewFileId ?: media.fileId)?.let { fileId ->
+            session?.loadFile(fileId)?.getOrNull()
+        }
+
+        if (bytes != null) {
+            image = withContext(Dispatchers.Default) {
+                decodeImageBitmap(bytes)
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        image?.let { bitmap ->
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
+
+private fun pollTypeLabel(poll: MessagePollInfo): String {
+    val parts = mutableListOf<String>()
+
+    when {
+        poll.isQuiz -> parts += "Quiz"
+        poll.isAnonymous -> parts += "Anonymous poll"
+        else -> parts += "Public poll"
+    }
+
+    if (poll.allowsMultipleAnswers) parts += "Multiple answers"
+    if (poll.isClosed) parts += "Final results"
+
+    return parts.joinToString(" · ")
 }
 
 @Composable

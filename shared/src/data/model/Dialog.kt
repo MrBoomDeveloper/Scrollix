@@ -46,6 +46,7 @@ data class Dialog(
     val kind: DialogKind,
     val title: String,
     val statusText: String? = null,
+    val emojiStatusId: Long? = null,
     val preview: String,
     val timestamp: Long,
     val unreadCount: Int = 0,

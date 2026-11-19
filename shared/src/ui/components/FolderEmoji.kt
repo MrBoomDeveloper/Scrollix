@@ -5,8 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -16,8 +20,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
+import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -85,6 +91,37 @@ internal fun StaticFolderEmoji(
         )
     } else {
         FolderEmojiFallback(emoji, size, color)
+    }
+}
+
+/** Renders a user emoji status (the custom emoji shown next to a name). */
+@Composable
+internal fun EmojiStatusIcon(
+    emojiId: Long,
+    session: AccountSession?,
+    modifier: Modifier = Modifier,
+    size: Dp = 16.dp
+) {
+    var data by remember(emojiId, session) { mutableStateOf<ByteArray?>(null) }
+
+    LaunchedEffect(emojiId, session) {
+        data = session?.loadCustomEmoji(emojiId)
+    }
+
+    val bytes = data
+
+    Box(modifier = modifier.size(size)) {
+        if (bytes != null) {
+            val emoji = remember(emojiId, bytes) { customEmojiModel(emojiId, bytes) }
+
+            FolderEmojiImage(
+                emoji = emoji,
+                animate = true,
+                size = size,
+                color = Color.Unspecified,
+                contentModifier = Modifier.size(size)
+            )
+        }
     }
 }
 

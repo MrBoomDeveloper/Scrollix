@@ -1,7 +1,10 @@
 package com.mrboomdev.scrollix
 
+import androidx.compose.foundation.LocalContextMenuRepresentation
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.mrboomdev.scrollix.ui.components.ScrollixContextMenuRepresentation
 import com.mrboomdev.scrollix.data.api.ApiManager
 import kotlinx.coroutines.runBlocking
 import java.awt.AWTEvent
@@ -24,7 +27,11 @@ fun main() {
             },
             title = "Scrollix"
         ) {
-            App()
+            CompositionLocalProvider(
+                LocalContextMenuRepresentation provides ScrollixContextMenuRepresentation
+            ) {
+                App()
+            }
         }
     }
 }

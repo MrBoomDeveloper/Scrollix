@@ -6,6 +6,7 @@ import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.StickerSetInfo
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import kotlinx.coroutines.flow.StateFlow
 
@@ -57,6 +58,9 @@ interface AccountSession {
         messageId: Long
     ): Result<ChatMessage?>
     suspend fun loadCustomEmoji(emojiId: Long): ByteArray?
+    suspend fun resolveUsername(username: String): Result<Long>
+    suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>
+    suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit>
     suspend fun editMessage(
         providerDialogId: String,
         messageId: Long,

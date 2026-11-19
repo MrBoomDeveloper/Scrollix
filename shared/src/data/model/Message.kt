@@ -42,7 +42,8 @@ data class MessageMedia(
     val durationSeconds: Int = 0,
     val waveform: ByteArray? = null,
     val stickerFileId: Int? = null,
-    val stickerFormat: MessageStickerFormat = MessageStickerFormat.Webp
+    val stickerFormat: MessageStickerFormat = MessageStickerFormat.Webp,
+    val stickerSetId: Long? = null
 )
 
 data class MessageReactionInfo(
@@ -50,7 +51,8 @@ data class MessageReactionInfo(
     val count: Int,
     val isChosen: Boolean = false,
     val reactorIds: List<Long> = emptyList(),
-    val reactorAvatars: List<Avatar> = emptyList()
+    val reactorAvatars: List<Avatar> = emptyList(),
+    val customEmojiId: Long? = null
 )
 
 data class MessageReply(
@@ -60,6 +62,78 @@ data class MessageReply(
     val media: MessageMedia? = null
 )
 
+data class MessagePollOptionInfo(
+    val id: String,
+    val text: String,
+    val voterCount: Int = 0,
+    val votePercentage: Int = 0,
+    val isChosen: Boolean = false,
+    val isBeingChosen: Boolean = false,
+    val media: MessageMedia? = null,
+    val customEmojis: List<CustomEmojiSpan> = emptyList()
+)
+
+data class MessagePollInfo(
+    val id: Long,
+    val question: String,
+    val options: List<MessagePollOptionInfo> = emptyList(),
+    val totalVoterCount: Int = 0,
+    val isClosed: Boolean = false,
+    val isAnonymous: Boolean = true,
+    val allowsMultipleAnswers: Boolean = false,
+    val canSeeResults: Boolean = true,
+    val isQuiz: Boolean = false,
+    val correctOptionIds: List<Int> = emptyList(),
+    val explanation: String? = null
+)
+
+enum class MessageRichTextStyle {
+    Title,
+    Header,
+    Subheader,
+    Paragraph,
+    Preformatted,
+    Quote,
+    Footer
+}
+
+/** Styling of a piece of rich text, with offsets relative to the block text. */
+data class RichTextSpan(
+    val start: Int,
+    val end: Int,
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isUnderlined: Boolean = false,
+    val isStrikethrough: Boolean = false,
+    val isMonospace: Boolean = false,
+    val isSpoiler: Boolean = false,
+    val url: String? = null
+)
+
+sealed interface MessageRichBlock {
+    data class Text(
+        val text: String,
+        val style: MessageRichTextStyle = MessageRichTextStyle.Paragraph,
+        val spans: List<RichTextSpan> = emptyList(),
+        val bullet: String? = null
+    ) : MessageRichBlock
+
+    data class Media(
+        val media: MessageMedia,
+        val caption: String = ""
+    ) : MessageRichBlock
+
+    object Divider : MessageRichBlock
+}
+
+data class StickerSetInfo(
+    val id: Long,
+    val title: String,
+    val name: String = "",
+    val isInstalled: Boolean = false,
+    val stickers: List<MessageMedia> = emptyList()
+)
+
 data class ChatMessage(
     val providerId: String,
     val accountId: String,
@@ -67,12 +141,15 @@ data class ChatMessage(
     val messageId: Long,
     val senderName: String? = null,
     val senderAvatar: Avatar? = null,
+    val senderEmojiStatusId: Long? = null,
     val senderId: Long,
     val text: String,
     val timestamp: Long,
     val isOutgoing: Boolean,
     val media: MessageMedia? = null,
+    val poll: MessagePollInfo? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
+    val richBlocks: List<MessageRichBlock> = emptyList(),
     val replyTo: MessageReply? = null,
     val reactions: List<MessageReactionInfo> = emptyList(),
     val viewCount: Int = 0,

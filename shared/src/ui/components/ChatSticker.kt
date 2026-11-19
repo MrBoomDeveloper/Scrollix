@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -32,7 +33,8 @@ private val StickerSize = 200.dp
 @Composable
 internal fun ChatSticker(
     media: MessageMedia,
-    session: AccountSession?
+    session: AccountSession?,
+    onClick: (() -> Unit)? = null
 ) {
     val fileId = media.stickerFileId
     var data by remember(fileId, session) { mutableStateOf<ByteArray?>(null) }
@@ -89,7 +91,15 @@ internal fun ChatSticker(
     }
 
     Box(
-        modifier = Modifier.size(width, height),
+        modifier = Modifier
+            .size(width, height)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         when {

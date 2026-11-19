@@ -22,6 +22,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationItemIconPosition
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
@@ -46,6 +47,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.savedstate.serialization.SavedStateConfiguration
 import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.explore_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
@@ -53,6 +55,7 @@ import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.theme.appTypography
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
@@ -74,8 +77,8 @@ private data class AppNavTab(
 @Preview
 @DevelopmentEntryPoint
 fun App() {
-    val isExpanded = isWideLayout()
-    val isTwoPaneScreen = isTwoPaneLayout()
+    val layoutInfo = currentAdaptiveLayoutInfo()
+    val useRail = layoutInfo.size >= AdaptiveLayoutSize.EXPANDED
     
     val backStack = rememberNavBackStack(
         configuration = SavedStateConfiguration {
@@ -94,8 +97,8 @@ fun App() {
     val selectedDialog = remember { mutableStateOf<Route.Dialog?>(null) }
     val currentRoute = backStack.lastOrNull()
     
-    val showNavigation = remember(currentRoute, isTwoPaneScreen) {
-        if(!isTwoPaneScreen && currentRoute is Route.Dialog) {
+    val showNavigation = remember(currentRoute, layoutInfo.isTwoPane) {
+        if(!layoutInfo.isTwoPane && currentRoute is Route.Dialog) {
             return@remember false
         }
         
@@ -165,7 +168,7 @@ fun App() {
         ) {
             Box(Modifier.fillMaxSize()) {
                 Row {
-                    AnimatedVisibility(showNavigation && isExpanded) {
+                    AnimatedVisibility(showNavigation && useRail) {
                         Row {
                             NavigationRail(
                                 containerColor = MaterialTheme.colorScheme.background,
@@ -288,7 +291,7 @@ fun App() {
                             )
                         )
 
-                        AnimatedVisibility(showNavigation && !isExpanded) {
+                        AnimatedVisibility(showNavigation && !useRail) {
                             ShortNavigationBar(
                                 containerColor = MaterialTheme.colorScheme.background
                             ) {
@@ -296,11 +299,16 @@ fun App() {
                                     ShortNavigationBarItem(
                                         selected = tab.isActive,
                                         onClick = tab.onClick,
+                                        
+                                        iconPosition = if(layoutInfo.size >= AdaptiveLayoutSize.MEDIUM) {
+                                            NavigationItemIconPosition.Start
+                                        } else NavigationItemIconPosition.Top,
 
                                         colors = ShortNavigationBarItemDefaults.colors(
                                             selectedIndicatorColor = MaterialTheme.colorScheme.primary,
                                             selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                                            selectedTextColor = MaterialTheme.colorScheme.primary
+                                            selectedTextColorTopIconPosition = MaterialTheme.colorScheme.primary,
+                                            selectedTextColorStartIconPosition = MaterialTheme.colorScheme.onPrimary
                                         ),
 
                                         icon = {

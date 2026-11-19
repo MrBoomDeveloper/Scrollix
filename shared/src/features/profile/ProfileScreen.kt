@@ -1,8 +1,10 @@
 package com.mrboomdev.scrollix.features.profile
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
@@ -64,13 +67,16 @@ import androidx.navigation3.scene.DialogSceneStrategy.Companion.dialog
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.api.TelegramProvider.displayName
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.ChatMemberInfo
 import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
+import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
 import com.mrboomdev.scrollix.isWideLayout
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.ui.icons.cake_icon
 import com.mrboomdev.scrollix.ui.icons.call_icon
@@ -79,8 +85,6 @@ import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.notifications_icon
 import com.mrboomdev.scrollix.ui.icons.schedule_icon
-import java.awt.AWTEventMulticaster.add
-import java.awt.SystemColor.text
 
 @Composable
 private fun PersonalChannelCard(
@@ -213,7 +217,8 @@ private fun CommonGroupsSection(
 @Composable
 private fun ProfileScreenActions(
     dialog: Dialog?,
-    stretch: Boolean
+    stretch: Boolean,
+    onMessage: () -> Unit
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -224,19 +229,15 @@ private fun ProfileScreenActions(
         
         if(dialog?.kind != DialogKind.Channel) {
             OutlinedButton(
-                onClick = {
-
-                }
+                modifier = actionModifier,
+                enabled = dialog?.canSendMessages == true,
+                onClick = onMessage
             ) {
                 Icon(
                     modifier = Modifier.size(ButtonDefaults.IconSize),
                     imageVector = chat_bubble_icon,
                     contentDescription = null
                 )
-
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-
-                Text("Message")
             }
         } else {
             Button(
@@ -298,7 +299,8 @@ private fun ProfileScreenActions(
 
 @Composable
 private fun ProfileScreenInfo(
-    profile: UserProfileDetails?
+    profile: UserProfileDetails?,
+    fallbackStatus: String? = null
 ) {
     Column {
         CompositionLocalProvider(
@@ -335,21 +337,40 @@ private fun ProfileScreenInfo(
                     )
                 }
 
-                profile?.status?.takeIf { it.isNotBlank() }?.let { status ->
+                val status = fallbackStatus?.takeIf { it.isNotBlank() }
+                    ?: profile?.status?.takeIf { it.isNotBlank() }
+                val isOnline = profile?.isOnline == true || status == "online"
+
+                status?.let { statusText ->
                     Text(
-                        inlineContent = remember(textStyle) {
+                        color = if (isOnline) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.secondary
+                        },
+                        inlineContent = remember(textStyle, isOnline) {
                             mapOf("icon" to InlineTextContent(inlinePlaceholder) {
-                                Icon(
-                                    imageVector = schedule_icon,
-                                    contentDescription = null
-                                )
+                                if (isOnline) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(4.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = schedule_icon,
+                                        contentDescription = null
+                                    )
+                                }
                             })
                         },
 
                         text = buildAnnotatedString {
                             appendInlineContent("icon")
                             append(" ")
-                            append(status)
+                            append(statusText)
                         }
                     )
                 }
@@ -387,7 +408,7 @@ private fun ProfileScreenInfo(
                         text = buildAnnotatedString {
                             appendInlineContent("icon")
                             append(" ")
-                            append(phone)
+                            append(formatPhoneNumber(phone))
                         }
                     )
                 }
@@ -402,19 +423,21 @@ fun ProfileScreen(
     providerDialogId: String,
     userId: Long? = null,
     onOpenChannelProfile: (String) -> Unit = {},
+    onMessage: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val isWide = isWideLayout()
+    val session = remember(accountId) { ApiManager.session(accountId) }
     val entries by ApiManager.dialogs.collectAsState()
     val entry = entries.firstOrNull { entry ->
         entry.account.id == accountId &&
             entry.dialog.providerDialogId == providerDialogId
     }
-    var details by remember(accountId, providerDialogId) {
+    var details by remember(accountId, providerDialogId, userId) {
         mutableStateOf<UserProfileDetails?>(null)
     }
 
-    LaunchedEffect(accountId, providerDialogId) {
+    LaunchedEffect(accountId, providerDialogId, userId) {
         details = ApiManager.loadUserProfile(
             accountId = accountId,
             providerDialogId = providerDialogId,
@@ -476,6 +499,7 @@ fun ProfileScreen(
                 ?: dialog?.avatar
                 ?: Avatar.fromName(displayName)
             val kind = profile?.kind ?: dialog?.kind
+            val emojiStatusId = dialog?.emojiStatusId ?: profile?.emojiStatusId
             
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -497,7 +521,8 @@ fun ProfileScreen(
                     AnimatedVisibility(isWide) {
                         ProfileScreenActions(
                             dialog = dialog,
-                            stretch = false
+                            stretch = false,
+                            onMessage = onMessage
                         )
                     }
 
@@ -512,13 +537,24 @@ fun ProfileScreen(
                     }
                 }
 
-                Row {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         text = displayName,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
+
+                    emojiStatusId?.let { emojiId ->
+                        EmojiStatusIcon(
+                            emojiId = emojiId,
+                            session = session,
+                            size = 22.dp
+                        )
+                    }
 
                     // TODO: Add provider icon
                 }
@@ -528,7 +564,7 @@ fun ProfileScreen(
                     LocalTextStyle provides MaterialTheme.typography.bodyMedium
                 ) {
                     profile?.username?.takeIf { it.isNotBlank() }?.let { username ->
-                        Text("@${username.removePrefix("@")}",)
+                        Text("@${username.removePrefix("@")}")
                     }
                 }
             }
@@ -536,12 +572,14 @@ fun ProfileScreen(
             AnimatedVisibility(!isWide) {
                 ProfileScreenActions(
                     dialog = dialog,
-                    stretch = true
+                    stretch = true,
+                    onMessage = onMessage
                 )
             }
             
             ProfileScreenInfo(
-                profile = profile
+                profile = profile,
+                fallbackStatus = dialog?.statusText
             )
 
             AnimatedVisibility(!isWide) {
@@ -552,6 +590,16 @@ fun ProfileScreen(
                         onClick = { onOpenChannelProfile(channel.providerDialogId) }
                     )
                 }   
+            }
+
+            val members = profile?.members.orEmpty()
+
+            if (members.isNotEmpty()) {
+                MembersSection(
+                    members = members,
+                    totalCount = profile?.memberCount,
+                    session = session
+                )
             }
 
             val commonGroups = profile?.commonGroups.orEmpty()
@@ -579,6 +627,70 @@ fun ProfileScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MembersSection(
+    members: List<ChatMemberInfo>,
+    totalCount: Int?,
+    session: AccountSession?
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = totalCount?.let { count -> "Members · ${formatCount(count)}" } ?: "Members",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+
+        for (member in members) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AvatarImage(
+                    avatar = member.avatar ?: Avatar.fromName(member.name),
+                    size = 40.dp
+                )
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = member.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        member.emojiStatusId?.let { emojiId ->
+                            EmojiStatusIcon(
+                                emojiId = emojiId,
+                                session = session,
+                                size = 16.dp
+                            )
+                        }
+                    }
+
+                    member.username?.takeIf { it.isNotBlank() }?.let { username ->
+                        Text(
+                            text = "@${username.removePrefix("@")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
             }
         }
     }

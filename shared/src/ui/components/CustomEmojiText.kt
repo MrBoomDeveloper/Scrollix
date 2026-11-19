@@ -1,16 +1,24 @@
 package com.mrboomdev.scrollix.ui.components
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -20,6 +28,10 @@ import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 
 private val EmojiSize = 20.sp
+private const val TrailingContentId = "message_footer"
+
+/** Zero width space, required because [appendInlineContent] rejects empty alternate text. */
+private const val TrailingContentAlternateText = "\u200B"
 
 @Composable
 internal fun CustomEmojiMessageText(
@@ -27,7 +39,9 @@ internal fun CustomEmojiMessageText(
     text: String,
     lineHeight: TextUnit = TextUnit.Unspecified,
     emojis: List<CustomEmojiSpan>,
-    data: Map<Long, ByteArray>
+    data: Map<Long, ByteArray>,
+    trailingContent: (@Composable () -> Unit)? = null,
+    onMentionClick: ((String) -> Unit)? = null
 ) {
     val spans = emojis
         .filter { span ->
@@ -38,7 +52,7 @@ internal fun CustomEmojiMessageText(
         }
         .sortedBy { it.start }
 
-    if (spans.isEmpty()) {
+    if (spans.isEmpty() && trailingContent == null && onMentionClick == null) {
         Text(
             modifier = modifier,
             lineHeight = lineHeight,
@@ -48,21 +62,35 @@ internal fun CustomEmojiMessageText(
         return
     }
 
+    /** Natural width of [trailingContent], measured during layout. */
+    var trailingWidth by remember { mutableStateOf(0) }
+
     val annotated = buildAnnotatedString {
-        var index = 0
+        if (spans.isEmpty()) {
+            append(text)
+        } else {
+            var index = 0
 
-        for ((start, end, emojiId) in spans) {
-            if (start < index) continue
+            for ((start, end, emojiId) in spans) {
+                if (start < index) continue
 
-            appendTextWithLinks(text.substring(index, start))
-            appendInlineContent(
-                alternateText = text.substring(start, end),
-                id = emojiId.toString()
-            )
-            index = end
+                appendTextWithLinks(text.substring(index, start), onMentionClick)
+                appendInlineContent(
+                    alternateText = text.substring(start, end),
+                    id = emojiId.toString()
+                )
+                index = end
+            }
+
+            appendTextWithLinks(text.substring(index), onMentionClick)
         }
 
-        appendTextWithLinks(text.substring(index))
+        if (trailingContent != null) {
+            appendInlineContent(
+                alternateText = TrailingContentAlternateText,
+                id = TrailingContentId
+            )
+        }
     }
 
     val inlineContent = spans.associate { span ->
@@ -70,12 +98,75 @@ internal fun CustomEmojiMessageText(
             id = span.emojiId,
             bytes = data.getValue(span.emojiId)
         )
+    }.toMutableMap()
+
+    if (trailingContent != null) {
+        inlineContent[TrailingContentId] = inlineTrailingContent(
+            widthPx = trailingWidth,
+            height = if (lineHeight != TextUnit.Unspecified) lineHeight else EmojiSize,
+            onMeasured = { width -> trailingWidth = width }
+        ) {
+            trailingContent()
+        }
     }
 
     Text(
         modifier = modifier,
+        lineHeight = lineHeight,
         text = annotated,
         inlineContent = inlineContent
+    )
+}
+
+/**
+ * Wraps [content] into an inline placeholder which takes exactly as much space as
+ * the content needs and lets every gesture through to the bubble this text belongs to.
+ *
+ * The placeholder width must be known up front, while the content is measured by
+ * the text layout, so the width is measured once and fed back into the placeholder.
+ */
+@Composable
+private fun inlineTrailingContent(
+    widthPx: Int,
+    height: TextUnit,
+    onMeasured: (Int) -> Unit,
+    content: @Composable () -> Unit
+): InlineTextContent {
+    val density = LocalDensity.current
+
+    return InlineTextContent(
+        Placeholder(
+            width = with(density) { widthPx.toSp() },
+            height = height,
+            placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
+        )
+    ) {
+        // Deliberately no clickable/pointerInput here, otherwise the footer would
+        // swallow taps and long presses instead of letting them reach the bubble.
+        Box(
+            modifier = Modifier
+                .layout { measurable, _ ->
+                    val placeable = measurable.measure(Constraints())
+                    layout(placeable.width, placeable.height) {
+                        placeable.place(0, 0)
+                    }
+                }
+                .onSizeChanged { onMeasured(it.width) }
+        ) {
+            content()
+        }
+    }
+}
+
+/** Builds a renderable custom emoji out of the raw sticker bytes. */
+internal fun customEmojiModel(id: Long, bytes: ByteArray): DialogFolderEmoji {
+    return DialogFolderEmoji(
+        customEmojiId = id,
+        offset = 0,
+        length = 0,
+        fallback = "",
+        format = detectEmojiFormat(bytes),
+        data = bytes
     )
 }
 
@@ -87,16 +178,7 @@ private fun inlineEmoji(id: Long, bytes: ByteArray): InlineTextContent {
             placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
         )
     ) {
-        val emoji = remember(id, bytes) {
-            DialogFolderEmoji(
-                customEmojiId = id,
-                offset = 0,
-                length = 0,
-                fallback = "",
-                format = detectEmojiFormat(bytes),
-                data = bytes
-            )
-        }
+        val emoji = remember(id, bytes) { customEmojiModel(id, bytes) }
 
         FolderEmojiImage(
             emoji = emoji,
@@ -114,9 +196,21 @@ private fun detectEmojiFormat(bytes: ByteArray): DialogFolderEmojiFormat {
             bytes[0] == 0x1F.toByte() &&
             bytes[1] == 0x8B.toByte() -> DialogFolderEmojiFormat.Tgs
 
-        bytes.size > 4 &&
+        bytes.size > 11 &&
             bytes[0] == 'R'.code.toByte() &&
-            bytes[1] == 'I'.code.toByte() -> DialogFolderEmojiFormat.Webm
+            bytes[1] == 'I'.code.toByte() &&
+            bytes[2] == 'F'.code.toByte() &&
+            bytes[3] == 'F'.code.toByte() &&
+            bytes[8] == 'W'.code.toByte() &&
+            bytes[9] == 'E'.code.toByte() &&
+            bytes[10] == 'B'.code.toByte() &&
+            bytes[11] == 'P'.code.toByte() -> DialogFolderEmojiFormat.Webp
+
+        bytes.size > 3 &&
+            bytes[0] == 0x1A.toByte() &&
+            bytes[1] == 0x45.toByte() &&
+            bytes[2] == 0xDF.toByte() &&
+            bytes[3] == 0xA3.toByte() -> DialogFolderEmojiFormat.Webm
 
         else -> DialogFolderEmojiFormat.Webp
     }

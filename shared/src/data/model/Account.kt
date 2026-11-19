@@ -35,6 +35,14 @@ data class CommonGroup(
     val avatar: Avatar? = null
 )
 
+data class ChatMemberInfo(
+    val userId: Long,
+    val name: String,
+    val username: String? = null,
+    val avatar: Avatar? = null,
+    val emojiStatusId: Long? = null
+)
+
 data class UserProfileDetails(
     val displayName: String? = null,
     val avatar: Avatar? = null,
@@ -43,9 +51,12 @@ data class UserProfileDetails(
     val bio: String? = null,
     val birthdate: String? = null,
     val status: String? = null,
+    val isOnline: Boolean = false,
+    val emojiStatusId: Long? = null,
     val kind: DialogKind? = null,
     val memberCount: Int? = null,
     val description: String? = null,
     val personalChannel: PersonalChannel? = null,
-    val commonGroups: List<CommonGroup> = emptyList()
+    val commonGroups: List<CommonGroup> = emptyList(),
+    val members: List<ChatMemberInfo> = emptyList()
 )

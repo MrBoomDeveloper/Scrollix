@@ -156,6 +156,12 @@ fun rememberAppEntryProvider(
                 accountId = route.accountId,
                 providerDialogId = route.providerDialogId,
                 userId = route.userId,
+                onMessage = {
+                    backStack += Route.Dialog(
+                        accountId = route.accountId,
+                        providerDialogId = route.providerDialogId
+                    )
+                },
                 onOpenChannelProfile = { channelId ->
                     backStack += Route.Profile(
                         accountId = route.accountId,

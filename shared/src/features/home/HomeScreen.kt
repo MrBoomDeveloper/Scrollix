@@ -8,6 +8,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlexBox
+import androidx.compose.foundation.layout.FlexBoxConfig
+import androidx.compose.foundation.layout.FlexBoxScope
+import androidx.compose.foundation.layout.FlexWrap
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -70,6 +74,7 @@ import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.FolderNameText
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
@@ -82,6 +87,8 @@ import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
 import com.mrboomdev.scrollix.isWideLayout
 import com.mrboomdev.scrollix.onSecondaryClick
+import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import kotlinx.coroutines.launch
 
 private const val TAB_ALL = 0
@@ -97,12 +104,12 @@ fun HomeScreen(
     selectedDialogAccountId: String? = null,
     selectedDialogProviderDialogId: String? = null
 ) {
+    val layoutInfo = currentAdaptiveLayoutInfo()
     val settings by AppSettingsStore.state.collectAsState()
     val isAllShown = settings.showAllChatsTab
     val isSingleRowFilters = settings.singleRowFilters
     val isUsingNativeFolders = settings.useNativeFolders
     
-    val isWideWindow = isWideLayout()
     var selectedTab by remember { mutableStateOf(if(isAllShown) TAB_ALL else TAB_DIRECT) }
     var selectedNativeFolderKey by remember { mutableStateOf<String?>(null) }
     val accountState by ApiManager.accountState.collectAsState()
@@ -183,7 +190,7 @@ fun HomeScreen(
             color = MaterialTheme.colorScheme.background
         ) {
             Column(Modifier.fillMaxWidth()) {
-                if(!isWideWindow) {
+                if(layoutInfo.size < AdaptiveLayoutSize.EXPANDED) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -258,10 +265,10 @@ fun HomeScreen(
                     LocalMinimumInteractiveComponentSize provides Dp.Unspecified
                 ) {
                     @Composable
-                    fun RowScope.homeFilterChipsContent() {
-                        val chipModifier = if(isSingleRowFilters) {
-                            Modifier
-                        } else Modifier.weight(1f)
+                    fun FlexBoxScope.homeFilterChipsContent() {
+                        val chipModifier = Modifier.flex { 
+                            grow(1f)
+                        }
                         
                         if(isUsingNativeFolders) {
                             if(isAllShown) {
@@ -330,37 +337,29 @@ fun HomeScreen(
                             )
                         }
                     }
-                    
-                    if(isSingleRowFilters) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 8.dp)
-                                .windowInsetsPadding(
-                                    WindowInsets.safeDrawing.only(
-                                        WindowInsetsSides.Horizontal
-                                    )
-                                ),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            homeFilterChipsContent()
+
+                    FlexBox(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if(isSingleRowFilters) {
+                                Modifier.horizontalScroll(rememberScrollState())
+                            } else Modifier)
+                            .padding(horizontal = 8.dp)
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(
+                                    WindowInsetsSides.Horizontal
+                                )
+                            ),
+                        
+                        config = {
+                            gap(4.dp)
+                            
+                            if(!isSingleRowFilters) {
+                                wrap(FlexWrap.Wrap)
+                            }
                         }
-                    } else {
-                        FlowRow(
-                            modifier = Modifier
-                                .padding(horizontal = 8.dp)
-                                .windowInsetsPadding(
-                                    WindowInsets.safeDrawing.only(
-                                        WindowInsetsSides.Horizontal
-                                    )
-                                ),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                            maxItemsInEachRow = if(isAllShown) 3 else 2
-                        ) {
-                            homeFilterChipsContent()
-                        }
+                    ) {
+                        homeFilterChipsContent()
                     }
                 }
 
@@ -512,6 +511,7 @@ private fun DialogItem(
     val dialog = entry.dialog
     val isPinned = dialog.isPinnedIn(folderId)
     val scope = rememberCoroutineScope()
+    val session = remember(dialog.accountId) { ApiManager.session(dialog.accountId) }
     var menuExpanded by remember(dialog.providerDialogId) { mutableStateOf(false) }
 
     Box {
@@ -572,6 +572,14 @@ private fun DialogItem(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    dialog.emojiStatusId?.let { emojiId ->
+                        EmojiStatusIcon(
+                            emojiId = emojiId,
+                            session = session,
+                            size = 16.dp
+                        )
+                    }
 
                     if (entry.showAccountBadge) {
                         AccountBadge(entry)

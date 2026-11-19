@@ -17,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,10 +40,12 @@ import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
+import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.ui.icons.check_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.onSecondaryClick
@@ -66,7 +69,9 @@ fun MessageBubble(
     connection: MessageBubbleConnection,
     message: ChatMessage,
     mediaContent: (@Composable () -> Unit)? = null,
+    richMedia: (@Composable (MessageMedia) -> Unit)? = null,
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
+    session: AccountSession? = null,
     reply: MessageReply? = null,
     replyThumbnail: (@Composable () -> Unit)? = null,
     isSelectionMode: Boolean = false,
@@ -79,7 +84,8 @@ fun MessageBubble(
     onForward: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onPin: (() -> Unit)? = null,
-    onSelect: (() -> Unit)? = null
+    onSelect: (() -> Unit)? = null,
+    onMentionClick: ((String) -> Unit)? = null
 ) {
     val clipboard = LocalClipboardManager.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
@@ -90,6 +96,12 @@ fun MessageBubble(
             message.media?.kind == MessageMediaKind.Animation ||
             message.media?.kind == MessageMediaKind.Photo
     ) || (message.replyTo != null && (message.media?.kind == MessageMediaKind.Sticker || message.media?.kind == MessageMediaKind.VideoNote))
+
+    // Messages without reactions put a copy of the footer right after the text,
+    // so that short messages don't waste a whole line on it.
+    val isFooterInline = message.reactions.isEmpty() &&
+        message.text.isNotBlank() &&
+        message.richBlocks.isEmpty()
 
     BoxWithConstraints(modifier = modifier) {
         val maxBubbleWidth = maxWidth * 0.75f
@@ -201,7 +213,7 @@ fun MessageBubble(
                                 if (isMediaOnly) {
                                     PaddingValues(0.dp)
                                 } else {
-                                    PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                    PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                                 }
                             ).width(IntrinsicSize.Max)
                         ) {
@@ -211,16 +223,29 @@ fun MessageBubble(
                                 if (message.isOutgoing || dialogKind.isPeer || isMediaOnly) return@also
                                 isSenderNameShown = true
 
-                                Text(
-                                    modifier = if (onOpenSender != null) {
-                                        Modifier.clickable(onClick = onOpenSender)
-                                    } else {
-                                        Modifier
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    text = name
-                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        modifier = if (onOpenSender != null) {
+                                            Modifier.clickable(onClick = onOpenSender)
+                                        } else {
+                                            Modifier
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        text = name
+                                    )
+
+                                    message.senderEmojiStatusId?.let { emojiId ->
+                                        EmojiStatusIcon(
+                                            emojiId = emojiId,
+                                            session = session,
+                                            size = 14.dp
+                                        )
+                                    }
+                                }
                             }
 
                             if(!isMediaOnly) {
@@ -249,6 +274,8 @@ fun MessageBubble(
                                             message = message,
                                             onMedia = true,
                                             isChannel = dialogKind == DialogKind.Channel,
+                                            customEmojiData = customEmojiData,
+                                            session = session,
                                             modifier = Modifier
                                                 .align(Alignment.BottomEnd)
                                                 .then(
@@ -275,22 +302,45 @@ fun MessageBubble(
                                 }
                             }
 
-                            if (message.text.isNotBlank()) {
+                            if (message.richBlocks.isNotEmpty()) {
+                                SelectionContainer {
+                                    RichMessageContent(
+                                        modifier = Modifier.padding(bottom = 2.dp),
+                                        blocks = message.richBlocks,
+                                        isOutgoing = message.isOutgoing,
+                                        media = richMedia
+                                    )
+                                }
+                            } else if (message.text.isNotBlank()) {
                                 SelectionContainer {
                                     CustomEmojiMessageText(
                                         modifier = Modifier.padding(bottom = 2.dp),
                                         lineHeight = 20.sp,
                                         text = message.text,
                                         emojis = message.customEmojis,
-                                        data = customEmojiData
+                                        data = customEmojiData,
+                                        onMentionClick = onMentionClick,
+                                        trailingContent = if (isFooterInline) {
+                                            {
+                                                MessageStatusRow(
+                                                    modifier = Modifier.padding(start = 6.dp),
+                                                    message = message,
+                                                    isChannel = dialogKind == DialogKind.Channel
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        }
                                     )
                                 }
                             }
 
-                            if (!isMediaOnly) {
+                            if (!isMediaOnly && !isFooterInline) {
                                 MessageFooter(
                                     message = message,
                                     isChannel = dialogKind == DialogKind.Channel,
+                                    customEmojiData = customEmojiData,
+                                    session = session,
                                     modifier = Modifier
                                         .align(Alignment.End)
                                         .then(
@@ -308,6 +358,8 @@ fun MessageBubble(
                                     message = message,
                                     onMedia = true,
                                     isChannel = dialogKind == DialogKind.Channel,
+                                    customEmojiData = customEmojiData,
+                                    session = session,
                                     modifier = Modifier
                                         .align(Alignment.End)
                                         .then(
@@ -493,7 +545,9 @@ private fun MessageFooter(
     message: ChatMessage,
     modifier: Modifier = Modifier,
     onMedia: Boolean = false,
-    isChannel: Boolean = false
+    isChannel: Boolean = false,
+    customEmojiData: Map<Long, ByteArray> = emptyMap(),
+    session: AccountSession? = null
 ) {
     Row(
         modifier = modifier,
@@ -508,7 +562,9 @@ private fun MessageFooter(
                 reactions = message.reactions,
                 isOutgoing = message.isOutgoing,
                 onMedia = onMedia,
-                showAvatars = !isChannel && message.reactions.sumOf { it.count } < 4
+                showAvatars = !isChannel && message.reactions.sumOf { it.count } < 4,
+                customEmojiData = customEmojiData,
+                session = session
             )
         }
         
@@ -528,7 +584,9 @@ private fun MessageReactionsRow(
     reactions: List<MessageReactionInfo>,
     isOutgoing: Boolean,
     onMedia: Boolean,
-    showAvatars: Boolean = false
+    showAvatars: Boolean = false,
+    customEmojiData: Map<Long, ByteArray> = emptyMap(),
+    session: AccountSession? = null
 ) {
     val accent = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -565,10 +623,11 @@ private fun MessageReactionsRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = reaction.emoji,
+                    ReactionGlyph(
+                        reaction = reaction,
+                        data = customEmojiData,
                         color = textColor,
-                        style = MaterialTheme.typography.bodyLarge
+                        session = session
                     )
 
                     if (showAvatars && reaction.reactorAvatars.isNotEmpty()) {
@@ -592,6 +651,67 @@ private fun MessageReactionsRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReactionGlyph(
+    reaction: MessageReactionInfo,
+    data: Map<Long, ByteArray>,
+    color: Color,
+    session: AccountSession?
+) {
+    val emojiId = reaction.customEmojiId
+    val cached = emojiId?.let(data::get)
+    var loaded by remember(emojiId) { mutableStateOf<ByteArray?>(null) }
+    var loadFinished by remember(emojiId) { mutableStateOf(false) }
+
+    // The dialog preloads emoji for every message, but a reaction can arrive on its own,
+    // so the glyph also fetches its asset when nothing has been provided yet.
+    LaunchedEffect(emojiId, session) {
+        if (emojiId != null && cached == null && loaded == null) {
+            loadFinished = false
+            loaded = session?.loadCustomEmoji(emojiId)
+            loadFinished = true
+        }
+    }
+
+    val bytes = cached ?: loaded
+
+    if (emojiId != null) {
+        if (bytes != null) {
+            FolderEmojiImage(
+                emoji = remember(emojiId, bytes) { customEmojiModel(emojiId, bytes) },
+                animate = true,
+                size = 20.dp,
+                color = Color.Unspecified,
+                contentModifier = Modifier.size(20.dp)
+            )
+        } else if (!loadFinished) {
+            // Keep the chip size stable while the custom emoji sticker is being fetched.
+            Box(
+                modifier = Modifier.size(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp),
+                    strokeWidth = 1.5.dp,
+                    color = color.copy(alpha = 0.6f)
+                )
+            }
+        } else {
+            Text(
+                text = "•",
+                color = color,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    } else {
+        Text(
+            text = reaction.emoji,
+            color = color,
+            style = MaterialTheme.typography.bodyLarge
+        )
     }
 }
 
@@ -710,34 +830,58 @@ private fun MessageStatusRow(
 }
 
 private val LinkRegex = Regex(
-    """(https?://[^\s]+|www\.[^\s]+)""",
+    """(https?://[^\s]+|www\.[^\s]+)|(?<![\w@])@[A-Za-z][A-Za-z0-9_]{2,31}""",
     RegexOption.IGNORE_CASE
 )
 
-internal fun AnnotatedString.Builder.appendTextWithLinks(text: String) {
+internal fun AnnotatedString.Builder.appendTextWithLinks(
+    text: String,
+    onMentionClick: ((String) -> Unit)? = null
+) {
     var index = 0
 
     LinkRegex.findAll(text).forEach { match ->
+        val linkText = match.value
+        val isMention = linkText.startsWith("@")
+
+        // Mentions are only rendered as links when someone can react to them.
+        if (isMention && onMentionClick == null) return@forEach
+
         if (match.range.first > index) {
             append(text.substring(index, match.range.first))
         }
 
-        val linkText = match.value
-        val url = if (linkText.startsWith("http", ignoreCase = true)) {
-            linkText
-        } else {
-            "https://$linkText"
-        }
+        if (isMention) {
+            val username = linkText.removePrefix("@")
 
-        withLink(
-            LinkAnnotation.Url(
-                url = url,
-                styles = TextLinkStyles(
-                    style = SpanStyle(textDecoration = TextDecoration.Underline)
+            withLink(
+                LinkAnnotation.Clickable(
+                    tag = "mention:$username",
+                    styles = TextLinkStyles(
+                        style = SpanStyle(textDecoration = TextDecoration.Underline)
+                    ),
+                    linkInteractionListener = { onMentionClick?.invoke(username) }
                 )
-            )
-        ) {
-            append(linkText)
+            ) {
+                append(linkText)
+            }
+        } else {
+            val url = if (linkText.startsWith("http", ignoreCase = true)) {
+                linkText
+            } else {
+                "https://$linkText"
+            }
+
+            withLink(
+                LinkAnnotation.Url(
+                    url = url,
+                    styles = TextLinkStyles(
+                        style = SpanStyle(textDecoration = TextDecoration.Underline)
+                    )
+                )
+            ) {
+                append(linkText)
+            }
         }
 
         index = match.range.last + 1
