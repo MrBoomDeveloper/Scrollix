@@ -658,7 +658,7 @@ private fun MessageReactionsRow(
     val textColor = when {
         onMedia -> Color.White
         isOutgoing -> MaterialTheme.colorScheme.onPrimary
-        else -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onPrimary
     }
 
     Row(
@@ -678,7 +678,9 @@ private fun MessageReactionsRow(
 
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = chipColor.copy(alpha = chipAlpha)
+                color = if(isOutgoing) {
+                    chipColor.copy(alpha = chipAlpha)
+                } else MaterialTheme.colorScheme.primary
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),

@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalFlexBoxApi
 import androidx.compose.foundation.layout.FlexBox
 import androidx.compose.foundation.layout.FlexBoxConfig
 import androidx.compose.foundation.layout.FlexBoxScope
@@ -101,6 +102,7 @@ private const val TAB_GROUPS = 2
 private const val TAB_CHANNELS = 3
 private const val TAB_BOTS = 4
 
+@OptIn(ExperimentalFlexBoxApi::class)
 @Composable
 fun HomeScreen(
     onOpenAccountsScreen: () -> Unit,
@@ -141,6 +143,38 @@ fun HomeScreen(
             .eachCount()
             .filterValues { count -> count > 1 }
             .keys
+    }
+
+    val folderUnreadCounts = remember(entries) {
+        val counts = mutableMapOf<String, Int>()
+
+        entries.forEach { entry ->
+            if (!entry.dialog.hasUnreadIndicator()) return@forEach
+
+            entry.dialog.folderIds.forEach { folderId ->
+                val key = "${entry.account.id}:$folderId"
+                counts[key] = (counts[key] ?: 0) + 1
+            }
+        }
+
+        counts
+    }
+
+    val allUnreadCount = remember(entries) {
+        entries.count { entry -> entry.dialog.hasUnreadIndicator() }
+    }
+
+    val tabUnreadCounts = remember(entries) {
+        entries.filter { entry -> entry.dialog.hasUnreadIndicator() }
+            .groupingBy { entry ->
+                when (entry.dialog.kind) {
+                    DialogKind.Direct, DialogKind.Secret -> TAB_DIRECT
+                    DialogKind.Group -> TAB_GROUPS
+                    DialogKind.Channel -> TAB_CHANNELS
+                    DialogKind.Bot -> TAB_BOTS
+                }
+            }
+            .eachCount()
     }
 
     val isConnecting = accountState.accounts.any { account ->
@@ -281,6 +315,7 @@ fun HomeScreen(
                                     selected = selectedNativeFolder == null,
                                     label = "All",
                                     icon = home_icon,
+                                    unreadCount = allUnreadCount,
                                     onClick = { selectedNativeFolderKey = null }
                                 )   
                             }
@@ -291,6 +326,7 @@ fun HomeScreen(
                                     selected = selectedNativeFolder?.key == folder.key,
                                     folder = folder.folder,
                                     account = folder.account,
+                                    unreadCount = folderUnreadCounts[folder.key] ?: 0,
                                     showAccountIndicator = folder.folder.name in duplicateFolderNames,
                                     onClick = {
                                         selectedNativeFolderKey = folder.key
@@ -313,6 +349,7 @@ fun HomeScreen(
                                 selected = selectedTab == TAB_DIRECT,
                                 label = "DM",
                                 icon = account_circle_icon,
+                                unreadCount = tabUnreadCounts[TAB_DIRECT] ?: 0,
                                 onClick = { selectedTab = TAB_DIRECT }
                             )
 
@@ -321,6 +358,7 @@ fun HomeScreen(
                                 selected = selectedTab == TAB_GROUPS,
                                 label = "Groups",
                                 icon = group_icon,
+                                unreadCount = tabUnreadCounts[TAB_GROUPS] ?: 0,
                                 onClick = { selectedTab = TAB_GROUPS }
                             )
 
@@ -329,6 +367,7 @@ fun HomeScreen(
                                 selected = selectedTab == TAB_CHANNELS,
                                 label = "Channels",
                                 icon = brand_awareness_icon,
+                                unreadCount = tabUnreadCounts[TAB_CHANNELS] ?: 0,
                                 onClick = { selectedTab = TAB_CHANNELS }
                             )
 
@@ -337,6 +376,7 @@ fun HomeScreen(
                                 selected = selectedTab == TAB_BOTS,
                                 label = "Bots",
                                 icon = smart_toy_icon,
+                                unreadCount = tabUnreadCounts[TAB_BOTS] ?: 0,
                                 onClick = { selectedTab = TAB_BOTS }
                             )
                         }
@@ -430,6 +470,7 @@ private fun HomeTab(
     selected: Boolean,
     label: String,
     icon: ImageVector,
+    unreadCount: Int = 0,
     onClick: () -> Unit
 ) {
     FilterChip(
@@ -444,11 +485,23 @@ private fun HomeTab(
         ),
 
         label = {
-            Text(
-                overflow = TextOverflow.Visible,
-                softWrap = false,
-                text = label
-            ) 
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    overflow = TextOverflow.Visible,
+                    softWrap = false,
+                    text = label
+                )
+
+                if (unreadCount > 0) {
+                    UnreadCountBadge(
+                        count = unreadCount,
+                        selected = selected
+                    )
+                }
+            }
         },
         
         leadingIcon = {
@@ -467,6 +520,7 @@ private fun NativeFolderTab(
     selected: Boolean,
     folder: DialogFolder,
     account: AccountRecord,
+    unreadCount: Int,
     showAccountIndicator: Boolean,
     onClick: () -> Unit
 ) {
@@ -492,6 +546,13 @@ private fun NativeFolderTab(
                     overflow = TextOverflow.Ellipsis
                 )
 
+                if (unreadCount > 0) {
+                    UnreadCountBadge(
+                        count = unreadCount,
+                        selected = selected
+                    )
+                }
+
                 if (showAccountIndicator) {
                     AvatarImage(
                         avatar = account.avatar
@@ -502,6 +563,44 @@ private fun NativeFolderTab(
             }
         }
     )
+}
+
+private fun Dialog.hasUnreadIndicator(): Boolean =
+    unreadCount > 0 || isMarkedAsUnread
+
+@Composable
+private fun UnreadCountBadge(
+    count: Int,
+    selected: Boolean
+) {
+    val textStyle = MaterialTheme.typography.labelSmall
+    val textSizeDp = with(LocalDensity.current) { textStyle.fontSize.toDp() }
+
+    Box(
+        modifier = Modifier
+            .background(
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                shape = RoundedCornerShape(textSizeDp)
+            )
+            .padding(vertical = 1.dp, horizontal = 4.dp)
+            .widthIn(min = textSizeDp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            style = textStyle,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onPrimary
+            },
+            text = count.toString()
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

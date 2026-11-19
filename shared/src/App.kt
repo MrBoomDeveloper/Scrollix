@@ -329,8 +329,9 @@ fun App() {
                                         colors = ShortNavigationBarItemDefaults.colors(
                                             selectedIndicatorColor = MaterialTheme.colorScheme.primary,
                                             selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                                            selectedTextColorTopIconPosition = MaterialTheme.colorScheme.primary,
-                                            selectedTextColorStartIconPosition = MaterialTheme.colorScheme.onPrimary
+                                            selectedTextColor = MaterialTheme.colorScheme.primary
+//                                            selectedTextColorTopIconPosition = MaterialTheme.colorScheme.primary,
+//                                            selectedTextColorStartIconPosition = MaterialTheme.colorScheme.onPrimary
                                         ),
 
                                         icon = {

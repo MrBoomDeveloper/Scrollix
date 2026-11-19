@@ -2766,7 +2766,7 @@ class TelegramAccountSession(
                 )
             }
 
-            is MessageGift -> content.gift.sticker?.let { sticker ->
+            is MessageGift -> content.gift.sticker.let { sticker ->
                 MessageMedia(
                     kind = MessageMediaKind.Sticker,
                     size = sticker.sticker.size,

@@ -110,7 +110,7 @@ fun ChatAnimationPreview(
 
         when {
             isReady -> WebmFrames(
-                animation = webm!!,
+                animation = webm,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
