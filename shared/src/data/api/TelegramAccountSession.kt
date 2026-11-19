@@ -3375,6 +3375,7 @@ class TelegramAccountSession(
             val imageBytes = photoFile?.let(::avatarBytes)
                 ?: entry.photo?.minithumbnail?.data
                 ?: user?.profilePhoto?.minithumbnail?.data
+            val lastMessage = entry.lastMessage
 
             Dialog(
                 providerId = providerId,
@@ -3386,8 +3387,15 @@ class TelegramAccountSession(
                 statusText = user?.let(::userStatusText),
                 emojiStatusId = emojiStatusId(entry.emojiStatus)
                     ?: emojiStatusId(user?.emojiStatus),
-                preview = messagePreview(entry.lastMessage),
-                timestamp = (entry.lastMessage?.date ?: 0).toLong() * 1000L,
+                preview = messagePreview(lastMessage),
+                lastMessageMedia = lastMessage?.let { message ->
+                    mapMedia(message.content)
+                },
+                lastMessageIsOutgoing = lastMessage?.isOutgoing == true,
+                lastMessageIsRead = lastMessage != null &&
+                    lastMessage.isOutgoing &&
+                    lastMessage.id <= entry.lastReadOutboxMessageId,
+                timestamp = (lastMessage?.date ?: 0).toLong() * 1000L,
                 unreadCount = entry.unreadCount,
                 memberCount = _memberCounts.value[identity.remoteId]?.takeIf { it > 0 },
                 pinnedMessageId = _pinnedMessageIds.value[entry.chatId]?.takeIf { it > 0 },
@@ -3431,12 +3439,10 @@ class TelegramAccountSession(
     private fun messagePreview(message: Message?): String {
         if (message == null) return "No messages yet"
 
-        val preview = messageBody(message.content)
+        return messageBody(message.content)
             .replace('\n', ' ')
             .trim()
             .ifBlank { "Message" }
-
-        return if (message.isOutgoing) "You: $preview" else preview
     }
 
     private fun messageBody(content: MessageContent): String {

@@ -74,11 +74,14 @@ import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.DialogMediaPreview
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.FolderNameText
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
+import com.mrboomdev.scrollix.ui.icons.check_icon
+import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
@@ -586,24 +589,73 @@ private fun DialogItem(
                     }
                 }
 
-                Text(
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                    text = dialog.preview,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (dialog.lastMessageIsOutgoing) {
+                        Text(
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                            text = "You:",
+                            maxLines = 1
+                        )
+                    }
+
+                    dialog.lastMessageMedia?.let { media ->
+                        DialogMediaPreview(
+                            media = media,
+                            session = session,
+                            size = 20.dp
+                        )
+                    }
+
+                    Text(
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        text = dialog.preview,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalAlignment = Alignment.End
             ) {
-                Text(
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    text = formatTime(dialog.timestamp)
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (dialog.lastMessageIsOutgoing) {
+                        Icon(
+                            modifier = Modifier.size(14.dp),
+                            tint = if (dialog.lastMessageIsRead) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.secondary
+                            },
+                            imageVector = if (dialog.lastMessageIsRead) {
+                                done_all_icon
+                            } else {
+                                check_icon
+                            },
+                            contentDescription = if (dialog.lastMessageIsRead) {
+                                "Read"
+                            } else {
+                                "Sent"
+                            }
+                        )
+                    }
+                    
+                    Text(
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        text = formatTime(dialog.timestamp)
+                    )
+                }
 
                 if (dialog.unreadCount > 0) {
                     val textStyle = MaterialTheme.typography.labelMedium

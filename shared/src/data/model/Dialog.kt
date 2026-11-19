@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class DialogIdentity(
@@ -48,6 +49,9 @@ data class Dialog(
     val statusText: String? = null,
     val emojiStatusId: Long? = null,
     val preview: String,
+    @Transient val lastMessageMedia: MessageMedia? = null,
+    val lastMessageIsOutgoing: Boolean = false,
+    val lastMessageIsRead: Boolean = false,
     val timestamp: Long,
     val unreadCount: Int = 0,
     val memberCount: Int? = null,
