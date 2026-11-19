@@ -239,7 +239,7 @@ private fun EmojiTab(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 8.dp),
-            columns = GridCells.Adaptive(44.dp),
+            columns = GridCells.Adaptive(48.dp),
             horizontalArrangement = Arrangement.spacedBy(GridSpacing),
             verticalArrangement = Arrangement.spacedBy(GridSpacing)
         ) {
@@ -288,7 +288,7 @@ private fun EmojiTab(
                         PickerSticker(
                             media = entry.media,
                             session = session,
-                            size = 40.dp,
+                            size = 48.dp,
                             onClick = {
                                 val emojiId = entry.media.stickerId
                                 val emoji = entry.media.stickerEmoji ?: "😀"
@@ -563,9 +563,7 @@ private fun GifTab(
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 8.dp),
-            columns = GridCells.Adaptive(96.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            columns = GridCells.Adaptive(96.dp)
         ) {
             items(animations, key = { media -> media.fileId ?: 0 }) { animation ->
                 PickerAnimation(
@@ -800,7 +798,7 @@ private fun PickerSticker(
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(8.dp))
             .then(
                 if (onClick != null) {
                     Modifier.clickable(onClick = onClick)
@@ -826,7 +824,7 @@ private fun PickerSticker(
                 FolderEmojiImage(
                     emoji = emoji,
                     animate = true,
-                    size = size - 8.dp,
+                    size = size,
                     color = Color.Unspecified,
                     contentModifier = Modifier.fillMaxSize()
                 )
@@ -890,7 +888,6 @@ private fun PickerAnimation(
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .onSecondaryClick(onRemove)
             .combinedClickable(

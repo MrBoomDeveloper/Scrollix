@@ -26,13 +26,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,8 +46,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -74,7 +72,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -97,7 +94,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -390,7 +386,7 @@ fun DialogScreen(
     var isSending by remember(providerDialogId) { mutableStateOf(false) }
     var searchOpen by remember(providerDialogId) { mutableStateOf(false) }
     var scrollRequest by remember(providerDialogId) { mutableStateOf<ScrollRequest?>(null) }
-    var searchQuery = rememberTextFieldState()
+    val searchQuery = rememberTextFieldState()
     var editingMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var selectedMessageIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
@@ -413,10 +409,9 @@ fun DialogScreen(
     val emojiPickerInteraction = remember { MutableInteractionSource() }
     val isEmojiButtonHovered by emojiButtonInteraction.collectIsHoveredAsState()
     val isEmojiPickerHovered by emojiPickerInteraction.collectIsHoveredAsState()
-    val useEmojiPickerPopup = isTwoPaneWindow
 
-    LaunchedEffect(useEmojiPickerPopup, isEmojiButtonHovered, isEmojiPickerHovered) {
-        if (!useEmojiPickerPopup) {
+    LaunchedEffect(isTwoPaneWindow, isEmojiButtonHovered, isEmojiPickerHovered) {
+        if (!isTwoPaneWindow) {
             showHoverPicker = false
             return@LaunchedEffect
         }
@@ -425,7 +420,7 @@ fun DialogScreen(
             showHoverPicker = true
         } else {
             // Give the pointer time to travel from the button into the popup.
-            delay(200)
+            delay(200.milliseconds)
             showHoverPicker = false
         }
     }
@@ -695,7 +690,6 @@ fun DialogScreen(
     }
 
     LaunchedEffect(lastMessageId) {
-        val newestMessageId = lastMessageId ?: return@LaunchedEffect
         if (messages.isEmpty()) return@LaunchedEffect
 
         session?.markMessagesRead(
@@ -846,12 +840,11 @@ fun DialogScreen(
     }
 
     val stickerSetId = openedStickerSetId
-    val stickerSession = session
 
-    if (stickerSetId != null && stickerSession != null) {
+    if (stickerSetId != null && session != null) {
         StickerSetDialog(
             setId = stickerSetId,
-            session = stickerSession,
+            session = session,
             onDismiss = { openedStickerSetId = null }
         )
     }
@@ -1123,7 +1116,7 @@ fun DialogScreen(
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .background(wallpaperBrush(wallpaper!!))
+                        .background(wallpaperBrush(wallpaper))
                 )
             } else if (customWallpaper == null) {
                 Image(
@@ -1274,9 +1267,7 @@ fun DialogScreen(
                                                     session = session,
                                                     customEmojiData = customEmojiData,
                                                     onOptionClick = { option ->
-                                                        val currentSession = session
-
-                                                        if (currentSession != null) {
+                                                        if (session != null) {
                                                             scope.launch {
                                                                 val optionIds = if (poll.allowsMultipleAnswers) {
                                                                     val chosen = poll.options
@@ -1292,7 +1283,7 @@ fun DialogScreen(
                                                                     listOf(option.id)
                                                                 }
 
-                                                                currentSession.votePoll(
+                                                                session.votePoll(
                                                                     providerDialogId = providerDialogId,
                                                                     messageId = message.messageId,
                                                                     optionIds = optionIds
@@ -1303,11 +1294,9 @@ fun DialogScreen(
                                                         }
                                                     },
                                                     onRetractVote = {
-                                                        val currentSession = session
-
-                                                        if (currentSession != null) {
+                                                        if (session != null) {
                                                             scope.launch {
-                                                                currentSession.votePoll(
+                                                                session.votePoll(
                                                                     providerDialogId = providerDialogId,
                                                                     messageId = message.messageId,
                                                                     optionIds = emptyList()
@@ -1460,10 +1449,10 @@ fun DialogScreen(
                                             connection = run {
                                                 val previousSameSender =
                                                     previousDate == date &&
-                                                        previousMessage?.senderId == message.senderId
+                                                        previousMessage.senderId == message.senderId
                                                 val nextSameSender =
                                                     nextDate == date &&
-                                                        nextMessage?.senderId == message.senderId
+                                                        nextMessage.senderId == message.senderId
 
                                                 when {
                                                     previousSameSender && nextSameSender ->
@@ -1553,12 +1542,11 @@ fun DialogScreen(
                     }
                 }
 
-                val currentSession = session
                 val emojiPickerContent: @Composable (Modifier) -> Unit = { pickerModifier ->
-                    if (currentSession != null) {
+                    if (session != null) {
                         EmojiPicker(
                             modifier = pickerModifier,
-                            session = currentSession,
+                            session = session,
                             onEmojiSelected = { emoji -> input += emoji },
                             onCustomEmojiSelected = { emojiId, fallback ->
                                 val start = input.length
@@ -1575,7 +1563,7 @@ fun DialogScreen(
                                 showHoverPicker = false
 
                                 scope.launch {
-                                    currentSession.sendSticker(providerDialogId, sticker)
+                                    session.sendSticker(providerDialogId, sticker)
                                         .onSuccess {
                                             scrollRequest = ScrollRequest.Latest
                                         }
@@ -1589,7 +1577,7 @@ fun DialogScreen(
                                 showHoverPicker = false
 
                                 scope.launch {
-                                    currentSession.sendAnimation(providerDialogId, animation)
+                                    session.sendAnimation(providerDialogId, animation)
                                         .onSuccess {
                                             scrollRequest = ScrollRequest.Latest
                                         }
@@ -1602,13 +1590,13 @@ fun DialogScreen(
                     }
                 }
 
-                if (!useEmojiPickerPopup && showEmojiPicker && currentSession != null) {
+                if (!isTwoPaneWindow && showEmojiPicker && session != null) {
                     emojiPickerContent(Modifier)
                 }
 
                 // On large screens the picker floats above the composer and is
                 // driven by the pointer hovering the emoji button.
-                if (useEmojiPickerPopup && currentSession != null) {
+                if (isTwoPaneWindow && session != null) {
                     val pickerTransition = remember { MutableTransitionState(false) }
                     pickerTransition.targetState = showEmojiPicker || showHoverPicker
 
@@ -1617,7 +1605,7 @@ fun DialogScreen(
                         val density = LocalDensity.current
                         val pickerWidth = 340.dp
                         val pickerWidthPx = with(density) { pickerWidth.roundToPx() }
-                        val pickerHeightPx = with(density) { 300.dp.roundToPx() }
+                        val pickerHeightPx = with(density) { 750.dp.roundToPx() }
                         val gapPx = with(density) { 8.dp.roundToPx() }
                         val anchor = emojiPickerAnchor
 
@@ -1635,7 +1623,7 @@ fun DialogScreen(
                             ) {
                                 Box(modifier = Modifier.hoverable(emojiPickerInteraction)) {
                                     PickerPopupAnimation(pickerTransition) {
-                                        emojiPickerContent(Modifier.width(pickerWidth))
+                                        emojiPickerContent(Modifier.width(pickerWidth).height(700.dp))
                                     }
                                 }
                             }
@@ -2064,81 +2052,6 @@ private fun RichBlockMediaPreview(
     }
 }
 
-@Composable
-private fun MessageFilePreview(
-    media: MessageMedia,
-    isOutgoing: Boolean
-) {
-    val contentColor = if (isOutgoing) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val secondaryColor = if (isOutgoing) {
-        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-    } else {
-        MaterialTheme.colorScheme.secondary
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(
-                if (isOutgoing) {
-                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                }
-            )
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(
-                    if (isOutgoing) {
-                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainer
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "FILE",
-                style = MaterialTheme.typography.labelSmall,
-                color = contentColor
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp)
-        ) {
-            Text(
-                text = media.fileName?.takeIf { it.isNotBlank() } ?: "File",
-                style = MaterialTheme.typography.bodyMedium,
-                color = contentColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            val size = formatFileSize(media.size)
-            if (size.isNotEmpty()) {
-                Text(
-                    text = size,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = secondaryColor
-                )
-            }
-        }
-    }
-}
-
 private fun formatCount(count: Int): String {
     return count.toString()
         .reversed()
@@ -2432,10 +2345,10 @@ private fun PollOptionMedia(
 private fun pollTypeLabel(poll: MessagePollInfo): String {
     val parts = mutableListOf<String>()
 
-    when {
-        poll.isQuiz -> parts += "Quiz"
-        poll.isAnonymous -> parts += "Anonymous poll"
-        else -> parts += "Public poll"
+    parts += when {
+        poll.isQuiz -> "Quiz"
+        poll.isAnonymous -> "Anonymous poll"
+        else -> "Public poll"
     }
 
     if (poll.allowsMultipleAnswers) parts += "Multiple answers"

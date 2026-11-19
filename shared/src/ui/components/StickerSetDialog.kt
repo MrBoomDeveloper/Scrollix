@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -109,21 +110,6 @@ internal fun StickerSetDialog(
                                 color = MaterialTheme.colorScheme.secondary
                             )
                         }
-
-                        // TDLib doesn't expose the pack's creator, so the pack's
-                        // public handle is the nickname linking to its page.
-                        if (shortName != null) {
-                            Text(
-                                modifier = Modifier.clickable {
-                                    uriHandler.openUri("https://t.me/addstickers/$shortName")
-                                },
-                                text = "@$shortName",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
                     }
 
                     TextButton(onClick = onDismiss) {
@@ -157,7 +143,7 @@ internal fun StickerSetDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 320.dp),
-                        columns = GridCells.Fixed(4),
+                        columns = GridCells.Fixed(5),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -240,9 +226,8 @@ private fun StickerSetCell(
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.04f))
-            .padding(6.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.White.copy(alpha = 0.04f)),
         contentAlignment = Alignment.Center
     ) {
         if (bytes == null) {
@@ -256,7 +241,7 @@ private fun StickerSetCell(
                 animate = true,
                 size = 64.dp,
                 color = Color.Unspecified,
-                contentModifier = Modifier.size(64.dp)
+                contentModifier = Modifier.fillMaxSize()
             )
         }
     }
