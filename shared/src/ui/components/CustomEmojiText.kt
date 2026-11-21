@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,7 +19,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -40,6 +44,10 @@ internal fun CustomEmojiMessageText(
     lineHeight: TextUnit = TextUnit.Unspecified,
     emojis: List<CustomEmojiSpan>,
     data: Map<Long, ByteArray>,
+    style: TextStyle = LocalTextStyle.current,
+    color: Color = LocalContentColor.current,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
     trailingContent: (@Composable () -> Unit)? = null,
     onMentionClick: ((String) -> Unit)? = null,
     onPhoneClick: ((String) -> Unit)? = null
@@ -61,7 +69,11 @@ internal fun CustomEmojiMessageText(
     ) {
         Text(
             modifier = modifier,
+            style = style,
+            color = color,
             lineHeight = lineHeight,
+            maxLines = maxLines,
+            overflow = overflow,
             text = text
         )
 
@@ -120,7 +132,11 @@ internal fun CustomEmojiMessageText(
 
     Text(
         modifier = modifier,
+        style = style,
+        color = color,
         lineHeight = lineHeight,
+        maxLines = maxLines,
+        overflow = overflow,
         text = annotated,
         inlineContent = inlineContent
     )

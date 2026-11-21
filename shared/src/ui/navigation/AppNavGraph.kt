@@ -51,6 +51,9 @@ fun rememberAppEntryProvider(
                     selectedDialog = selected,
                     onOpenDialog = onSelectDialog,
                     onCloseDialog = { onSelectDialog(null) },
+                    onOpenSettingsScreen = {
+                        backStack += Route.Settings
+                    },
                     onOpenProfile = { dialog ->
                         backStack += Route.Profile(
                             accountId = dialog.accountId,
@@ -70,6 +73,9 @@ fun rememberAppEntryProvider(
                 HomeScreen(
                     onOpenAccountsScreen = {
                         backStack += Route.Accounts
+                    },
+                    onOpenSettingsScreen = {
+                        backStack += Route.Settings
                     },
                     onOpenDialog = { entry ->
                         onSelectDialog(null)
@@ -107,6 +113,9 @@ fun rememberAppEntryProvider(
                     selectedDialog = selected ?: route,
                     onOpenDialog = onSelectDialog,
                     onCloseDialog = { onSelectDialog(null) },
+                    onOpenSettingsScreen = {
+                        backStack += Route.Settings
+                    },
                     onOpenProfile = { dialog ->
                         backStack += Route.Profile(
                             accountId = dialog.accountId,
@@ -246,7 +255,8 @@ private fun WideDialogsScreen(
     onCloseDialog: () -> Unit,
     onOpenProfile: (Route.Dialog) -> Unit,
     onOpenUserProfile: (Route.Dialog, Long) -> Unit,
-    onOpenAccountsScreen: () -> Unit
+    onOpenAccountsScreen: () -> Unit,
+    onOpenSettingsScreen: () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val listWidth = (maxWidth * 0.38f).coerceIn(300.dp, 400.dp)
@@ -267,6 +277,7 @@ private fun WideDialogsScreen(
                             )
                         )
                     },
+                    onOpenSettingsScreen = onOpenSettingsScreen,
                     selectedDialogAccountId = selectedDialog?.accountId,
                     selectedDialogProviderDialogId = selectedDialog?.providerDialogId
                 )

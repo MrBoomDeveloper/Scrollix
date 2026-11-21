@@ -66,9 +66,12 @@ internal fun ChatSticker(
 
     val decoded = bitmap
     val animationData = data
+    // The dimensions that come with the message are stable. Letting the
+    // decoded bitmap redefine the ratio would resize the item (and shift
+    // every message below it) as soon as the sticker finishes loading.
     val aspectRatio = when {
-        decoded != null && decoded.height > 0 -> decoded.width.toFloat() / decoded.height
         media.width > 0 && media.height > 0 -> media.width.toFloat() / media.height
+        decoded != null && decoded.height > 0 -> decoded.width.toFloat() / decoded.height
         else -> 1f
     }
     // Keep the box at the sticker's own aspect ratio: capping the width

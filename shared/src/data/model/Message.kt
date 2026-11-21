@@ -50,6 +50,14 @@ data class MessageMedia(
     val stickerEmoji: String? = null
 )
 
+data class MessageReactionOption(
+    val emoji: String,
+    val customEmojiId: Long? = null
+) {
+    val key: String
+        get() = customEmojiId?.let { "custom:$it" } ?: "emoji:$emoji"
+}
+
 data class MessageReactionInfo(
     val emoji: String,
     val count: Int,

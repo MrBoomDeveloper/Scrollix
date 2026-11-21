@@ -29,12 +29,18 @@ dependencies:
 dependencies@android:
   - $compose.uiTooling
   - $libs.androidx.activity.compose
+  - androidx.camera:camera-core:1.4.2
+  - androidx.camera:camera-camera2:1.4.2
+  - androidx.camera:camera-lifecycle:1.4.2
+  - androidx.camera:camera-view:1.4.2
+  - com.google.zxing:core:3.5.3
   - $libs.alpha.video
   - $libs.alpha.video.vpx
 
 dependencies@jvm:
   - $libs.filekit.dialogs
   - $libs.javacv
+  - com.google.zxing:core:3.5.3
   - org.bytedeco:javacpp:1.5.14:linux-x86_64
   - org.bytedeco:javacpp:1.5.14:windows-x86_64
   - org.bytedeco:javacpp:1.5.14:macosx-arm64

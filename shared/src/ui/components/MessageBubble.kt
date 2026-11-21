@@ -3,6 +3,9 @@ package com.mrboomdev.scrollix.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
@@ -13,14 +16,18 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,12 +51,23 @@ import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
+import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
+import com.mrboomdev.scrollix.data.model.StickerPack
+import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import com.mrboomdev.scrollix.ui.icons.check_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.onSecondaryClick
+import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.share_icon
 import com.mrboomdev.scrollix.ui.icons.visibility_icon
 import kotlinx.datetime.TimeZone
@@ -85,10 +103,12 @@ fun MessageBubble(
     onForward: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onPin: (() -> Unit)? = null,
+    onReaction: ((MessageReactionOption) -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
     onMentionClick: ((String) -> Unit)? = null,
     onReplyClick: ((Long) -> Unit)? = null
 ) {
+    val layoutInfo = currentAdaptiveLayoutInfo()
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
@@ -127,7 +147,7 @@ fun MessageBubble(
         message.richBlocks.isEmpty()
 
     BoxWithConstraints(modifier = modifier) {
-        val maxBubbleWidth = maxWidth * 0.75f
+        val maxBubbleWidth = maxWidth * if(layoutInfo.size < AdaptiveLayoutSize.EXPANDED && isMediaOnly) 1f else 0.75f
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -156,7 +176,7 @@ fun MessageBubble(
                 modifier = Modifier.widthIn(max = maxBubbleWidth)
             ) {
                 val connectedCornerRadius = 4.dp
-                val cornerRadius = 16.dp
+                val cornerRadius = 24.dp
                 
                 Surface(
                     modifier = Modifier
@@ -456,6 +476,20 @@ fun MessageBubble(
                     onDismissRequest = { menuExpanded = false },
                     shape = RoundedCornerShape(16.dp)
                 ) {
+                    if (onReaction != null) {
+                        ReactionPickerRow(
+                            message = message,
+                            data = customEmojiData,
+                            session = session,
+                            onReaction = { option ->
+                                menuExpanded = false
+                                onReaction(option)
+                            }
+                        )
+
+                        HorizontalDivider()
+                    }
+
                     if (onReply != null) {
                         DropdownMenuItem(
                             text = { Text("Reply") },
@@ -532,6 +566,281 @@ fun MessageBubble(
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.widthIn(64.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun ReactionPickerRow(
+    message: ChatMessage,
+    data: Map<Long, ByteArray>,
+    session: AccountSession?,
+    onReaction: (MessageReactionOption) -> Unit
+) {
+    var expanded by remember(message.messageId) { mutableStateOf(false) }
+    var available by remember(message.messageId) {
+        mutableStateOf<List<MessageReactionOption>>(emptyList())
+    }
+    var packs by remember(message.messageId) {
+        mutableStateOf<List<StickerPack>>(emptyList())
+    }
+    var packItems by remember(message.messageId) {
+        mutableStateOf<Map<Long, List<MessageMedia>>>(emptyMap())
+    }
+
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val settings by AppSettingsStore.state.collectAsState()
+
+    LaunchedEffect(expanded, session, message.messageId) {
+        if (!expanded) return@LaunchedEffect
+
+        val currentSession = session ?: return@LaunchedEffect
+
+        if (available.isEmpty()) {
+            available = currentSession
+                .loadAvailableReactions(message.providerDialogId, message.messageId)
+                .getOrDefault(emptyList())
+        }
+
+        if (packs.isEmpty()) {
+            val loadedPacks = currentSession
+                .loadStickerPacks(StickerPackKind.CustomEmoji)
+                .getOrDefault(emptyList())
+
+            packs = loadedPacks
+            packItems = coroutineScope {
+                loadedPacks.map { pack ->
+                    async {
+                        pack.id to currentSession.loadStickerSet(pack.id)
+                            .getOrNull()
+                            ?.stickers
+                            .orEmpty()
+                    }
+                }.awaitAll().toMap()
+            }
+        }
+    }
+
+    val quick = remember(settings.quickReactions) {
+        val selected = settings.quickReactions.takeIf { it.isNotEmpty() }
+            ?: DefaultQuickReactions
+
+        selected.map(::MessageReactionOption)
+    }
+
+    val entries = remember(quick, available, packs, packItems) {
+        buildList {
+            add(
+                ReactionMenuEntry.Available(
+                    options = (quick + available).distinctBy { it.key }
+                )
+            )
+
+            packs.forEach { pack ->
+                add(ReactionMenuEntry.PackHeader(pack))
+
+                packItems[pack.id].orEmpty().chunked(8).forEach { row ->
+                    add(ReactionMenuEntry.PackRow(stickers = row))
+                }
+            }
+        }
+    }
+
+    val packIndexes = remember(entries) {
+        entries.mapIndexedNotNull { index, entry ->
+            (entry as? ReactionMenuEntry.PackHeader)?.let { header ->
+                header.pack.id to index
+            }
+        }.toMap()
+    }
+
+    fun isChosen(option: MessageReactionOption): Boolean {
+        return message.reactions.any { reaction ->
+            reaction.isChosen && if (option.customEmojiId != null) {
+                reaction.customEmojiId == option.customEmojiId
+            } else {
+                reaction.customEmojiId == null && reaction.emoji == option.emoji
+            }
+        }
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+        if (!expanded) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                quick.forEach { option ->
+                    ReactionPickerButton(
+                        option = option,
+                        chosen = isChosen(option),
+                        data = data,
+                        session = session,
+                        onClick = { onReaction(option) }
+                    )
+                }
+
+                TextButton(onClick = { expanded = true }) {
+                    Text("+")
+                }
+            }
+        } else {
+            // A quick jump bar keeps every pack one tap away instead of
+            // making the user scroll the whole collection.
+            if (packs.isNotEmpty()) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items(packs.size) { index ->
+                        val pack = packs[index]
+                        val cover = packItems[pack.id]?.firstOrNull()
+
+                        TextButton(
+                            onClick = {
+                                val target = packIndexes[pack.id]
+
+                                if (target != null) {
+                                    scope.launch {
+                                        listState.animateScrollToItem(target)
+                                    }
+                                }
+                            }
+                        ) {
+                            if (cover != null && cover.stickerId != null) {
+                                ReactionGlyph(
+                                    reaction = MessageReactionInfo(
+                                        emoji = cover.stickerEmoji ?: "",
+                                        count = 0,
+                                        customEmojiId = cover.stickerId
+                                    ),
+                                    data = data,
+                                    color = LocalContentColor.current,
+                                    session = session
+                                )
+                            }
+
+                            Text(
+                                modifier = Modifier.padding(start = 4.dp),
+                                text = pack.title,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.heightIn(max = 320.dp)
+            ) {
+                items(entries.size) { index ->
+                    when (val entry = entries[index]) {
+                        is ReactionMenuEntry.Available -> FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            maxItemsInEachRow = 8
+                        ) {
+                            entry.options.forEach { option ->
+                                ReactionPickerButton(
+                                    option = option,
+                                    chosen = isChosen(option),
+                                    data = data,
+                                    session = session,
+                                    onClick = { onReaction(option) }
+                                )
+                            }
+                        }
+
+                        is ReactionMenuEntry.PackHeader -> Text(
+                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                            text = entry.pack.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        is ReactionMenuEntry.PackRow -> FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            maxItemsInEachRow = 8
+                        ) {
+                            entry.stickers.forEach { sticker ->
+                                val emojiId = sticker.stickerId
+                                val emoji = sticker.stickerEmoji
+
+                                val option = when {
+                                    emojiId != null -> MessageReactionOption(
+                                        emoji = emoji ?: "",
+                                        customEmojiId = emojiId
+                                    )
+
+                                    !emoji.isNullOrBlank() -> MessageReactionOption(emoji)
+                                    else -> null
+                                } ?: return@forEach
+
+                                ReactionPickerButton(
+                                    option = option,
+                                    chosen = isChosen(option),
+                                    data = data,
+                                    session = session,
+                                    onClick = { onReaction(option) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            TextButton(
+                modifier = Modifier.align(Alignment.End),
+                onClick = { expanded = false }
+            ) {
+                Text("Less")
+            }
+        }
+    }
+}
+
+private sealed interface ReactionMenuEntry {
+    data class Available(
+        val options: List<MessageReactionOption>
+    ) : ReactionMenuEntry
+
+    data class PackHeader(
+        val pack: StickerPack
+    ) : ReactionMenuEntry
+
+    data class PackRow(
+        val stickers: List<MessageMedia>
+    ) : ReactionMenuEntry
+}
+
+@Composable
+private fun ReactionPickerButton(
+    option: MessageReactionOption,
+    chosen: Boolean,
+    data: Map<Long, ByteArray>,
+    session: AccountSession?,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = if (chosen) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+        } else {
+            Color.Transparent
+        }
+    ) {
+        Box(modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) {
+            ReactionGlyph(
+                reaction = MessageReactionInfo(
+                    emoji = option.emoji,
+                    count = 0,
+                    customEmojiId = option.customEmojiId
+                ),
+                data = data,
+                color = LocalContentColor.current,
+                session = session
+            )
         }
     }
 }

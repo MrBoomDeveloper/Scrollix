@@ -287,9 +287,15 @@ fun rememberDialogMessageListState(
 
         if (previous == null || previous == newest) return@LaunchedEffect
 
-        if (state.isAtBottom) {
-            val index = latestHistory.value.messages.lastIndex
-            if (index >= 0) listState.animateScrollToItem(index)
+        val index = latestHistory.value.messages.lastIndex
+        if (index < 0) return@LaunchedEffect
+
+        // Never move the viewport while the user is touching the list: content
+        // shifting under a finger is what makes the history look like it
+        // jumped. A plain scroll also avoids an animation that the user could
+        // fight with.
+        if (state.isAtBottom && !listState.isScrollInProgress) {
+            listState.scrollToItem(index)
         } else {
             state.hasNewMessages = true
         }
@@ -300,7 +306,12 @@ fun rememberDialogMessageListState(
             val info = listState.layoutInfo
             val lastVisible = info.visibleItemsInfo.lastOrNull()
 
-            lastVisible != null && lastVisible.index >= info.totalItemsCount - 1
+            // The last message counts as visible only when it is fully inside
+            // the viewport. A partially visible one still leaves scroll room,
+            // so following new messages would yank the list away.
+            lastVisible != null &&
+                lastVisible.index == info.totalItemsCount - 1 &&
+                lastVisible.offset + lastVisible.size <= info.viewportEndOffset
         }
             .distinctUntilChanged()
             .collect { atBottom ->

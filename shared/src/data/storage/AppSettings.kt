@@ -6,8 +6,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+val DefaultQuickReactions = listOf("👍", "❤️", "🔥", "🎉", "😁", "😢")
+
 @Serializable
 data class AppSettings(
+    val quickReactions: List<String> = DefaultQuickReactions,
+    val defaultHomeTab: String = "all",
     val showAllChatsTab: Boolean = false,
     val singleRowFilters: Boolean = false,
     val showRecentStickersAndEmojis: Boolean = true,

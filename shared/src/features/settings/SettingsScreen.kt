@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
 import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.ui.components.EmojiCatalog
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
@@ -332,6 +334,101 @@ private fun SettingsCategoryContent(
                         onDismiss = { emojiEditorOpen = false }
                     )
                 }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+                Text(
+                    text = "Quick reactions",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Text(
+                    text = "The emoji shown above a message's action menu.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                Text(
+                    text = settings.quickReactions.joinToString("  "),
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                var reactionsEditorOpen by remember { mutableStateOf(false) }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { reactionsEditorOpen = true }) {
+                        Text("Choose reactions")
+                    }
+
+                    if (settings.quickReactions != DefaultQuickReactions) {
+                        Button(
+                            onClick = {
+                                AppSettingsStore.update { current ->
+                                    current.copy(quickReactions = DefaultQuickReactions)
+                                }
+                            }
+                        ) {
+                            Text("Reset")
+                        }
+                    }
+                }
+
+                if (reactionsEditorOpen) {
+                    QuickReactionsDialog(
+                        selected = settings.quickReactions,
+                        onToggle = { emoji ->
+                            AppSettingsStore.update { current ->
+                                val updated = if (emoji in current.quickReactions) {
+                                    current.quickReactions - emoji
+                                } else {
+                                    current.quickReactions + emoji
+                                }
+
+                                // Keep at least one emoji so the row never vanishes.
+                                if (updated.isEmpty()) current else current.copy(
+                                    quickReactions = updated
+                                )
+                            }
+                        },
+                        onDismiss = { reactionsEditorOpen = false }
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+                Text(
+                    text = "Default home tab",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Text(
+                    text = "The tab selected when the chat list opens.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    HomeTabOptions.forEach { (key, label) ->
+                        if (settings.defaultHomeTab == key) {
+                            Button(onClick = {}) {
+                                Text(label)
+                            }
+                        } else {
+                            TextButton(
+                                onClick = {
+                                    AppSettingsStore.update { current ->
+                                        current.copy(defaultHomeTab = key)
+                                    }
+                                }
+                            ) {
+                                Text(label)
+                            }
+                        }
+                    }
+                }
             }
 
             SettingsCategory.Accounts -> {
@@ -430,6 +527,77 @@ private fun SystemEmojiDialog(
         }
     )
 }
+
+@Composable
+private fun QuickReactionsDialog(
+    selected: List<String>,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Quick reactions") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Tap an emoji to show or hide it above the message menu.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                LazyVerticalGrid(
+                    modifier = Modifier.height(360.dp),
+                    columns = GridCells.Adaptive(40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(ReactionCatalog) { emoji ->
+                        val isSelected = emoji in selected
+
+                        Box(
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (isSelected) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+                                    } else {
+                                        Color.Transparent
+                                    }
+                                )
+                                .clickable { onToggle(emoji) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = emoji,
+                                fontSize = 20.sp
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
+}
+
+private val HomeTabOptions = listOf(
+    "all" to "All",
+    "direct" to "DM",
+    "groups" to "Groups",
+    "channels" to "Channels",
+    "bots" to "Bots"
+)
+
+private val ReactionCatalog = listOf(
+    "👍", "❤️", "🔥", "🎉", "😁", "😂", "🥰", "😍", "🤩", "😎",
+    "🤔", "😮", "😢", "😡", "🙏", "👏", "💯", "✅", "❌", "⭐",
+    "👀", "🤝", "💔", "🍾", "🤯", "😴", "🌚", "🤡", "🗿", "❤️‍🔥"
+)
 
 @Composable
 private fun SettingsSwitch(

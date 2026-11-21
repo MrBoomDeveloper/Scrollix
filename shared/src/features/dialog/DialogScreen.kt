@@ -130,6 +130,7 @@ import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
 import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
 import com.mrboomdev.scrollix.ui.components.EmojiPicker
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
+import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
 import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
@@ -374,12 +375,35 @@ fun DialogScreen(
     var inputCustomEmojis by remember(providerDialogId) {
         mutableStateOf<List<CustomEmojiSpan>>(emptyList())
     }
+    var inputEmojiData by remember(providerDialogId) {
+        mutableStateOf<Map<Long, ByteArray>>(emptyMap())
+    }
 
     // Drafts reset to an empty string programmatically, which never reaches
     // onValueChange, so their custom emoji spans are dropped here.
     LaunchedEffect(input) {
         if (input.isEmpty() && inputCustomEmojis.isNotEmpty()) {
             inputCustomEmojis = emptyList()
+        }
+    }
+
+    // The composer renders custom emoji as inline stickers, so their assets
+    // have to be loaded as soon as they are inserted into the draft.
+    LaunchedEffect(session, inputCustomEmojis) {
+        val currentSession = session ?: return@LaunchedEffect
+        val missing = inputCustomEmojis
+            .map { span -> span.emojiId }
+            .distinct()
+            .filter { id -> id !in inputEmojiData }
+
+        if (missing.isEmpty()) return@LaunchedEffect
+
+        val loaded = missing.mapNotNull { id ->
+            currentSession.loadCustomEmoji(id)?.let { bytes -> id to bytes }
+        }.toMap()
+
+        if (loaded.isNotEmpty()) {
+            inputEmojiData = inputEmojiData + loaded
         }
     }
     var error by remember(providerDialogId) { mutableStateOf<String?>(null) }
@@ -914,10 +938,11 @@ fun DialogScreen(
                         return@let
                     }
                     
-                    var statusText = it.statusText
+                    val typingText = it.typingText
+                    var statusText = typingText ?: it.statusText
                     val memberCount = it.memberCount
                     
-                    if(it.kind == DialogKind.Bot) {
+                    if(it.kind == DialogKind.Bot && typingText == null) {
                         statusText = null
                     }
 
@@ -941,7 +966,7 @@ fun DialogScreen(
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         lineHeight = MaterialTheme.typography.bodyMedium.fontSize,
-                        color = if (statusText == "online") {
+                        color = if (typingText != null || statusText == "online") {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.secondary
@@ -1430,6 +1455,37 @@ fun DialogScreen(
                                                 null
                                             },
 
+                                            onReaction = { option ->
+                                                val isChosen = message.reactions.any { reaction ->
+                                                    reaction.isChosen && if (
+                                                        option.customEmojiId != null
+                                                    ) {
+                                                        reaction.customEmojiId == option.customEmojiId
+                                                    } else {
+                                                        reaction.customEmojiId == null &&
+                                                            reaction.emoji == option.emoji
+                                                    }
+                                                }
+
+                                                scope.launch {
+                                                    if (isChosen) {
+                                                        session?.removeMessageReaction(
+                                                            providerDialogId = providerDialogId,
+                                                            messageId = message.messageId,
+                                                            emoji = option.emoji,
+                                                            customEmojiId = option.customEmojiId
+                                                        )
+                                                    } else {
+                                                        session?.addMessageReaction(
+                                                            providerDialogId = providerDialogId,
+                                                            messageId = message.messageId,
+                                                            emoji = option.emoji,
+                                                            customEmojiId = option.customEmojiId
+                                                        )
+                                                    }
+                                                }
+                                            },
+
                                             onMentionClick = { username ->
                                                 scope.launch {
                                                     session?.resolveUsername(username)
@@ -1590,10 +1646,6 @@ fun DialogScreen(
                     }
                 }
 
-                if (!isTwoPaneWindow && showEmojiPicker && session != null) {
-                    emojiPickerContent(Modifier)
-                }
-
                 // On large screens the picker floats above the composer and is
                 // driven by the pointer hovering the emoji button.
                 if (isTwoPaneWindow && session != null) {
@@ -1640,66 +1692,85 @@ fun DialogScreen(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    CompositionLocalProvider(
-                        LocalMinimumInteractiveComponentSize provides Dp.Unspecified
+                    Row(
+                        modifier = Modifier
+                            .padding(bottom = 4.dp)
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(
+                                WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal
+                            )).clip(RoundedCornerShape(32.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(32.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .weight(1f)
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.Bottom
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .padding(bottom = 4.dp)
-                                .clip(RoundedCornerShape(32.dp))
-                                .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(32.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainer)
-                                .weight(1f)
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    filePicker.pickFile()
-                                }
-                            ) {
-                                Icon(
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    imageVector = add_icon,
-                                    contentDescription = null
-                                )
+                        IconButton(
+                            onClick = {
+                                filePicker.pickFile()
                             }
+                        ) {
+                            Icon(
+                                tint = MaterialTheme.colorScheme.secondary,
+                                imageVector = add_icon,
+                                contentDescription = null
+                            )
+                        }
 
-                            BasicTextField(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 32.dp)
-                                    .onPreviewKeyEvent { event ->
-                                        if (
-                                            event.type == KeyEventType.KeyDown &&
-                                            (event.key == Key.Enter || event.key == Key.NumPadEnter) &&
-                                            !event.isShiftPressed
-                                        ) {
-                                            send()
-                                            true
-                                        } else {
-                                            false
-                                        }
-                                    },
-                                value = input,
-                                onValueChange = { value ->
-                                    inputCustomEmojis = adjustCustomEmojiSpans(
-                                        oldText = input,
-                                        newText = value,
-                                        spans = inputCustomEmojis
-                                    )
-
-                                    input = value
+                        BasicTextField(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 35.dp)
+                                .onPreviewKeyEvent { event ->
+                                    if(
+                                        event.type == KeyEventType.KeyDown &&
+                                        (event.key == Key.Enter || event.key == Key.NumPadEnter) &&
+                                        !event.isShiftPressed
+                                    ) {
+                                        send()
+                                        true
+                                    } else {
+                                        false
+                                    }
                                 },
-                                enabled = !isSending,
-                                maxLines = 10,
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+                            value = input,
+                            onValueChange = { value ->
+                                inputCustomEmojis = adjustCustomEmojiSpans(
+                                    oldText = input,
+                                    newText = value,
+                                    spans = inputCustomEmojis
+                                )
 
-                                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                    color = MaterialTheme.colorScheme.onSurface
-                                ),
+                                input = value
+                            },
+                            enabled = !isSending,
+                            maxLines = 10,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
 
-                                decorationBox = { innerTextField ->
+                            // With custom emoji in the draft the field text
+                            // is drawn by the overlay below, which can render
+                            // them as stickers; the field keeps the caret and
+                            // selection.
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = if(inputCustomEmojis.isEmpty()) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    Color.Transparent
+                                }
+                            ),
+
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if(inputCustomEmojis.isNotEmpty()) {
+                                        CustomEmojiMessageText(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            text = input,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            emojis = inputCustomEmojis,
+                                            data = inputEmojiData
+                                        )
+                                    }
+
                                     innerTextField()
 
                                     if(input.isEmpty()) {
@@ -1711,41 +1782,41 @@ fun DialogScreen(
                                         )
                                     }
                                 }
-                            )
+                            }
+                        )
 
+                        IconButton(
+                            modifier = Modifier
+                                .onGloballyPositioned { coordinates ->
+                                    emojiPickerAnchor = coordinates.boundsInWindow()
+                                }
+                                .hoverable(emojiButtonInteraction),
+                            onClick = {
+                                showEmojiPicker = !showEmojiPicker
+                            }
+                        ) {
+                            Icon(
+                                tint = if(showEmojiPicker) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.secondary
+                                },
+                                imageVector = mood_icon,
+                                contentDescription = "Emoji and stickers"
+                            )
+                        }
+
+                        AnimatedVisibility(input.isEmpty()) {
                             IconButton(
-                                modifier = Modifier
-                                    .onGloballyPositioned { coordinates ->
-                                        emojiPickerAnchor = coordinates.boundsInWindow()
-                                    }
-                                    .hoverable(emojiButtonInteraction),
                                 onClick = {
-                                    showEmojiPicker = !showEmojiPicker
+
                                 }
                             ) {
                                 Icon(
-                                    tint = if (showEmojiPicker) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.secondary
-                                    },
-                                    imageVector = mood_icon,
-                                    contentDescription = "Emoji and stickers"
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    imageVector = microphone_icon,
+                                    contentDescription = null
                                 )
-                            }
-
-                            AnimatedVisibility(input.isEmpty()) {
-                                IconButton(
-                                    onClick = {
-
-                                    }
-                                ) {
-                                    Icon(
-                                        tint = MaterialTheme.colorScheme.secondary,
-                                        imageVector = microphone_icon,
-                                        contentDescription = null
-                                    )
-                                }
                             }
                         }
                     }
@@ -1769,6 +1840,10 @@ fun DialogScreen(
                             )
                         }
                     }
+                }
+
+                if (!isTwoPaneWindow && showEmojiPicker && session != null) {
+                    emojiPickerContent(Modifier)
                 }
             }
         }
@@ -1977,12 +2052,15 @@ private fun MessageImagePreview(
     }
 
     val bitmap = image
-    val aspectRatio = bitmap?.let { it.width.toFloat() / it.height }
-        ?: if (media.width > 0 && media.height > 0) {
-            media.width.toFloat() / media.height
-        } else {
-            4f / 3f
-        }
+
+    // The preview bitmap can be cropped, so its own ratio must never resize
+    // the bubble after it decodes. The dimensions that come with the message
+    // are stable, which keeps the list from shifting under the user.
+    val aspectRatio = if (media.width > 0 && media.height > 0) {
+        media.width.toFloat() / media.height
+    } else {
+        bitmap?.let { it.width.toFloat() / it.height } ?: (4f / 3f)
+    }
 
     Box(
         modifier = Modifier

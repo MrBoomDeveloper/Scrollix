@@ -50,8 +50,12 @@ import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import io.github.alexzhirkevich.qrose.rememberQrCodePainter
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+
+/** Delay before the code can be requested again. */
+private const val CodeResendDelaySeconds = 60
 
 @Composable
 fun LoginScreen(
@@ -160,6 +164,19 @@ private fun AuthChallengeContent(
         mutableStateOf<AuthAction?>(null)
     }
 
+    // Telegram blocks code requests for a while if they are repeated too
+    // often, which looks like the code never arrives. Keep resending behind a
+    // short cooldown so that cannot happen.
+    var resendCooldown by remember(challenge.id) {
+        mutableStateOf(if (challenge.id == "code") CodeResendDelaySeconds else 0)
+    }
+    LaunchedEffect(resendCooldown) {
+        if (resendCooldown > 0) {
+            delay(1_000)
+            resendCooldown--
+        }
+    }
+
     val isBusy = challenge.isSubmitting || pendingAction != null
 
     val canSubmit = challenge.fields.isNotEmpty() && challenge.fields.all { field ->
@@ -179,6 +196,7 @@ private fun AuthChallengeContent(
             }
         }
     }
+
 
     Column(
         modifier = modifier
@@ -212,6 +230,23 @@ private fun AuthChallengeContent(
                 enabled = !isBusy,
                 onValueChange = { value ->
                     values = values + (field.id to value)
+                }
+            )
+        }
+
+        if (challenge.id == "code" && values["code"].isNullOrBlank()) {
+            Text(
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                text = when {
+                    pendingAction == AuthAction.ResendCode ->
+                        "Requesting a new code…"
+
+                    resendCooldown > 0 ->
+                        "Waiting for the code. You can request a new one in ${resendCooldown}s."
+
+                    else ->
+                        "The code hasn't arrived. Tap Resend code to request a new one."
                 }
             )
         }
@@ -257,10 +292,17 @@ private fun AuthChallengeContent(
                 when (action) {
                     is AuthAction.ResendCode -> {
                         AuthActionButton(
-                            text = "Resend code",
+                            text = if (resendCooldown > 0) {
+                                "Resend code in ${resendCooldown}s"
+                            } else {
+                                "Resend code"
+                            },
                             isBusy = pendingAction == action,
-                            enabled = !isBusy && session != null,
-                            onClick = { performAction(action) }
+                            enabled = !isBusy && session != null && resendCooldown == 0,
+                            onClick = {
+                                resendCooldown = CodeResendDelaySeconds
+                                performAction(action)
+                            }
                         )
                     }
 

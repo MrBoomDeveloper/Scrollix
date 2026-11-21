@@ -24,6 +24,7 @@ import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
+import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageReply
@@ -59,6 +60,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -72,6 +74,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+private const val TypingStatusTimeoutMillis = 5_000L
 
 class TelegramAccountSession(
     account: AccountRecord,
@@ -122,6 +126,7 @@ class TelegramAccountSession(
     private val customEmojiCache = mutableMapOf<Long, Sticker>()
     private val customEmojiCacheMutex = Mutex()
     private var folderEmojiJob: Job? = null
+    private val typingJobs = mutableMapOf<Long, Job>()
 
     private val stateMutex = Mutex()
     private val folderChatsMutex = Mutex()
@@ -1136,49 +1141,68 @@ class TelegramAccountSession(
 
         val phoneNumber = normalizePhoneNumber(values["phone"].orEmpty())
 
-        val result = when (challenge.id) {
-            "phone" -> {
-                if (phoneNumber == null) {
-                    setChallengeError(
-                        id = challenge.id,
-                        message = "Enter the phone number in international format, starting with +. " +
-                            "Example: +12345678900."
-                    )
-                    return
+        val result = try {
+            when (challenge.id) {
+                "phone" -> {
+                    if (phoneNumber == null) {
+                        setChallengeError(
+                            id = challenge.id,
+                            message = "Enter a phone number with the country code, " +
+                                "for example +12345678900."
+                        )
+                        return
+                    }
+
+                    client.setAuthenticationPhoneNumber(phoneNumber = phoneNumber)
                 }
 
-                client.setAuthenticationPhoneNumber(phoneNumber = phoneNumber)
-            }
-
-            "code" -> client.checkAuthenticationCode(
-                code = values["code"].orEmpty().trim()
-            )
-
-            "password" -> client.checkAuthenticationPassword(
-                password = values["password"].orEmpty()
-            )
-
-            "password_recovery_code" -> client.checkAuthenticationPasswordRecoveryCode(
-                recoveryCode = values["code"].orEmpty().trim()
-            )
-
-            "email" -> client.setAuthenticationEmailAddress(
-                emailAddress = values["email"].orEmpty().trim()
-            )
-
-            "email_code" -> client.checkAuthenticationEmailCode(
-                code = EmailAddressAuthenticationCode(
+                "code" -> client.checkAuthenticationCode(
                     code = values["code"].orEmpty().trim()
                 )
-            )
 
-            "registration" -> client.registerUser(
-                firstName = values["first_name"].orEmpty().trim(),
-                lastName = values["last_name"].orEmpty().trim(),
-                disableNotification = false
-            )
+                "password" -> client.checkAuthenticationPassword(
+                    password = values["password"].orEmpty()
+                )
 
-            else -> return
+                "password_recovery_code" -> client.checkAuthenticationPasswordRecoveryCode(
+                    recoveryCode = values["code"].orEmpty().trim()
+                )
+
+                "email" -> client.setAuthenticationEmailAddress(
+                    emailAddress = values["email"].orEmpty().trim()
+                )
+
+                "email_code" -> client.checkAuthenticationEmailCode(
+                    code = EmailAddressAuthenticationCode(
+                        code = values["code"].orEmpty().trim()
+                    )
+                )
+
+                "registration" -> client.registerUser(
+                    firstName = values["first_name"].orEmpty().trim(),
+                    lastName = values["last_name"].orEmpty().trim(),
+                    disableNotification = false
+                )
+
+                else -> return
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            // A thrown request must not leave the form stuck without telling
+            // the user why the code was never requested.
+            setChallengeError(
+                id = challenge.id,
+                message = authErrorMessage(
+                    exception.message ?: "Telegram request failed"
+                )
+            )
+            return
+        }
+
+        val failure = result as? TdlResult.Failure
+        failure?.let { failed ->
+            println("Telegram auth request failed: ${failed.message}")
         }
 
         stateMutex.withLock {
@@ -1186,7 +1210,9 @@ class TelegramAccountSession(
             if (current?.id == challenge.id) {
                 val updated = current.copy(
                     isSubmitting = false,
-                    error = (result as? TdlResult.Failure)?.message,
+                    error = failure?.let { failed ->
+                        authErrorMessage(failed.message)
+                    },
                     description = if (
                         challenge.id == "phone" &&
                         result is TdlResult.Success
@@ -1207,15 +1233,27 @@ class TelegramAccountSession(
     override suspend fun performAuthAction(action: AuthAction) {
         val challenge = currentChallenge ?: return
 
-        val result = when (action) {
-            AuthAction.ResendCode -> client.resendAuthenticationCode(
-                reason = ResendCodeReasonUserRequest()
+        val result = try {
+            when (action) {
+                AuthAction.ResendCode -> client.resendAuthenticationCode(
+                    reason = ResendCodeReasonUserRequest()
+                )
+                AuthAction.RecoverPassword -> client.requestAuthenticationPasswordRecovery()
+                AuthAction.UseQrCode -> client.requestQrCodeAuthentication(
+                    otherUserIds = longArrayOf()
+                )
+                AuthAction.Submit, is AuthAction.OpenUrl -> return
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            setChallengeError(
+                id = challenge.id,
+                message = authErrorMessage(
+                    exception.message ?: "Telegram request failed"
+                )
             )
-            AuthAction.RecoverPassword -> client.requestAuthenticationPasswordRecovery()
-            AuthAction.UseQrCode -> client.requestQrCodeAuthentication(
-                otherUserIds = longArrayOf()
-            )
-            AuthAction.Submit, is AuthAction.OpenUrl -> return
+            return
         }
 
         when (result) {
@@ -1258,12 +1296,14 @@ class TelegramAccountSession(
             }
 
             is TdlResult.Failure -> {
+                println("Telegram auth action failed: ${result.message}")
+
                 stateMutex.withLock {
                     val current = currentChallenge
                     if (current?.id == challenge.id) {
                         val updated = current.copy(
                             isSubmitting = false,
-                            error = result.message
+                            error = authErrorMessage(result.message)
                         )
 
                         currentChallenge = updated
@@ -1271,6 +1311,133 @@ class TelegramAccountSession(
                     }
                 }
             }
+        }
+    }
+
+    override suspend fun confirmQrCodeAuthentication(link: String): Result<Unit> {
+        if (link.isBlank()) {
+            return Result.failure(IllegalArgumentException("The QR code is empty"))
+        }
+
+        return try {
+            when (val result = client.confirmQrCodeAuthentication(link)) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(
+                    Exception(authErrorMessage(result.message))
+                )
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun addMessageReaction(
+        providerDialogId: String,
+        messageId: Long,
+        emoji: String,
+        customEmojiId: Long?
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.addMessageReaction(
+                chatId = chatId,
+                messageId = messageId,
+                reactionType = reactionType(emoji, customEmojiId),
+                isBig = false,
+                updateRecentReactions = true
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun removeMessageReaction(
+        providerDialogId: String,
+        messageId: Long,
+        emoji: String,
+        customEmojiId: Long?
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.removeMessageReaction(
+                chatId = chatId,
+                messageId = messageId,
+                reactionType = reactionType(emoji, customEmojiId)
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadAvailableReactions(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<List<MessageReactionOption>> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.getMessageAvailableReactions(
+                chatId = chatId,
+                messageId = messageId,
+                rowSize = 4
+            )) {
+                is TdlResult.Success -> {
+                    val available = result.result
+
+                    val reactions = buildList {
+                        addAll(available.topReactions.mapNotNull { it.toOption() })
+                        addAll(available.recentReactions.mapNotNull { it.toOption() })
+                        addAll(available.popularReactions.mapNotNull { it.toOption() })
+                    }
+
+                    Result.success(
+                        reactions.distinctBy { it.key }.take(32)
+                    )
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    private fun reactionType(emoji: String, customEmojiId: Long?): ReactionType {
+        return if (customEmojiId != null) {
+            ReactionTypeCustomEmoji(customEmojiId = customEmojiId)
+        } else {
+            ReactionTypeEmoji(emoji = emoji)
+        }
+    }
+
+    private fun AvailableReaction.toOption(): MessageReactionOption? {
+        return when (val type = type) {
+            is ReactionTypeEmoji -> MessageReactionOption(emoji = type.emoji)
+            is ReactionTypeCustomEmoji -> MessageReactionOption(
+                emoji = "",
+                customEmojiId = type.customEmojiId
+            )
+
+            else -> null
         }
     }
 
@@ -1458,6 +1625,12 @@ class TelegramAccountSession(
                 emitDialogs()
             }
 
+            is UpdateChatAction -> handleChatAction(
+                chatId = update.chatId,
+                senderId = update.senderId,
+                action = update.action
+            )
+
             is UpdateNewMessage -> upsertMessage(update.message)
 
             is UpdateMessageContent -> updateMessageContent(
@@ -1536,9 +1709,9 @@ class TelegramAccountSession(
                         AuthChallenge(
                             id = "phone",
                             title = "Your phone number",
-                            description = "Enter your phone number in international format, starting with +. " +
-                                "Example: +12345678900. Telegram may send the code to your Telegram app " +
-                                "on another device instead of SMS.",
+                            description =                        "Enter your phone number with the country code, for example +12345678900. " +
+                            "Telegram may send the code to your Telegram app on another device " +
+                            "instead of SMS.",
                             fields = listOf(
                                 AuthField(
                                     id = "phone",
@@ -1724,9 +1897,10 @@ class TelegramAccountSession(
     }
 
     private fun codeDeliveryDescription(state: AuthorizationStateWaitCode): String {
-        val phoneNumber = state.codeInfo.phoneNumber
+        val codeInfo = state.codeInfo
+        val phoneNumber = codeInfo.phoneNumber
 
-        return when (state.codeInfo.type) {
+        val base = when (codeInfo.type) {
             is AuthenticationCodeTypeTelegramMessage -> {
                 "Telegram sent the code to your Telegram app on another device. " +
                     "Open Telegram there to view it. If you can't access that device, use QR code login."
@@ -1767,6 +1941,27 @@ class TelegramAccountSession(
             }
 
         }
+
+        // TDLib alternates delivery channels on resend; telling the user what
+        // comes next makes a missing SMS less confusing.
+        val nextHint = when (val next = codeInfo.nextType) {
+            null -> ""
+            is AuthenticationCodeTypeCall ->
+                " The next request will arrive as a phone call."
+
+            is AuthenticationCodeTypeFlashCall,
+            is AuthenticationCodeTypeMissedCall ->
+                " The next request will arrive as a call."
+
+            is AuthenticationCodeTypeSms,
+            is AuthenticationCodeTypeSmsWord,
+            is AuthenticationCodeTypeSmsPhrase ->
+                " The next request will be delivered by SMS."
+
+            else -> ""
+        }
+
+        return base + nextHint
     }
 
     private fun normalizePhoneNumber(input: String): String? {
@@ -1779,14 +1974,77 @@ class TelegramAccountSession(
         return when {
             trimmed.startsWith("+") -> "+$digits"
             trimmed.startsWith("00") -> "+${digits.drop(2)}"
-            else -> null
+            // A common local format: 8 followed by the subscriber number.
+            digits.length == 11 && digits.startsWith('8') -> "+7${digits.drop(1)}"
+            // The country code is what matters for TDLib; accept it without a
+            // leading plus so a formatting slip cannot block the code request.
+            else -> "+$digits"
+        }
+    }
+
+    /** Turns raw TDLib errors into messages that explain what to do next. */
+    private fun authErrorMessage(raw: String): String {
+        val floodWaitSeconds = Regex("FLOOD_WAIT_(\\d+)")
+            .find(raw)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+
+        return when {
+            floodWaitSeconds != null -> {
+                val minutes = (floodWaitSeconds + 59) / 60
+                "Telegram is limiting code requests for this account. " +
+                    "Wait about $minutes minute(s) before trying again."
+            }
+
+            raw.contains("PHONE_NUMBER_INVALID") ->
+                "Telegram rejected this phone number. Check the country code and try again."
+
+            raw.contains("PHONE_NUMBER_BANNED") ->
+                "This phone number is banned from Telegram."
+
+            raw.contains("PHONE_NUMBER_OCCUPIED") ->
+                "This phone number is already used by another Telegram account."
+
+            raw.contains("PHONE_CODE_INVALID") ->
+                "The verification code is incorrect. Check the digits and try again."
+
+            raw.contains("PHONE_CODE_EXPIRED") ->
+                "The verification code expired. Request a new one."
+
+            raw.contains("API_ID_INVALID") || raw.contains("API_ID_PUBLISHED_FLOOD") ->
+                "Telegram rejected this app's API credentials (${raw.take(120)}). " +
+                    "Put a valid application pair into telegram.apiId and telegram.apiHash " +
+                    "in local.properties and rebuild."
+
+            raw.contains("PHONE_NUMBER_FLOOD") ->
+                "Telegram is blocking code requests for this number for a while " +
+                    "(${raw.take(120)}). Wait before trying again."
+
+            // Never hide an unknown failure: the raw TDLib reason is the only
+            // way to tell why the code could not be requested.
+            else -> "Telegram: $raw"
         }
     }
 
     private fun setChallenge(challenge: AuthChallenge) {
         ready = false
-        currentChallenge = challenge
-        _authState.value = AuthState.Challenge(challenge)
+
+        // TDLib re-emits the same state after a failed attempt. Keeping the
+        // previous error makes it visible instead of flashing and vanishing.
+        val previous = currentChallenge
+        val next = if (
+            previous != null &&
+            previous.id == challenge.id &&
+            previous.description == challenge.description
+        ) {
+            challenge.copy(error = previous.error)
+        } else {
+            challenge
+        }
+
+        currentChallenge = next
+        _authState.value = AuthState.Challenge(next)
     }
 
     private fun setError(message: String) {
@@ -3747,6 +4005,87 @@ class TelegramAccountSession(
         emitDialogs()
     }
 
+    private fun handleChatAction(
+        chatId: Long,
+        senderId: MessageSender,
+        action: ChatAction
+    ) {
+        // Actions of this account itself are reported too; they must not show
+        // up as if somebody else was typing in the open chat.
+        if (senderId is MessageSenderUser && senderId.userId == currentUserId) {
+            return
+        }
+
+        val activityText = chatActionLabel(action)?.let { label ->
+            actionTextFor(chatId, senderId, label)
+        }
+
+        typingJobs.remove(chatId)?.cancel()
+        updateChat(chatId) { entry -> entry.copy(typingText = activityText) }
+
+        if (activityText == null) return
+
+        // TDLib does not repeat the action, so the hint has to expire on its
+        // own when the person stops typing or leaves the app.
+        typingJobs[chatId] = scope.launch {
+            delay(TypingStatusTimeoutMillis)
+
+            updateChat(chatId) { entry ->
+                if (entry.typingText == activityText) {
+                    entry.copy(typingText = null)
+                } else {
+                    entry
+                }
+            }
+        }
+    }
+
+    private fun chatActionLabel(action: ChatAction): String? = when (action) {
+        is ChatActionTyping -> "typing…"
+        is ChatActionRecordingVoiceNote -> "recording a voice message…"
+        is ChatActionUploadingVoiceNote -> "sending a voice message…"
+        is ChatActionRecordingVideoNote -> "recording a video message…"
+        is ChatActionUploadingVideoNote -> "sending a video message…"
+        is ChatActionRecordingVideo -> "recording a video…"
+        is ChatActionUploadingVideo -> "sending a video…"
+        is ChatActionUploadingPhoto -> "sending a photo…"
+        is ChatActionUploadingDocument -> "sending a file…"
+        is ChatActionChoosingContact -> "sharing a contact…"
+        is ChatActionChoosingLocation -> "sharing a location…"
+        is ChatActionChoosingSticker -> "choosing a sticker…"
+        is ChatActionStartPlayingGame -> "playing a game…"
+        else -> null
+    }
+
+    private fun actionTextFor(
+        chatId: Long,
+        senderId: MessageSender,
+        label: String
+    ): String? {
+        val entry = _chats.value[chatId] ?: return null
+        val privateUserId = (entry.type as? ChatTypePrivate)?.userId
+
+        return when (senderId) {
+            is MessageSenderUser -> {
+                // In private chats there is only one other person to name.
+                if (privateUserId == senderId.userId) {
+                    label
+                } else {
+                    val user = _users.value[senderId.userId]
+                        ?: run {
+                            requestUser(senderId.userId)
+                            null
+                        }
+
+                    user?.let { "${userDisplayName(it)} is $label" }
+                }
+            }
+
+            is MessageSenderChat -> _chats.value[senderId.chatId]?.title
+                ?.let { title -> "$title is $label" }
+        }
+    }
+
     private fun updateChat(chatId: Long, transform: (ChatEntry) -> ChatEntry) {
         _chats.update { chats ->
             val entry = chats[chatId] ?: return@update chats
@@ -3846,12 +4185,17 @@ class TelegramAccountSession(
                 kind = kind,
                 title = if (isSavedMessages) "Saved Messages" else entry.title,
                 statusText = if (isSavedMessages) null else user?.let(::userStatusText),
+                typingText = if (isSavedMessages) null else entry.typingText,
                 emojiStatusId = if (isSavedMessages) {
                     null
                 } else {
                     emojiStatusId(entry.emojiStatus) ?: emojiStatusId(user?.emojiStatus)
                 },
                 preview = messagePreview(lastMessage),
+                previewCustomEmojis = messagePreviewCustomEmojis(
+                    message = lastMessage,
+                    preview = messagePreview(lastMessage)
+                ),
                 lastMessageMedia = lastMessage?.let { message ->
                     mapMedia(message.content)
                 },
@@ -3905,6 +4249,34 @@ class TelegramAccountSession(
         _dialogs.value = dialogs
     }
 
+    /**
+     * Custom emoji entities live on the original message text, while the
+     * preview is trimmed and has its newlines flattened. Offsets are remapped
+     * onto the preview so the dialog list can render them inline.
+     */
+    private fun messagePreviewCustomEmojis(
+        message: Message?,
+        preview: String
+    ): List<CustomEmojiSpan> {
+        if (message == null) return emptyList()
+
+        val original = messageBody(message.content)
+        if (original.replace('\n', ' ').trim() != preview) return emptyList()
+
+        val leading = original.length - original.trimStart().length
+
+        return messageCustomEmojis(message.content).mapNotNull { span ->
+            val start = span.start - leading
+            val end = span.end - leading
+
+            if (start < 0 || end > preview.length || start >= end) {
+                null
+            } else {
+                span.copy(start = start, end = end)
+            }
+        }
+    }
+
     private fun messagePreview(message: Message?): String {
         if (message == null) return "No messages yet"
 
@@ -3954,7 +4326,8 @@ class TelegramAccountSession(
         val permissions: ChatPermissions,
         val unreadCount: Int,
         val lastReadOutboxMessageId: Long,
-        val isMarkedAsUnread: Boolean
+        val isMarkedAsUnread: Boolean,
+        val typingText: String? = null
     ) {
         companion object {
             fun from(chat: Chat): ChatEntry {

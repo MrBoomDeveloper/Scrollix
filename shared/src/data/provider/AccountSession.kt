@@ -10,6 +10,7 @@ import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
@@ -37,6 +38,12 @@ interface AccountSession {
     suspend fun start()
     suspend fun submitAuth(values: Map<String, String>)
     suspend fun performAuthAction(action: AuthAction)
+
+    /**
+     * Approves a login on another device by passing the link encoded in the
+     * QR code that device shows. Only works for an authorized session.
+     */
+    suspend fun confirmQrCodeAuthentication(link: String): Result<Unit>
     suspend fun loadMessages(providerDialogId: String, limit: Int = 50): Result<Unit>
     suspend fun loadOlderMessages(providerDialogId: String, limit: Int = 50): Result<Boolean>
     suspend fun loadMessagesUntil(providerDialogId: String, messageId: Long): Result<Boolean>
@@ -118,6 +125,22 @@ interface AccountSession {
         messageId: Long,
         isPinned: Boolean
     ): Result<Unit>
+    suspend fun addMessageReaction(
+        providerDialogId: String,
+        messageId: Long,
+        emoji: String,
+        customEmojiId: Long? = null
+    ): Result<Unit>
+    suspend fun removeMessageReaction(
+        providerDialogId: String,
+        messageId: Long,
+        emoji: String,
+        customEmojiId: Long? = null
+    ): Result<Unit>
+    suspend fun loadAvailableReactions(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<List<MessageReactionOption>>
     suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?>
     suspend fun logout()
     suspend fun close()

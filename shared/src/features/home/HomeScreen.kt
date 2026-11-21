@@ -48,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,9 +73,11 @@ import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
 import com.mrboomdev.scrollix.ui.components.DialogMediaPreview
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.FolderNameText
@@ -106,6 +109,7 @@ private const val TAB_BOTS = 4
 @Composable
 fun HomeScreen(
     onOpenAccountsScreen: () -> Unit,
+    onOpenSettingsScreen: () -> Unit,
     onOpenDialog: (AccountDialogEntry) -> Unit,
     selectedDialogAccountId: String? = null,
     selectedDialogProviderDialogId: String? = null
@@ -116,7 +120,17 @@ fun HomeScreen(
     val isSingleRowFilters = settings.singleRowFilters
     val isUsingNativeFolders = settings.useNativeFolders
     
-    var selectedTab by remember { mutableStateOf(if(isAllShown) TAB_ALL else TAB_DIRECT) }
+    var selectedTab by remember {
+        mutableStateOf(
+            when (settings.defaultHomeTab) {
+                "direct" -> TAB_DIRECT
+                "groups" -> TAB_GROUPS
+                "channels" -> TAB_CHANNELS
+                "bots" -> TAB_BOTS
+                else -> if(isAllShown) TAB_ALL else TAB_DIRECT
+            }
+        )
+    }
     var selectedNativeFolderKey by remember { mutableStateOf<String?>(null) }
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
@@ -289,7 +303,8 @@ fun HomeScreen(
                                     },
                                     
                                     onClick = {
-                                        
+                                        onOpenSettingsScreen()
+                                        expand = false
                                     }
                                 )
                             }
@@ -302,12 +317,33 @@ fun HomeScreen(
                 CompositionLocalProvider(
                     LocalMinimumInteractiveComponentSize provides Dp.Unspecified
                 ) {
-                    @Composable
-                    fun FlexBoxScope.homeFilterChipsContent() {
-                        val chipModifier = Modifier.flex { 
+                    FlexBox(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if(isSingleRowFilters) {
+                                Modifier.horizontalScroll(rememberScrollState())
+                            } else Modifier)
+                            .padding(horizontal = 8.dp)
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(
+                                    if(layoutInfo.size >= AdaptiveLayoutSize.EXPANDED) {
+                                        WindowInsetsSides.Top
+                                    } else WindowInsetsSides.Horizontal
+                                )
+                            ),
+                        
+                        config = {
+                            gap(4.dp)
+                            
+                            if(!isSingleRowFilters) {
+                                wrap(FlexWrap.Wrap)
+                            }
+                        }
+                    ) {
+                        val chipModifier = Modifier.flex {
                             grow(1f)
                         }
-                        
+
                         if(isUsingNativeFolders) {
                             if(isAllShown) {
                                 HomeTab(
@@ -317,7 +353,7 @@ fun HomeScreen(
                                     icon = home_icon,
                                     unreadCount = allUnreadCount,
                                     onClick = { selectedNativeFolderKey = null }
-                                )   
+                                )
                             }
 
                             folders.forEach { folder ->
@@ -344,66 +380,24 @@ fun HomeScreen(
                                 )
                             }
 
-                            HomeTab(
-                                modifier = chipModifier,
-                                selected = selectedTab == TAB_DIRECT,
-                                label = "DM",
-                                icon = account_circle_icon,
-                                unreadCount = tabUnreadCounts[TAB_DIRECT] ?: 0,
-                                onClick = { selectedTab = TAB_DIRECT }
-                            )
-
-                            HomeTab(
-                                modifier = chipModifier,
-                                selected = selectedTab == TAB_GROUPS,
-                                label = "Groups",
-                                icon = group_icon,
-                                unreadCount = tabUnreadCounts[TAB_GROUPS] ?: 0,
-                                onClick = { selectedTab = TAB_GROUPS }
-                            )
-
-                            HomeTab(
-                                modifier = chipModifier,
-                                selected = selectedTab == TAB_CHANNELS,
-                                label = "Channels",
-                                icon = brand_awareness_icon,
-                                unreadCount = tabUnreadCounts[TAB_CHANNELS] ?: 0,
-                                onClick = { selectedTab = TAB_CHANNELS }
-                            )
-
-                            HomeTab(
-                                modifier = chipModifier,
-                                selected = selectedTab == TAB_BOTS,
-                                label = "Bots",
-                                icon = smart_toy_icon,
-                                unreadCount = tabUnreadCounts[TAB_BOTS] ?: 0,
-                                onClick = { selectedTab = TAB_BOTS }
-                            )
-                        }
-                    }
-
-                    FlexBox(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(if(isSingleRowFilters) {
-                                Modifier.horizontalScroll(rememberScrollState())
-                            } else Modifier)
-                            .padding(horizontal = 8.dp)
-                            .windowInsetsPadding(
-                                WindowInsets.safeDrawing.only(
-                                    WindowInsetsSides.Horizontal
+                            for((title, index, icon) in remember {
+                                listOf(
+                                    Triple("DM", TAB_DIRECT, account_circle_icon),
+                                    Triple("Groups", TAB_GROUPS, group_icon),
+                                    Triple("Channels", TAB_CHANNELS, brand_awareness_icon),
+                                    Triple("Bots", TAB_BOTS, smart_toy_icon)
                                 )
-                            ),
-                        
-                        config = {
-                            gap(4.dp)
-                            
-                            if(!isSingleRowFilters) {
-                                wrap(FlexWrap.Wrap)
+                            }) {
+                                HomeTab(
+                                    modifier = chipModifier,
+                                    selected = selectedTab == index,
+                                    label = title,
+                                    icon = icon,
+                                    unreadCount = tabUnreadCounts[index] ?: 0,
+                                    onClick = { selectedTab = index }
+                                )
                             }
                         }
-                    ) {
-                        homeFilterChipsContent()
                     }
                 }
 
@@ -569,6 +563,47 @@ private fun Dialog.hasUnreadIndicator(): Boolean =
     unreadCount > 0 || isMarkedAsUnread
 
 @Composable
+private fun DialogPreviewText(
+    modifier: Modifier = Modifier,
+    dialog: Dialog,
+    session: AccountSession?
+) {
+    val emojis = dialog.previewCustomEmojis
+    var data by remember(dialog.providerDialogId, emojis) {
+        mutableStateOf<Map<Long, ByteArray>>(emptyMap())
+    }
+
+    LaunchedEffect(session, emojis) {
+        val currentSession = session ?: return@LaunchedEffect
+        val missing = emojis
+            .map { span -> span.emojiId }
+            .distinct()
+            .filter { id -> id !in data }
+
+        if (missing.isEmpty()) return@LaunchedEffect
+
+        val loaded = missing.mapNotNull { id ->
+            currentSession.loadCustomEmoji(id)?.let { bytes -> id to bytes }
+        }.toMap()
+
+        if (loaded.isNotEmpty()) {
+            data = data + loaded
+        }
+    }
+
+    CustomEmojiMessageText(
+        modifier = modifier,
+        text = dialog.preview,
+        emojis = emojis,
+        data = data,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.secondary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
 private fun UnreadCountBadge(
     count: Int,
     selected: Boolean
@@ -700,31 +735,41 @@ private fun DialogItem(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (dialog.lastMessageIsOutgoing) {
+                    val typingText = dialog.typingText
+
+                    if (typingText != null) {
                         Text(
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.secondary,
-                            text = "You:",
-                            maxLines = 1
+                            color = MaterialTheme.colorScheme.primary,
+                            text = typingText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        if (dialog.lastMessageIsOutgoing) {
+                            Text(
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.secondary,
+                                text = "You:",
+                                maxLines = 1
+                            )
+                        }
+
+                        dialog.lastMessageMedia?.let { media ->
+                            DialogMediaPreview(
+                                media = media,
+                                session = session,
+                                size = 20.dp
+                            )
+                        }
+
+                        DialogPreviewText(
+                            modifier = Modifier.weight(1f),
+                            dialog = dialog,
+                            session = session
                         )
                     }
-
-                    dialog.lastMessageMedia?.let { media ->
-                        DialogMediaPreview(
-                            media = media,
-                            session = session,
-                            size = 20.dp
-                        )
-                    }
-
-                    Text(
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                        text = dialog.preview,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
                 }
             }
 
@@ -847,13 +892,13 @@ private fun AccountBadge(entry: AccountDialogEntry) {
             size = 16.dp
         )
 
-        Text(
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            text = label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+//        Text(
+//            style = MaterialTheme.typography.labelSmall,
+//            color = MaterialTheme.colorScheme.secondary,
+//            text = label,
+//            maxLines = 1,
+//            overflow = TextOverflow.Ellipsis
+//        )
     }
 }
 

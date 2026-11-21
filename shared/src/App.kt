@@ -53,8 +53,10 @@ import com.mrboomdev.scrollix.ui.icons.explore_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
+import com.mrboomdev.scrollix.ui.icons.qr_code_scanner_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
+import com.mrboomdev.scrollix.ui.components.QrScannerDialog
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.theme.appTypography
@@ -95,6 +97,8 @@ fun App() {
     }
     
     val selectedDialog = remember { mutableStateOf<Route.Dialog?>(null) }
+    var showQrScanner by remember { mutableStateOf(false) }
+    val accountState by ApiManager.accountState.collectAsState()
     val currentRoute = backStack.lastOrNull()
     
     val showNavigation = remember(currentRoute, layoutInfo.isTwoPane) {
@@ -214,6 +218,26 @@ fun App() {
                                                         backStack.add(Route.Settings)
                                                     }
 
+                                                    expand = false
+                                                }
+                                            )
+
+                                            DropdownMenuItem(
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = qr_code_scanner_icon,
+                                                        contentDescription = null
+                                                    )
+                                                },
+
+                                                text = {
+                                                    Text(
+                                                        text = "Scan QR"
+                                                    )
+                                                },
+
+                                                onClick = {
+                                                    showQrScanner = true
                                                     expand = false
                                                 }
                                             )
@@ -354,6 +378,21 @@ fun App() {
                 }
 
                 MediaViewerOverlay()
+
+                if (showQrScanner) {
+                    val activeSession = remember(accountState.activeAccountId) {
+                        accountState.activeAccountId?.let { accountId ->
+                            ApiManager.session(accountId)
+                        } ?: accountState.accounts.firstOrNull()?.let { account ->
+                            ApiManager.session(account.id)
+                        }
+                    }
+
+                    QrScannerDialog(
+                        session = activeSession,
+                        onDismiss = { showQrScanner = false }
+                    )
+                }
             }
         }
     }

@@ -47,8 +47,11 @@ data class Dialog(
     val kind: DialogKind,
     val title: String,
     val statusText: String? = null,
+    /** Transient chat action hint (typing, sending a photo…), cleared by the session. */
+    val typingText: String? = null,
     val emojiStatusId: Long? = null,
     val preview: String,
+    @Transient val previewCustomEmojis: List<CustomEmojiSpan> = emptyList(),
     @Transient val lastMessageMedia: MessageMedia? = null,
     val lastMessageIsOutgoing: Boolean = false,
     val lastMessageIsRead: Boolean = false,
