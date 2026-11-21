@@ -52,6 +52,25 @@ private class JvmPlatformStorage : PlatformStorage {
     override fun absolutePath(relativePath: String): String = file(relativePath).absolutePath
 
     override fun exists(relativePath: String): Boolean = file(relativePath).exists()
+
+    override fun listFiles(relativePath: String): List<String> {
+        val directory = file(relativePath)
+        if (!directory.isDirectory) return emptyList()
+
+        return directory.walkTopDown()
+            .filter { it.isFile }
+            .map { it.relativeTo(directory).path }
+            .toList()
+    }
+
+    override fun size(relativePath: String): Long {
+        val directory = file(relativePath)
+        if (!directory.exists()) return 0
+
+        return directory.walkTopDown()
+            .filter { it.isFile }
+            .sumOf { it.length() }
+    }
 }
 
 actual fun createPlatformStorage(): PlatformStorage = JvmPlatformStorage()

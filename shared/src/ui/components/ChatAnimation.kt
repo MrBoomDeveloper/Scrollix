@@ -108,44 +108,37 @@ fun ChatAnimationPreview(
     ) {
         val isReady = webm != null && webm.frames.isNotEmpty()
 
-        when {
-            isReady -> WebmFrames(
-                animation = webm,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-
-            poster != null -> Image(
+        // The low quality preview stays underneath the whole time: blurred
+        // while the GIF is still loading, sharp while the animation fades in
+        // on top of it.
+        if (poster != null) {
+            Image(
                 bitmap = poster,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(
-                        if (!isReady && isLoading) {
-                            Modifier.blur(12.dp)
-                        } else {
-                            Modifier
-                        }
-                    ),
+                    .then(if (isReady) Modifier else Modifier.blur(12.dp)),
                 contentScale = ContentScale.Crop
             )
-
-            else -> Unit
         }
 
-        // The poster stays visible underneath while the GIF itself is still
-        // downloading and decoding, with a spinner on top of it.
-        when {
-            isReady -> Unit
-
-            isLoading -> CircularProgressIndicator(
-                modifier = Modifier.size(24.dp)
+        if (isReady) {
+            WebmFrames(
+                animation = webm,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
             )
-
-            else -> Text(
+        } else if (!isLoading && poster == null) {
+            Text(
                 text = "GIF",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.secondary
+            )
+        }
+
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp)
             )
         }
     }

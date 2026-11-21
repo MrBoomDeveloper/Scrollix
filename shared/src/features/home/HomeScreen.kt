@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,6 +69,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.AccountDialogFolder
 import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
@@ -152,6 +155,69 @@ fun HomeScreen(
         }
     }
     
+    // Every chip gets a swipeable page, so the list can be switched by
+    // dragging it horizontally as well as by tapping a chip, for both native
+    // folders and the built-in tabs.
+    val folderPages = remember(isUsingNativeFolders, isAllShown, folders) {
+        buildList {
+            if (isAllShown) add(HomePage.All)
+
+            if (isUsingNativeFolders) {
+                folders.forEach { folder -> add(HomePage.Folder(folder.key)) }
+            } else {
+                add(HomePage.Tab(TAB_DIRECT))
+                add(HomePage.Tab(TAB_GROUPS))
+                add(HomePage.Tab(TAB_CHANNELS))
+                add(HomePage.Tab(TAB_BOTS))
+            }
+        }
+    }
+
+    val selectedFolderPage = remember(
+        folderPages,
+        selectedNativeFolder,
+        selectedTab,
+        isUsingNativeFolders
+    ) {
+        folderPages.indexOfFirst { page ->
+            when (page) {
+                HomePage.All -> if (isUsingNativeFolders) {
+                    selectedNativeFolder == null
+                } else {
+                    selectedTab == TAB_ALL
+                }
+
+                is HomePage.Folder -> selectedNativeFolder?.key == page.key
+                is HomePage.Tab -> selectedTab == page.index
+            }
+        }.coerceAtLeast(0)
+    }
+
+    val folderPagerState = rememberPagerState(initialPage = selectedFolderPage) {
+        folderPages.size
+    }
+
+    LaunchedEffect(selectedFolderPage, folderPages.size) {
+        if (folderPagerState.currentPage != selectedFolderPage) {
+            folderPagerState.animateScrollToPage(selectedFolderPage)
+        }
+    }
+
+    LaunchedEffect(folderPagerState.settledPage, folderPages) {
+        when (val page = folderPages.getOrNull(folderPagerState.settledPage)) {
+            null -> Unit
+
+            HomePage.All -> if (isUsingNativeFolders) {
+                selectedNativeFolderKey = null
+            } else {
+                selectedTab = TAB_ALL
+            }
+
+            is HomePage.Folder -> selectedNativeFolderKey = page.key
+            is HomePage.Tab -> selectedTab = page.index
+        }
+    }
+
     val duplicateFolderNames = remember(folders) {
         folders.groupingBy { it.folder.name }
             .eachCount()
@@ -413,47 +479,144 @@ fun HomeScreen(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(
-                    items = visibleEntries,
-                    key = { entry ->
-                        "${entry.account.id}:${entry.dialog.providerDialogId}"
-                    }
-                ) { entry ->
-                    DialogItem(
-                        entry = entry,
-                        isSelected = entry.account.id == selectedDialogAccountId &&
-                            entry.dialog.providerDialogId == selectedDialogProviderDialogId,
-                        folderId = activeFolderId,
-                        onClick = { onOpenDialog(entry) }
-                    )
+        if (folderPages.isNotEmpty()) {
+            HorizontalPager(
+                state = folderPagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) { pageIndex ->
+                val page = folderPages.getOrNull(pageIndex)
+                val pageEntries = remember(entries, folders, page, isUsingNativeFolders) {
+                    entriesForPage(page, entries, folders, isUsingNativeFolders)
                 }
 
-                if (visibleEntries.isEmpty()) {
-                    item {
-                        if (isDialogsLoading) {
-                            LoadingContent(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(32.dp),
-                                text = "Loading dialogs..."
-                            )
-                        } else {
-                            EmptyState(
-                                hasAccounts = accountState.accounts.isNotEmpty(),
-                                onOpenAccountsScreen = onOpenAccountsScreen
-                            )
-                        }
-                    }
+                DialogList(
+                    entries = pageEntries.first,
+                    folderId = pageEntries.second,
+                    isDialogsLoading = isDialogsLoading,
+                    hasAccounts = accountState.accounts.isNotEmpty(),
+                    selectedDialogAccountId = selectedDialogAccountId,
+                    selectedDialogProviderDialogId = selectedDialogProviderDialogId,
+                    onOpenAccountsScreen = onOpenAccountsScreen,
+                    onOpenDialog = onOpenDialog,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        } else {
+            DialogList(
+                entries = visibleEntries,
+                folderId = activeFolderId,
+                isDialogsLoading = isDialogsLoading,
+                hasAccounts = accountState.accounts.isNotEmpty(),
+                selectedDialogAccountId = selectedDialogAccountId,
+                selectedDialogProviderDialogId = selectedDialogProviderDialogId,
+                onOpenAccountsScreen = onOpenAccountsScreen,
+                onOpenDialog = onOpenDialog,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DialogList(
+    entries: List<AccountDialogEntry>,
+    folderId: Int?,
+    isDialogsLoading: Boolean,
+    hasAccounts: Boolean,
+    selectedDialogAccountId: String?,
+    selectedDialogProviderDialogId: String?,
+    onOpenAccountsScreen: () -> Unit,
+    onOpenDialog: (AccountDialogEntry) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(modifier = modifier) {
+        items(
+            items = entries,
+            key = { entry ->
+                "${entry.account.id}:${entry.dialog.providerDialogId}"
+            }
+        ) { entry ->
+            DialogItem(
+                entry = entry,
+                isSelected = entry.account.id == selectedDialogAccountId &&
+                    entry.dialog.providerDialogId == selectedDialogProviderDialogId,
+                folderId = folderId,
+                onClick = { onOpenDialog(entry) }
+            )
+        }
+
+        if (entries.isEmpty()) {
+            item {
+                if (isDialogsLoading) {
+                    LoadingContent(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        text = "Loading dialogs..."
+                    )
+                } else {
+                    EmptyState(
+                        hasAccounts = hasAccounts,
+                        onOpenAccountsScreen = onOpenAccountsScreen
+                    )
                 }
             }
+        }
+    }
+}
+
+private sealed interface HomePage {
+    data object All : HomePage
+    data class Folder(val key: String) : HomePage
+    data class Tab(val index: Int) : HomePage
+}
+
+/** Entries and active folder id shown by one pager page. */
+private fun entriesForPage(
+    page: HomePage?,
+    entries: List<AccountDialogEntry>,
+    folders: List<AccountDialogFolder>,
+    isUsingNativeFolders: Boolean
+): Pair<List<AccountDialogEntry>, Int?> {
+    return when (page) {
+        is HomePage.Folder -> {
+            val folder = folders.firstOrNull { folder -> folder.key == page.key }
+
+            if (folder == null) {
+                entries to null
+            } else {
+                val folderId = folder.folder.id
+
+                entries
+                    .filter { entry ->
+                        entry.account.id == folder.account.id &&
+                            folderId in entry.dialog.folderIds
+                    }
+                    .sortedWith(dialogComparator(folderId)) to folderId
+            }
+        }
+
+        is HomePage.Tab -> entries
+            .filter { entry ->
+                when (page.index) {
+                    TAB_DIRECT -> entry.dialog.kind == DialogKind.Direct ||
+                        entry.dialog.kind == DialogKind.Secret
+
+                    TAB_GROUPS -> entry.dialog.kind == DialogKind.Group
+                    TAB_CHANNELS -> entry.dialog.kind == DialogKind.Channel
+                    TAB_BOTS -> entry.dialog.kind == DialogKind.Bot
+                    else -> true
+                }
+            } to null
+
+        HomePage.All, null -> if (isUsingNativeFolders) {
+            entries.sortedWith(dialogComparator(null)) to null
+        } else {
+            entries to null
         }
     }
 }

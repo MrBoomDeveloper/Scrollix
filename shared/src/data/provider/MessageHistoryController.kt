@@ -27,9 +27,17 @@ class MessageHistoryController(
     private val pageLoader: MessagePageLoader,
     private val pageSize: Int = 50,
     private val maxRequestsPerPage: Int = 8,
-    private val maxJumpPages: Int = 100
+    private val maxJumpPages: Int = 100,
+    /** Messages restored from the local cache, shown before the first page arrives. */
+    initialMessages: List<ChatMessage> = emptyList()
 ) {
-    private val _state = MutableStateFlow(MessageHistory())
+    private val _state = MutableStateFlow(
+        MessageHistory(
+            messages = initialMessages,
+            hasMoreOlder = initialMessages.isNotEmpty(),
+            isLoadingInitial = initialMessages.isEmpty()
+        )
+    )
     val state: StateFlow<MessageHistory> = _state.asStateFlow()
 
     private val pageMutex = Mutex()

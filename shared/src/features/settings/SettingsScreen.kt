@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,8 +47,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
 import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.ui.components.EmojiCatalog
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
@@ -61,6 +64,8 @@ private enum class SettingsCategory(
     val description: String
 ) {
     ChatList("Chat list", "Folders, filters and chat sorting"),
+    Backup("Backup", "Export or import your settings"),
+    Storage("Storage", "Cached data and disk usage"),
     Accounts("Accounts", "Connected messaging accounts"),
     About("About", "Application information")
 }
@@ -431,6 +436,10 @@ private fun SettingsCategoryContent(
                 }
             }
 
+            SettingsCategory.Backup -> SettingsBackupContent()
+
+            SettingsCategory.Storage -> SettingsStorageContent()
+
             SettingsCategory.Accounts -> {
                 Text(
                     text = "Manage the accounts Scrollix connects to.",
@@ -456,6 +465,149 @@ private fun SettingsCategoryContent(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsStorageContent() {
+    var refreshKey by remember { mutableStateOf(0) }
+    var sizes by remember { mutableStateOf<Map<CacheStore.Category, Long>>(emptyMap()) }
+
+    LaunchedEffect(refreshKey) {
+        sizes = withContext(Dispatchers.IO) {
+            CacheStore.Category.entries.associateWith(CacheStore::size)
+        }
+    }
+
+    Text(
+        text = "Dialogs, recently opened messages, stickers, custom emoji and " +
+            "avatars are kept on this device so they appear instantly after a restart.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary
+    )
+
+    CacheStore.Category.entries.forEach { category ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = category.title,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+
+                Text(
+                    text = formatCacheSize(sizes[category] ?: 0),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+
+            TextButton(
+                onClick = {
+                    CacheStore.clear(category)
+                    refreshKey++
+                }
+            ) {
+                Text("Clear")
+            }
+        }
+    }
+
+    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            modifier = Modifier.weight(1f),
+            text = "Total: ${formatCacheSize(sizes.values.sum())}",
+            style = MaterialTheme.typography.bodyLarge
+        )
+
+        TextButton(
+            onClick = {
+                CacheStore.clearAll()
+                refreshKey++
+            }
+        ) {
+            Text("Clear all")
+        }
+    }
+}
+
+private fun formatCacheSize(bytes: Long): String {
+    return when {
+        bytes <= 0 -> "0 B"
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024L * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
+        else -> "${bytes / (1024 * 1024 * 1024)} GB"
+    }
+}
+
+@Composable
+private fun SettingsBackupContent() {
+    val scope = rememberCoroutineScope()
+    var message by remember { mutableStateOf<String?>(null) }
+
+    val filePicker = rememberFilePicker(
+        onImagePicked = {},
+        onFilePicked = { picked ->
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    readFileBytes(picked.path)?.decodeToString()
+                }
+
+                message = if (text != null && AppSettingsStore.importJson(text)) {
+                    "Restored settings from ${picked.name}."
+                } else {
+                    "Could not restore settings from ${picked.name}."
+                }
+            }
+        }
+    )
+
+    Text(
+        text = "The backup keeps your chat list preferences, quick reactions, " +
+            "emoji settings and the default home tab. Wallpapers and accounts " +
+            "are not included.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary
+    )
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = {
+                val path = saveFileToDevice(
+                    fileName = "scrollix-settings.json",
+                    bytes = AppSettingsStore.exportJson().encodeToByteArray()
+                )
+
+                message = if (path != null) {
+                    "Backup saved to $path"
+                } else {
+                    "Could not save the backup."
+                }
+            }
+        ) {
+            Text("Back up settings")
+        }
+
+        Button(onClick = { filePicker.pickFile() }) {
+            Text("Restore")
+        }
+    }
+
+    message?.let { text ->
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
     }
 }
 

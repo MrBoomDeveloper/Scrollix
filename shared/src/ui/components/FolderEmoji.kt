@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -13,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
@@ -26,6 +29,24 @@ import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/**
+ * Fades freshly loaded content in instead of letting it pop into the layout
+ * the moment its bytes or decoder are ready. Restarts whenever [key] changes.
+ */
+@Composable
+internal fun rememberFadeIn(key: Any?, durationMillis: Int = 200): Float {
+    val fade = remember { Animatable(0f) }
+
+    LaunchedEffect(key) {
+        if (key != null) {
+            fade.snapTo(0f)
+            fade.animateTo(1f, tween(durationMillis))
+        }
+    }
+
+    return fade.value
+}
 
 @Composable
 internal fun FolderEmojiImage(
@@ -87,7 +108,8 @@ internal fun StaticFolderEmoji(
         Image(
             bitmap = bitmap,
             contentDescription = null,
-            modifier = contentModifier ?: Modifier.size(size),
+            modifier = (contentModifier ?: Modifier.size(size))
+                .alpha(rememberFadeIn(bitmap)),
             contentScale = ContentScale.Fit,
             colorFilter = colorFilter
         )

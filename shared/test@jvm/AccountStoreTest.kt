@@ -77,6 +77,28 @@ class AccountStoreTest {
             return "$rootDirectory/$relativePath"
         }
 
+        override fun listFiles(relativePath: String): List<String> {
+            val prefix = "$relativePath/"
+
+            return (files.keys + byteFiles.keys)
+                .filter { path -> path.startsWith(prefix) }
+                .map { path -> path.removePrefix(prefix) }
+        }
+
+        override fun size(relativePath: String): Long {
+            val prefix = "$relativePath/"
+            val textSize = files
+                .filterKeys { path -> path.startsWith(prefix) }
+                .values
+                .sumOf { text -> text.toByteArray().size.toLong() }
+            val byteSize = byteFiles
+                .filterKeys { path -> path.startsWith(prefix) }
+                .values
+                .sumOf { bytes -> bytes.size.toLong() }
+
+            return textSize + byteSize
+        }
+
         override fun absolutePath(relativePath: String): String {
             return "$rootDirectory/$relativePath"
         }

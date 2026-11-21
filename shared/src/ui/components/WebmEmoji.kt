@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
@@ -135,7 +136,7 @@ internal fun WebmFrames(
     Image(
         bitmap = animation.frames[frameIndex.coerceIn(0, animation.frames.lastIndex)],
         contentDescription = null,
-        modifier = modifier,
+        modifier = modifier.alpha(rememberFadeIn(animation)),
         contentScale = contentScale,
         colorFilter = colorFilter
     )

@@ -89,8 +89,12 @@ internal fun EmojiPicker(
     onStickerSelected: (MessageMedia) -> Unit,
     onAnimationSelected: (MessageMedia) -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
     val settings by AppSettingsStore.state.collectAsState()
+
+    // The picker opens on the tab that was used last, even across restarts.
+    var selectedTab by remember {
+        mutableStateOf(settings.emojiPickerTab.coerceIn(0, 2))
+    }
 
     Surface(
         modifier = modifier
@@ -106,7 +110,10 @@ internal fun EmojiPicker(
                 listOf("Emoji", "Stickers", "GIFs").forEachIndexed { index, title ->
                     Tab(
                         selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        onClick = {
+                            selectedTab = index
+                            AppSettingsStore.update { it.copy(emojiPickerTab = index) }
+                        },
                         text = {
                             Text(
                                 text = title,

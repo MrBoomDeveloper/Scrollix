@@ -42,6 +42,7 @@ import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.MessageHistoryController
 import com.mrboomdev.scrollix.data.provider.MessagePageLoader
+import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
@@ -108,7 +109,11 @@ class TelegramAccountSession(
     private val _profile = MutableStateFlow<AccountProfile?>(null)
     override val profile: StateFlow<AccountProfile?> = _profile.asStateFlow()
 
-    private val _dialogs = MutableStateFlow<List<Dialog>>(emptyList())
+    /** Snapshot restored from disk, kept around while the initial sync runs. */
+    private val restoredDialogs: List<Dialog> =
+        if (account.isPending) emptyList() else CacheStore.loadDialogs(account.id)
+
+    private val _dialogs = MutableStateFlow(restoredDialogs)
     override val dialogs: StateFlow<List<Dialog>> = _dialogs.asStateFlow()
 
     private val _folders = MutableStateFlow<List<DialogFolder>>(emptyList())
@@ -181,6 +186,7 @@ class TelegramAccountSession(
         histories.value[providerDialogId]?.let { return it }
 
         val created = MessageHistoryController(
+            initialMessages = CacheStore.loadMessages(accountId, providerDialogId),
             pageLoader = object : MessagePageLoader {
                 override suspend fun load(
                     fromMessageId: Long,
@@ -234,6 +240,13 @@ class TelegramAccountSession(
 
         fileCache.value[fileId]?.let { return Result.success(it) }
 
+        // Stickers, custom emoji and avatars are served from the local cache
+        // even when TDLib has to download them again.
+        CacheStore.readMedia(accountId, fileId)?.let { cached ->
+            fileCache.update { it + (fileId to cached) }
+            return Result.success(cached)
+        }
+
         return try {
             when (val result = client.downloadFile(
                 fileId = fileId,
@@ -249,6 +262,7 @@ class TelegramAccountSession(
 
                     if (bytes != null && bytes.isNotEmpty()) {
                         fileCache.update { it + (fileId to bytes) }
+                        CacheStore.saveMedia(accountId, fileId, bytes)
                         registerDownload(fileId, bytes.size.toLong())
                         Result.success(bytes)
                     } else {
@@ -1106,6 +1120,32 @@ class TelegramAccountSession(
                 if (!closed) {
                     stateMutex.withLock {
                         setError(exception.message ?: "TDLib update stream failed")
+                    }
+                }
+            }
+        }
+
+        // Keep the dialog list and the loaded message windows on disk so a
+        // restart can show them before TDLib replays its updates.
+        scope.launch {
+            var savedDialogs: List<Dialog>? = null
+            val savedHistories = mutableMapOf<String, List<ChatMessage>>()
+
+            while (!closed) {
+                delay(2_000)
+
+                val dialogs = _dialogs.value
+                if (dialogs.isNotEmpty() && dialogs !== savedDialogs) {
+                    CacheStore.saveDialogs(accountId, dialogs)
+                    savedDialogs = dialogs
+                }
+
+                histories.value.forEach { (dialogId, controller) ->
+                    val messages = controller.state.value.messages
+
+                    if (messages.isNotEmpty() && savedHistories[dialogId] !== messages) {
+                        CacheStore.saveMessages(accountId, dialogId, messages)
+                        savedHistories[dialogId] = messages
                     }
                 }
             }
@@ -3870,6 +3910,15 @@ class TelegramAccountSession(
         if (!shouldLoad) return
 
         scope.launch {
+            CacheStore.readMedia(accountId, file.id)?.let { cached ->
+                avatarCache.update { it + (file.id to cached) }
+                refreshReactionAvatars()
+                refreshMessageSenders()
+                emitDialogs()
+                _users.value[currentUserId]?.let(::updateProfile)
+                return@launch
+            }
+
             val result = try {
                 client.downloadFile(
                     fileId = file.id,
@@ -3888,6 +3937,7 @@ class TelegramAccountSession(
                 val bytes = readFileBytes(result.result.local.path)
                 if (bytes != null && bytes.isNotEmpty()) {
                     avatarCache.update { it + (file.id to bytes) }
+                    CacheStore.saveMedia(accountId, file.id, bytes)
                     refreshReactionAvatars()
                     refreshMessageSenders()
                     emitDialogs()
@@ -4238,16 +4288,30 @@ class TelegramAccountSession(
                     } ?: Avatar.fromName(entry.title)
                 }
             )
-        }.sortedWith(
-            compareByDescending<Dialog> {
-                if (it.isPinned) 1 else 0
-            }
-                .thenByDescending { it.order }
-                .thenByDescending { it.timestamp }
-        )
+        }.sortedWith(dialogOrder)
 
-        _dialogs.value = dialogs
+        // While the first sync is still running, keep the cached snapshot in
+        // front of whatever TDLib has delivered so far, otherwise the list
+        // visibly fills in chat by chat after every restart.
+        _dialogs.value = if (_isLoadingDialogs.value && restoredDialogs.isNotEmpty()) {
+            val merged = LinkedHashMap<String, Dialog>(
+                restoredDialogs.size + dialogs.size
+            )
+
+            restoredDialogs.forEach { dialog -> merged[dialog.providerDialogId] = dialog }
+            dialogs.forEach { dialog -> merged[dialog.providerDialogId] = dialog }
+
+            merged.values.sortedWith(dialogOrder)
+        } else {
+            dialogs
+        }
     }
+
+    private val dialogOrder = compareByDescending<Dialog> {
+        if (it.isPinned) 1 else 0
+    }
+        .thenByDescending { it.order }
+        .thenByDescending { it.timestamp }
 
     /**
      * Custom emoji entities live on the original message text, while the

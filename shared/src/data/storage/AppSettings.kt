@@ -19,7 +19,8 @@ data class AppSettings(
     val disabledEmojis: Set<String> = emptySet(),
     val useNativeFolders: Boolean = true,
     val hasCustomWallpaper: Boolean = false,
-    val wallpaperUpdatedAt: Long = 0
+    val wallpaperUpdatedAt: Long = 0,
+    val emojiPickerTab: Int = 0
 )
 
 object AppSettingsStore {
@@ -58,6 +59,26 @@ object AppSettingsStore {
 
     fun readWallpaper(): ByteArray? {
         return runCatching { storage.readBytes(WALLPAPER_FILE) }.getOrNull()
+    }
+
+    /** Serializes the current settings so they can be written into a backup. */
+    fun exportJson(): String {
+        return json.encodeToString(AppSettings.serializer(), _state.value)
+    }
+
+    /** Applies settings from a backup, returning false when it can't be read. */
+    fun importJson(text: String): Boolean {
+        return runCatching {
+            val restored = json.decodeFromString(AppSettings.serializer(), text)
+
+            // Wallpapers aren't part of the backup file, so only claim one
+            // when this device actually has it.
+            update {
+                restored.copy(
+                    hasCustomWallpaper = restored.hasCustomWallpaper && readWallpaper() != null
+                )
+            }
+        }.isSuccess
     }
 
     fun update(transform: (AppSettings) -> AppSettings) {

@@ -13,13 +13,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -73,7 +73,8 @@ fun FullscreenImageViewer(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .alpha(rememberFadeIn(bitmap)),
                 contentScale = ContentScale.Fit
             )
 
@@ -132,24 +133,8 @@ fun FullscreenVideoViewer(
     }
 
     val video = animation
-    var frameIndex by remember(video) { mutableIntStateOf(0) }
-
-    LaunchedEffect(video) {
-        if (video == null) return@LaunchedEffect
-
-        val frameRate = video.frameRate.coerceAtLeast(1f)
-        val frameDuration = (1_000_000_000.0 / frameRate)
-            .toLong()
-            .coerceAtLeast(1L)
-        var startedAt = 0L
-
-        while (true) {
-            withFrameNanos { now ->
-                if (startedAt == 0L) startedAt = now
-                frameIndex = (((now - startedAt) / frameDuration).toInt()) % video.frames.size
-            }
-        }
-    }
+    val poster = thumbnail
+    val isReady = video != null && video.frames.isNotEmpty()
 
     Box(
         modifier = Modifier
@@ -158,28 +143,34 @@ fun FullscreenVideoViewer(
             .clickable(onClick = onClose),
         contentAlignment = Alignment.Center
     ) {
-        when {
-            video != null && video.frames.isNotEmpty() -> Image(
-                bitmap = video.frames[frameIndex.coerceIn(0, video.frames.lastIndex)],
+        // The preview stays underneath, blurred until the frames are ready,
+        // then the animation fades in over it.
+        if (poster != null) {
+            Image(
+                bitmap = poster,
                 contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .then(if (isReady) Modifier else Modifier.blur(16.dp)),
+                contentScale = ContentScale.Fit
+            )
+        }
+
+        if (isReady) {
+            WebmFrames(
+                animation = video,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp),
                 contentScale = ContentScale.Fit
             )
+        }
 
-            isLoading -> CircularProgressIndicator()
-
-            thumbnail != null -> Image(
-                bitmap = thumbnail!!,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                contentScale = ContentScale.Fit
-            )
-
-            else -> Text(
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        } else if (!isReady && poster == null) {
+            Text(
                 text = "Can't play this video",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White
@@ -195,10 +186,6 @@ fun FullscreenVideoViewer(
             color = Color.White,
             fontSize = 22.sp
         )
-
-        if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-        }
     }
 }
 

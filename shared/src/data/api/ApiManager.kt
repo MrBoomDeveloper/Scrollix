@@ -16,6 +16,7 @@ import com.mrboomdev.scrollix.data.provider.MessengerProvider
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.data.storage.AccountStore
 import com.mrboomdev.scrollix.data.storage.AccountStoreState
+import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
@@ -164,6 +165,7 @@ object ApiManager {
         _foldersByAccount.update { it - accountId }
         _downloadsByAccount.update { it - accountId }
         platformStorage?.delete("accounts/$accountId")
+        CacheStore.clearAccount(accountId)
         accountStore?.remove(accountId)
         recomputeDialogs()
         recomputeFolders()

@@ -2,10 +2,11 @@ package com.mrboomdev.scrollix.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
@@ -329,6 +330,7 @@ fun MessageBubble(
                                             isChannel = dialogKind == DialogKind.Channel,
                                             customEmojiData = customEmojiData,
                                             session = session,
+                                            onReaction = onReaction,
                                             modifier = Modifier
                                                 .align(Alignment.BottomEnd)
                                                 .then(
@@ -397,6 +399,7 @@ fun MessageBubble(
                                     isChannel = dialogKind == DialogKind.Channel,
                                     customEmojiData = customEmojiData,
                                     session = session,
+                                    onReaction = onReaction,
                                     modifier = Modifier
                                         .align(Alignment.End)
                                         .then(
@@ -416,6 +419,7 @@ fun MessageBubble(
                                     isChannel = dialogKind == DialogKind.Channel,
                                     customEmojiData = customEmojiData,
                                     session = session,
+                                    onReaction = onReaction,
                                     modifier = Modifier
                                         .align(Alignment.End)
                                         .then(
@@ -588,7 +592,6 @@ private fun ReactionPickerRow(
         mutableStateOf<Map<Long, List<MessageMedia>>>(emptyMap())
     }
 
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val settings by AppSettingsStore.state.collectAsState()
 
@@ -647,12 +650,8 @@ private fun ReactionPickerRow(
         }
     }
 
-    val packIndexes = remember(entries) {
-        entries.mapIndexedNotNull { index, entry ->
-            (entry as? ReactionMenuEntry.PackHeader)?.let { header ->
-                header.pack.id to index
-            }
-        }.toMap()
+    val packJumps = remember(packs) {
+        packs.associate { pack -> pack.id to BringIntoViewRequester() }
     }
 
     fun isChosen(option: MessageReactionOption): Boolean {
@@ -683,57 +682,60 @@ private fun ReactionPickerRow(
                 }
             }
         } else {
-            // A quick jump bar keeps every pack one tap away instead of
-            // making the user scroll the whole collection.
+            // Menu content is measured with intrinsics, which lazy lists can't
+            // provide, so everything is laid out plainly and the menu scrolls.
             if (packs.isNotEmpty()) {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    items(packs.size) { index ->
-                        val pack = packs[index]
-                        val cover = packItems[pack.id]?.firstOrNull()
+                // A quick jump bar keeps every pack one tap away instead of
+                // making the user scroll the whole collection.
+                packs.chunked(6).forEach { rowPacks ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        rowPacks.forEach { pack ->
+                            val cover = packItems[pack.id]?.firstOrNull()
 
-                        TextButton(
-                            onClick = {
-                                val target = packIndexes[pack.id]
-
-                                if (target != null) {
-                                    scope.launch {
-                                        listState.animateScrollToItem(target)
+                            TextButton(
+                                onClick = {
+                                    packJumps[pack.id]?.let { requester ->
+                                        scope.launch { requester.bringIntoView() }
                                     }
                                 }
-                            }
-                        ) {
-                            if (cover != null && cover.stickerId != null) {
-                                ReactionGlyph(
-                                    reaction = MessageReactionInfo(
-                                        emoji = cover.stickerEmoji ?: "",
-                                        count = 0,
-                                        customEmojiId = cover.stickerId
-                                    ),
-                                    data = data,
-                                    color = LocalContentColor.current,
-                                    session = session
+                            ) {
+                                if (cover != null && cover.stickerId != null) {
+                                    ReactionGlyph(
+                                        reaction = MessageReactionInfo(
+                                            emoji = cover.stickerEmoji ?: "",
+                                            count = 0,
+                                            customEmojiId = cover.stickerId
+                                        ),
+                                        data = data,
+                                        color = LocalContentColor.current,
+                                        session = session
+                                    )
+                                }
+
+                                Text(
+                                    modifier = Modifier
+                                        .padding(start = 4.dp)
+                                        .widthIn(max = 120.dp),
+                                    text = pack.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
-
-                            Text(
-                                modifier = Modifier.padding(start = 4.dp),
-                                text = pack.title,
-                                maxLines = 1
-                            )
                         }
                     }
                 }
             }
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.heightIn(max = 320.dp)
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                items(entries.size) { index ->
-                    when (val entry = entries[index]) {
+                entries.forEach { entry ->
+                    when (entry) {
                         is ReactionMenuEntry.Available -> FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -751,7 +753,13 @@ private fun ReactionPickerRow(
                         }
 
                         is ReactionMenuEntry.PackHeader -> Text(
-                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                            modifier = Modifier
+                                .then(
+                                    packJumps[entry.pack.id]?.let { requester ->
+                                        Modifier.bringIntoViewRequester(requester)
+                                    } ?: Modifier
+                                )
+                                .padding(top = 6.dp, bottom = 2.dp),
                             text = entry.pack.title,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.primary
@@ -918,7 +926,8 @@ private fun MessageFooter(
     onMedia: Boolean = false,
     isChannel: Boolean = false,
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
-    session: AccountSession? = null
+    session: AccountSession? = null,
+    onReaction: ((MessageReactionOption) -> Unit)? = null
 ) {
     Row(
         modifier = modifier,
@@ -935,7 +944,8 @@ private fun MessageFooter(
                 onMedia = onMedia,
                 showAvatars = !isChannel && message.reactions.sumOf { it.count } < 4,
                 customEmojiData = customEmojiData,
-                session = session
+                session = session,
+                onReaction = onReaction
             )
         }
         
@@ -957,7 +967,8 @@ private fun MessageReactionsRow(
     onMedia: Boolean,
     showAvatars: Boolean = false,
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
-    session: AccountSession? = null
+    session: AccountSession? = null,
+    onReaction: ((MessageReactionOption) -> Unit)? = null
 ) {
     val accent = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -986,6 +997,16 @@ private fun MessageReactionsRow(
             }
 
             Surface(
+                modifier = if (onReaction != null) {
+                    Modifier.clickable {
+                        onReaction(
+                            MessageReactionOption(
+                                emoji = reaction.emoji,
+                                customEmojiId = reaction.customEmojiId
+                            )
+                        )
+                    }
+                } else Modifier,
                 shape = RoundedCornerShape(12.dp),
                 color = if(isOutgoing) {
                     chipColor.copy(alpha = chipAlpha)

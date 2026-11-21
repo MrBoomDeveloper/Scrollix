@@ -1,5 +1,8 @@
 package com.mrboomdev.scrollix.data.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class MessageMediaKind {
     Photo,
     File,
@@ -11,24 +14,28 @@ enum class MessageMediaKind {
     Animation
 }
 
+@Serializable
 data class CustomEmojiSpan(
     val start: Int,
     val end: Int,
     val emojiId: Long
 )
 
+@Serializable
 enum class MessageStickerFormat {
     Webp,
     Tgs,
     Webm
 }
 
+@Serializable
 enum class MessageSendState {
     Sending,
     Sent,
     Failed
 }
 
+@Serializable
 data class MessageMedia(
     val kind: MessageMediaKind,
     val previewFileId: Int? = null,
@@ -58,6 +65,7 @@ data class MessageReactionOption(
         get() = customEmojiId?.let { "custom:$it" } ?: "emoji:$emoji"
 }
 
+@Serializable
 data class MessageReactionInfo(
     val emoji: String,
     val count: Int,
@@ -67,6 +75,7 @@ data class MessageReactionInfo(
     val customEmojiId: Long? = null
 )
 
+@Serializable
 data class MessageReply(
     val messageId: Long,
     val senderName: String? = null,
@@ -74,6 +83,7 @@ data class MessageReply(
     val media: MessageMedia? = null
 )
 
+@Serializable
 data class MessagePollOptionInfo(
     val id: String,
     val text: String,
@@ -85,6 +95,7 @@ data class MessagePollOptionInfo(
     val customEmojis: List<CustomEmojiSpan> = emptyList()
 )
 
+@Serializable
 data class MessagePollInfo(
     val id: Long,
     val question: String,
@@ -99,6 +110,7 @@ data class MessagePollInfo(
     val explanation: String? = null
 )
 
+@Serializable
 enum class MessageRichTextStyle {
     Title,
     Header,
@@ -110,6 +122,7 @@ enum class MessageRichTextStyle {
 }
 
 /** Styling of a piece of rich text, with offsets relative to the block text. */
+@Serializable
 data class RichTextSpan(
     val start: Int,
     val end: Int,
@@ -122,7 +135,9 @@ data class RichTextSpan(
     val url: String? = null
 )
 
+@Serializable
 sealed interface MessageRichBlock {
+    @Serializable
     data class Text(
         val text: String,
         val style: MessageRichTextStyle = MessageRichTextStyle.Paragraph,
@@ -130,11 +145,13 @@ sealed interface MessageRichBlock {
         val bullet: String? = null
     ) : MessageRichBlock
 
+    @Serializable
     data class Media(
         val media: MessageMedia,
         val caption: String = ""
     ) : MessageRichBlock
 
+    @Serializable
     object Divider : MessageRichBlock
 }
 
@@ -146,6 +163,7 @@ data class StickerSetInfo(
     val stickers: List<MessageMedia> = emptyList()
 )
 
+@Serializable
 data class ChatMessage(
     val providerId: String,
     val accountId: String,

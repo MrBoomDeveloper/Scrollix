@@ -11,6 +11,12 @@ interface PlatformStorage {
     fun ensureDirectory(relativePath: String): String
     fun absolutePath(relativePath: String): String
     fun exists(relativePath: String): Boolean
+
+    /** Relative paths of every file below [relativePath]. */
+    fun listFiles(relativePath: String): List<String>
+
+    /** Total size in bytes of everything below [relativePath]. */
+    fun size(relativePath: String): Long
 }
 
 expect fun createPlatformStorage(): PlatformStorage
