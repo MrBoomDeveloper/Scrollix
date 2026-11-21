@@ -1,5 +1,7 @@
 [versions]
 androidx-lifecycle = "2.11.0"
+room3 = "3.0.3"
+sqlite = "2.7.1"
 filekit = "0.17.1"
 qrose = "1.3.1"
 
@@ -18,4 +20,7 @@ jetbrains-material3-adaptiveNavigation3 = { module = "org.jetbrains.compose.mate
 jetbrains-lifecycle-viewmodelNavigation3 = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version = "2.11.0" }
 tdlib = { module = "dev.g000sha256:tdl-coroutines", version = "17.0.0" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
+androidx-room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room3" }
+androidx-room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3" }
+androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 qrose = { module = "io.github.alexzhirkevich:qrose", version.ref = "qrose" }

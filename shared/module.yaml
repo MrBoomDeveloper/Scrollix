@@ -25,6 +25,8 @@ dependencies:
   - $libs.compottie
   - nl.jacobras:Human-Readable:2.0.0
   - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0
+  - $libs.androidx.room3.runtime
+  - $libs.androidx.sqlite.bundled
 
 dependencies@android:
   - $compose.uiTooling
@@ -59,3 +61,7 @@ settings:
       exposedAccessors: true
   kotlin: 
     serialization: enabled
+    # Room generates its database implementations per platform through KSP.
+    ksp:
+      processors:
+        - $libs.androidx.room3.compiler

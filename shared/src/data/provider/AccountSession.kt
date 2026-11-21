@@ -48,6 +48,14 @@ interface AccountSession {
     suspend fun loadOlderMessages(providerDialogId: String, limit: Int = 50): Result<Boolean>
     suspend fun loadMessagesUntil(providerDialogId: String, messageId: Long): Result<Boolean>
     suspend fun loadFile(fileId: Int): Result<ByteArray>
+
+    /**
+     * Reads a file that was cached in a previous run, without asking the
+     * provider for it. Media is addressed by its durable remote unique id, so
+     * this works even when the runtime file ids of a cached dialog are stale.
+     * Returns null when nothing is cached under that id.
+     */
+    suspend fun loadCachedMedia(remoteUniqueId: String): ByteArray? = null
     suspend fun sendMessage(
         providerDialogId: String,
         text: String,

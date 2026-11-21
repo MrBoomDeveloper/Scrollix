@@ -1,67 +1,105 @@
 package com.mrboomdev.scrollix.data.storage
 
+import com.mrboomdev.scrollix.data.cache.CacheDatabaseProvider
+import com.mrboomdev.scrollix.data.cache.CachedDialogsEntity
+import com.mrboomdev.scrollix.data.cache.CachedMessagesEntity
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /**
- * Disk backed cache of the data that should be on screen right after a
- * restart, before TDLib has replayed its updates: the dialog list, the last
- * messages of recently opened chats, and downloaded media (stickers, custom
- * emoji and avatars). Everything lives under the app storage root, next to
- * the account databases.
+ * Cache of the data that should be on screen right after a restart, before
+ * TDLib has replayed its updates: the dialog list, the last messages of
+ * recently opened chats, and downloaded media (stickers, custom emoji and
+ * avatars).
+ *
+ * Dialogs and messages live in the Room database, media bytes stay on disk
+ * below the app storage root.
  */
 object CacheStore {
-    enum class Category(val title: String, internal val directory: String) {
-        Dialogs(title = "Dialog list", directory = "cache/dialogs"),
-        Messages(title = "Messages", directory = "cache/messages"),
-        Media(title = "Stickers, emoji and avatars", directory = "cache/media")
+    enum class Category(val title: String) {
+        Dialogs("Dialog list"),
+        Messages("Messages"),
+        Media("Stickers, emoji and avatars")
     }
 
     /** Only the newest messages are kept, older pages are fetched again. */
     private const val MaxCachedMessages = 100
+    private const val MediaDirectory = "cache/media"
 
     private val json = Json {
         ignoreUnknownKeys = true
     }
 
     private val storage by lazy { createPlatformStorage() }
+    private val dao get() = CacheDatabaseProvider.database.cacheDao()
 
-    fun loadDialogs(accountId: String): List<Dialog> {
-        return runCatching {
-            val text = storage.readText(dialogsPath(accountId)) ?: return emptyList()
-            json.decodeFromString(ListSerializer(Dialog.serializer()), text)
-        }.getOrDefault(emptyList())
-    }
+    suspend fun loadDialogs(accountId: String): List<Dialog> {
+        return try {
+            val payload = dao.dialogs(accountId) ?: return emptyList()
 
-    fun saveDialogs(accountId: String, dialogs: List<Dialog>) {
-        runCatching {
-            // A typing hint is transient, it must not come back after a restart.
-            val cached = dialogs.map { dialog -> dialog.copy(typingText = null) }
-
-            storage.writeText(
-                relativePath = dialogsPath(accountId),
-                text = json.encodeToString(ListSerializer(Dialog.serializer()), cached)
-            )
+            json.decodeFromString(ListSerializer(Dialog.serializer()), payload)
+                .map { dialog -> dialog.copy(avatar = dialog.avatar?.copy(image = null)) }
+        } catch (exception: Exception) {
+            // A row written by an older build can be unreadable. Drop it so the
+            // next save replaces it instead of failing on every startup.
+            println("Dropping unreadable dialog cache: ${exception.message}")
+            runCatching { dao.deleteDialogs(accountId) }
+            emptyList()
         }
     }
 
-    fun loadMessages(
+    suspend fun saveDialogs(accountId: String, dialogs: List<Dialog>) {
+        if (dialogs.isEmpty()) return
+
+        runCatching {
+            // A typing hint is transient, and avatar bytes are deliberately
+            // not cached: TDLib file ids are not stable enough across restarts
+            // to trust stored image bytes, so avatars are reloaded live.
+            val cached = dialogs.map { dialog ->
+                dialog.copy(
+                    typingText = null,
+                    avatar = dialog.avatar?.copy(image = null)
+                )
+            }
+
+            dao.putDialogs(
+                CachedDialogsEntity(
+                    accountId = accountId,
+                    payload = json.encodeToString(
+                        ListSerializer(Dialog.serializer()),
+                        cached
+                    ),
+                    updatedAt = currentTimeMillis()
+                )
+            )
+        }.onFailure { exception ->
+            println("Failed to cache dialogs: ${exception.message}")
+        }
+    }
+
+    suspend fun loadMessages(
         accountId: String,
         providerDialogId: String,
         limit: Int = MaxCachedMessages
     ): List<ChatMessage> {
-        return runCatching {
-            val text = storage.readText(messagesPath(accountId, providerDialogId))
-                ?: return emptyList()
+        return try {
+            val payload = dao.messages(accountId, providerDialogId) ?: return emptyList()
 
-            json.decodeFromString(ListSerializer(ChatMessage.serializer()), text)
+            json.decodeFromString(ListSerializer(ChatMessage.serializer()), payload)
                 .takeLast(limit)
-        }.getOrDefault(emptyList())
+                .map { message ->
+                    message.copy(senderAvatar = message.senderAvatar?.copy(image = null))
+                }
+        } catch (exception: Exception) {
+            println("Dropping unreadable message cache: ${exception.message}")
+            runCatching { dao.deleteMessages(accountId, providerDialogId) }
+            emptyList()
+        }
     }
 
-    fun saveMessages(
+    suspend fun saveMessages(
         accountId: String,
         providerDialogId: String,
         messages: List<ChatMessage>
@@ -69,64 +107,96 @@ object CacheStore {
         if (messages.isEmpty()) return
 
         runCatching {
-            storage.writeText(
-                relativePath = messagesPath(accountId, providerDialogId),
-                text = json.encodeToString(
-                    ListSerializer(ChatMessage.serializer()),
-                    messages.takeLast(MaxCachedMessages)
+            val cached = messages.takeLast(MaxCachedMessages).map { message ->
+                message.copy(senderAvatar = message.senderAvatar?.copy(image = null))
+            }
+
+            dao.putMessages(
+                CachedMessagesEntity(
+                    accountId = accountId,
+                    providerDialogId = providerDialogId,
+                    payload = json.encodeToString(
+                        ListSerializer(ChatMessage.serializer()),
+                        cached
+                    ),
+                    updatedAt = currentTimeMillis()
                 )
             )
         }
     }
 
     /**
-     * TDLib file ids are only unique per account, and every account has its
-     * own TDLib instance, so cached media is always scoped by account.
+     * Media is keyed by TDLib's remote unique id, a stable content identifier,
+     * never by the runtime file id which can point at a different file after a
+     * restart. Every account has its own TDLib instance, so it is scoped by
+     * account as well.
      */
-    fun readMedia(accountId: String, fileId: Int): ByteArray? {
-        if (fileId == 0) return null
-        return runCatching { storage.readBytes(mediaPath(accountId, fileId)) }.getOrNull()
+    fun readMedia(accountId: String, remoteUniqueId: String): ByteArray? {
+        if (remoteUniqueId.isBlank()) return null
+
+        return runCatching {
+            storage.readBytes(mediaPath(accountId, remoteUniqueId))
+        }.getOrNull()
     }
 
-    fun saveMedia(accountId: String, fileId: Int, bytes: ByteArray) {
-        if (fileId == 0 || bytes.isEmpty()) return
-        runCatching { storage.writeBytes(mediaPath(accountId, fileId), bytes) }
+    fun saveMedia(accountId: String, remoteUniqueId: String, bytes: ByteArray) {
+        if (remoteUniqueId.isBlank() || bytes.isEmpty()) return
+        runCatching { storage.writeBytes(mediaPath(accountId, remoteUniqueId), bytes) }
     }
 
-    fun size(category: Category): Long {
-        return runCatching { storage.size(category.directory) }.getOrDefault(0L)
+    suspend fun size(category: Category): Long {
+        return runCatching {
+            when (category) {
+                Category.Dialogs -> dao.dialogsSize()
+                Category.Messages -> dao.messagesSize()
+                Category.Media -> storage.size(MediaDirectory)
+            }
+        }.getOrDefault(0L)
     }
 
-    fun clear(category: Category) {
-        runCatching { storage.delete(category.directory) }
+    suspend fun clear(category: Category) {
+        runCatching {
+            when (category) {
+                Category.Dialogs -> dao.clearDialogs()
+                Category.Messages -> dao.clearMessages()
+                Category.Media -> storage.delete(MediaDirectory)
+            }
+        }
     }
 
-    fun clearAll() {
-        Category.entries.forEach(::clear)
+    suspend fun clearAll() {
+        runCatching { dao.clearDialogs() }
+        runCatching { dao.clearMessages() }
+        runCatching { storage.delete(MediaDirectory) }
+    }
+
+    /**
+     * Older builds persisted downloaded file bytes keyed by the numeric TDLib
+     * file id. Those ids are not durable, so those bytes can belong to another
+     * file after a restart. Only those numeric entries are dropped; the current
+     * cache, keyed by remote unique ids, is left untouched.
+     */
+    fun pruneLegacyMedia() {
+        runCatching {
+            storage.listFiles(MediaDirectory).forEach { relativePath ->
+                val fileName = relativePath.substringAfterLast('/')
+
+                if (fileName.all(Char::isDigit)) {
+                    storage.delete("$MediaDirectory/$relativePath")
+                }
+            }
+        }
     }
 
     /** Drops everything cached for an account that is being removed. */
-    fun clearAccount(accountId: String) {
-        runCatching { storage.delete(dialogsPath(accountId)) }
-        runCatching {
-            storage.delete("${Category.Messages.directory}/${safeName(accountId)}")
-        }
-        runCatching {
-            storage.delete("${Category.Media.directory}/${safeName(accountId)}")
-        }
+    suspend fun clearAccount(accountId: String) {
+        runCatching { dao.deleteDialogs(accountId) }
+        runCatching { dao.deleteMessages(accountId) }
+        runCatching { storage.delete("$MediaDirectory/${safeName(accountId)}") }
     }
 
-    private fun dialogsPath(accountId: String): String {
-        return "${Category.Dialogs.directory}/${safeName(accountId)}.json"
-    }
-
-    private fun messagesPath(accountId: String, providerDialogId: String): String {
-        return "${Category.Messages.directory}/${safeName(accountId)}/" +
-            "${safeName(providerDialogId)}.json"
-    }
-
-    private fun mediaPath(accountId: String, fileId: Int): String {
-        return "${Category.Media.directory}/${safeName(accountId)}/$fileId"
+    private fun mediaPath(accountId: String, remoteUniqueId: String): String {
+        return "$MediaDirectory/${safeName(accountId)}/${safeName(remoteUniqueId)}"
     }
 
     private fun safeName(value: String): String {

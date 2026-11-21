@@ -23,7 +23,13 @@ enum class DialogKind(
 @Serializable
 data class ChatWallpaper(
     val fileId: Int? = null,
+    /**
+     * Durable content id of the wallpaper file. Runtime file ids are only
+     * valid for a single run, so cached wallpapers are looked up by this.
+     */
+    val fileUniqueId: String? = null,
     val thumbnailFileId: Int? = null,
+    val thumbnailUniqueId: String? = null,
     val colors: List<Int> = emptyList(),
     val gradientAngle: Int = 0,
     val isPattern: Boolean = false,

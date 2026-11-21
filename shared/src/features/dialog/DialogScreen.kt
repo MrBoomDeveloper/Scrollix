@@ -325,9 +325,9 @@ fun DialogScreen(
         val cacheKey = buildString {
             append(currentDialog.providerDialogId)
             append(':')
-            append(wallpaper.fileId)
+            append(wallpaper.fileUniqueId ?: wallpaper.fileId)
             append(':')
-            append(wallpaper.thumbnailFileId)
+            append(wallpaper.thumbnailUniqueId ?: wallpaper.thumbnailFileId)
         }
 
         WallpaperImageCache.exact(cacheKey)?.let { cached ->
@@ -338,20 +338,26 @@ fun DialogScreen(
         var image: ImageBitmap? = null
         val thumbnailFileId = wallpaper.thumbnailFileId
 
-        if (thumbnailFileId != null) {
-            val bytes = session?.loadFile(thumbnailFileId)?.getOrNull()
+        // Cached media is addressed by the durable remote unique id, so a
+        // custom wallpaper is restored right away instead of waiting for TDLib
+        // to replay the chat: the file ids stored in a cached dialog are only
+        // valid for the run that produced them.
+        val thumbnailBytes = wallpaper.thumbnailUniqueId
+            ?.let { uniqueId -> session?.loadCachedMedia(uniqueId) }
+            ?: thumbnailFileId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
 
-            if (bytes != null) {
-                image = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(bytes)
-                }
+        if (thumbnailBytes != null) {
+            image = withContext(Dispatchers.Default) {
+                decodeImageBitmap(thumbnailBytes)
             }
         }
 
         val fileId = wallpaper.fileId
 
         if (image == null && fileId != null && fileId != thumbnailFileId) {
-            val bytes = session?.loadFile(fileId)?.getOrNull()
+            val bytes = wallpaper.fileUniqueId
+                ?.let { uniqueId -> session?.loadCachedMedia(uniqueId) }
+                ?: session?.loadFile(fileId)?.getOrNull()
 
             if (bytes != null) {
                 // Animated wallpapers (video/TGS) can't be decoded as a bitmap,

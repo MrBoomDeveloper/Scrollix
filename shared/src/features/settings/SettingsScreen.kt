@@ -470,12 +470,15 @@ private fun SettingsCategoryContent(
 
 @Composable
 private fun SettingsStorageContent() {
+    val scope = rememberCoroutineScope()
     var refreshKey by remember { mutableStateOf(0) }
     var sizes by remember { mutableStateOf<Map<CacheStore.Category, Long>>(emptyMap()) }
 
     LaunchedEffect(refreshKey) {
         sizes = withContext(Dispatchers.IO) {
-            CacheStore.Category.entries.associateWith(CacheStore::size)
+            CacheStore.Category.entries.associateWith { category ->
+                CacheStore.size(category)
+            }
         }
     }
 
@@ -507,8 +510,10 @@ private fun SettingsStorageContent() {
 
             TextButton(
                 onClick = {
-                    CacheStore.clear(category)
-                    refreshKey++
+                    scope.launch {
+                        withContext(Dispatchers.IO) { CacheStore.clear(category) }
+                        refreshKey++
+                    }
                 }
             ) {
                 Text("Clear")
@@ -530,8 +535,10 @@ private fun SettingsStorageContent() {
 
         TextButton(
             onClick = {
-                CacheStore.clearAll()
-                refreshKey++
+                scope.launch {
+                    withContext(Dispatchers.IO) { CacheStore.clearAll() }
+                    refreshKey++
+                }
             }
         ) {
             Text("Clear all")

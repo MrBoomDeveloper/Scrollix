@@ -109,11 +109,13 @@ class TelegramAccountSession(
     private val _profile = MutableStateFlow<AccountProfile?>(null)
     override val profile: StateFlow<AccountProfile?> = _profile.asStateFlow()
 
-    /** Snapshot restored from disk, kept around while the initial sync runs. */
-    private val restoredDialogs: List<Dialog> =
-        if (account.isPending) emptyList() else CacheStore.loadDialogs(account.id)
+    /** Snapshot restored from the database, kept around while the initial sync runs. */
+    private var restoredDialogs: List<Dialog> = emptyList()
 
-    private val _dialogs = MutableStateFlow(restoredDialogs)
+    /** The first full chat sync is what makes the cached snapshot obsolete. */
+    private var dialogsSynced = false
+
+    private val _dialogs = MutableStateFlow<List<Dialog>>(emptyList())
     override val dialogs: StateFlow<List<Dialog>> = _dialogs.asStateFlow()
 
     private val _folders = MutableStateFlow<List<DialogFolder>>(emptyList())
@@ -186,7 +188,6 @@ class TelegramAccountSession(
         histories.value[providerDialogId]?.let { return it }
 
         val created = MessageHistoryController(
-            initialMessages = CacheStore.loadMessages(accountId, providerDialogId),
             pageLoader = object : MessagePageLoader {
                 override suspend fun load(
                     fromMessageId: Long,
@@ -211,6 +212,12 @@ class TelegramAccountSession(
 
         histories.update { existing ->
             existing + (providerDialogId to (existing[providerDialogId] ?: created))
+        }
+
+        // Cached messages fill the window immediately while the real page loads.
+        scope.launch {
+            val cached = CacheStore.loadMessages(accountId, providerDialogId)
+            if (cached.isNotEmpty()) created.seed(cached)
         }
 
         return histories.value[providerDialogId]
@@ -240,11 +247,17 @@ class TelegramAccountSession(
 
         fileCache.value[fileId]?.let { return Result.success(it) }
 
-        // Stickers, custom emoji and avatars are served from the local cache
-        // even when TDLib has to download them again.
-        CacheStore.readMedia(accountId, fileId)?.let { cached ->
-            fileCache.update { it + (fileId to cached) }
-            return Result.success(cached)
+        val cacheKey = cacheKeyFor(fileId)
+
+        if (cacheKey != null) {
+            val cached = withContext(Dispatchers.IO) {
+                CacheStore.readMedia(accountId, cacheKey)
+            }
+
+            if (cached != null && cached.isNotEmpty()) {
+                fileCache.update { it + (fileId to cached) }
+                return Result.success(cached)
+            }
         }
 
         return try {
@@ -262,7 +275,16 @@ class TelegramAccountSession(
 
                     if (bytes != null && bytes.isNotEmpty()) {
                         fileCache.update { it + (fileId to bytes) }
-                        CacheStore.saveMedia(accountId, fileId, bytes)
+
+                        val key = cacheKey
+                            ?: result.result.remote.uniqueId.takeIf { it.isNotBlank() }
+
+                        if (key != null) {
+                            withContext(Dispatchers.IO) {
+                                CacheStore.saveMedia(accountId, key, bytes)
+                            }
+                        }
+
                         registerDownload(fileId, bytes.size.toLong())
                         Result.success(bytes)
                     } else {
@@ -276,6 +298,32 @@ class TelegramAccountSession(
             throw exception
         } catch (exception: Exception) {
             Result.failure(exception)
+        }
+    }
+
+    /**
+     * TDLib's remote unique id is a durable content identifier, while the
+     * numeric file id is only valid for the current run and can point at
+     * another file after a restart. Cached media is stored under the former.
+     */
+    private suspend fun cacheKeyFor(fileId: Int): String? {
+        return try {
+            when (val result = client.getFile(fileId)) {
+                is TdlResult.Success -> result.result.remote.uniqueId.takeIf { it.isNotBlank() }
+                is TdlResult.Failure -> null
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    override suspend fun loadCachedMedia(remoteUniqueId: String): ByteArray? {
+        if (remoteUniqueId.isBlank()) return null
+
+        return withContext(Dispatchers.IO) {
+            CacheStore.readMedia(accountId, remoteUniqueId)
         }
     }
 
@@ -1125,8 +1173,18 @@ class TelegramAccountSession(
             }
         }
 
-        // Keep the dialog list and the loaded message windows on disk so a
-        // restart can show them before TDLib replays its updates.
+        // Show the cached dialog list before the first TDLib update arrives.
+        scope.launch {
+            val cached = CacheStore.loadDialogs(accountId)
+
+            if (cached.isNotEmpty() && !closed) {
+                restoredDialogs = cached
+                _dialogs.value = mergeDialogs(cached, _dialogs.value)
+            }
+        }
+
+        // Keep the dialog list and the loaded message windows in the database
+        // so a restart can show them before TDLib replays its updates.
         scope.launch {
             var savedDialogs: List<Dialog>? = null
             val savedHistories = mutableMapOf<String, List<ChatMessage>>()
@@ -3884,6 +3942,10 @@ class TelegramAccountSession(
             }
         } finally {
             _isLoadingDialogs.value = false
+            dialogsSynced = true
+
+            // Drop cached entries TDLib no longer reports now that the list is complete.
+            emitDialogs()
         }
     }
 
@@ -3909,14 +3971,22 @@ class TelegramAccountSession(
 
         if (!shouldLoad) return
 
+        val cacheKey = file.remote.uniqueId.takeIf { it.isNotBlank() }
+
         scope.launch {
-            CacheStore.readMedia(accountId, file.id)?.let { cached ->
-                avatarCache.update { it + (file.id to cached) }
-                refreshReactionAvatars()
-                refreshMessageSenders()
-                emitDialogs()
-                _users.value[currentUserId]?.let(::updateProfile)
-                return@launch
+            cacheKey?.let { key ->
+                val cached = withContext(Dispatchers.IO) {
+                    CacheStore.readMedia(accountId, key)
+                }
+
+                if (cached != null && cached.isNotEmpty()) {
+                    avatarCache.update { it + (file.id to cached) }
+                    refreshReactionAvatars()
+                    refreshMessageSenders()
+                    emitDialogs()
+                    _users.value[currentUserId]?.let(::updateProfile)
+                    return@launch
+                }
             }
 
             val result = try {
@@ -3937,7 +4007,12 @@ class TelegramAccountSession(
                 val bytes = readFileBytes(result.result.local.path)
                 if (bytes != null && bytes.isNotEmpty()) {
                     avatarCache.update { it + (file.id to bytes) }
-                    CacheStore.saveMedia(accountId, file.id, bytes)
+
+                    cacheKey?.let { key ->
+                        withContext(Dispatchers.IO) {
+                            CacheStore.saveMedia(accountId, key, bytes)
+                        }
+                    }
                     refreshReactionAvatars()
                     refreshMessageSenders()
                     emitDialogs()
@@ -4165,8 +4240,13 @@ class TelegramAccountSession(
 
         return ChatWallpaper(
             fileId = document?.document?.id,
+            fileUniqueId = document?.document?.remote?.uniqueId
+                ?.takeIf { it.isNotBlank() },
             thumbnailFileId = document?.thumbnail?.file?.id
                 ?: document?.document?.id,
+            thumbnailUniqueId = document?.thumbnail?.file?.remote?.uniqueId
+                ?.takeIf { it.isNotBlank() }
+                ?: document?.document?.remote?.uniqueId?.takeIf { it.isNotBlank() },
             colors = colors,
             gradientAngle = (fill as? BackgroundFillGradient)?.rotationAngle ?: 0,
             isPattern = type is BackgroundTypePattern,
@@ -4293,18 +4373,23 @@ class TelegramAccountSession(
         // While the first sync is still running, keep the cached snapshot in
         // front of whatever TDLib has delivered so far, otherwise the list
         // visibly fills in chat by chat after every restart.
-        _dialogs.value = if (_isLoadingDialogs.value && restoredDialogs.isNotEmpty()) {
-            val merged = LinkedHashMap<String, Dialog>(
-                restoredDialogs.size + dialogs.size
-            )
-
-            restoredDialogs.forEach { dialog -> merged[dialog.providerDialogId] = dialog }
-            dialogs.forEach { dialog -> merged[dialog.providerDialogId] = dialog }
-
-            merged.values.sortedWith(dialogOrder)
+        // Until the first full sync finishes, every partial emit is merged over
+        // the cached snapshot instead of replacing it, otherwise the list is
+        // wiped and then visibly fills in chat by chat.
+        _dialogs.value = if (!dialogsSynced && restoredDialogs.isNotEmpty()) {
+            mergeDialogs(restoredDialogs, dialogs)
         } else {
             dialogs
         }
+    }
+
+    private fun mergeDialogs(restored: List<Dialog>, loaded: List<Dialog>): List<Dialog> {
+        val merged = LinkedHashMap<String, Dialog>(restored.size + loaded.size)
+
+        restored.forEach { dialog -> merged[dialog.providerDialogId] = dialog }
+        loaded.forEach { dialog -> merged[dialog.providerDialogId] = dialog }
+
+        return merged.values.sortedWith(dialogOrder)
     }
 
     private val dialogOrder = compareByDescending<Dialog> {

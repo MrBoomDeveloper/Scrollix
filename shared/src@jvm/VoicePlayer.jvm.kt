@@ -28,6 +28,7 @@ private class JvmVoicePlayer : VoicePlayback {
         stop()
 
         return try {
+            silenceFfmpegLogs()
             val grabber = FFmpegFrameGrabber(ByteArrayInputStream(bytes))
             grabber.sampleFormat = AV_SAMPLE_FMT_S16
             grabber.start()

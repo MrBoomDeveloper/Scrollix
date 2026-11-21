@@ -194,6 +194,26 @@ class MessageHistoryController(
         return Result.success(_state.value.contains(messageId))
     }
 
+    /**
+     * Seeds the window with messages restored from the local cache, so a chat
+     * can render its history before the first network page arrives.
+     */
+    fun seed(messages: List<ChatMessage>) {
+        if (messages.isEmpty()) return
+
+        _state.update { state ->
+            if (state.messages.isNotEmpty()) {
+                state
+            } else {
+                MessageHistory(
+                    messages = messages.sortedBy { message -> message.messageId },
+                    hasMoreOlder = true,
+                    isLoadingInitial = false
+                )
+            }
+        }
+    }
+
     /** Merges messages coming from a page load or a live update. */
     fun merge(incoming: List<ChatMessage>) {
         if (incoming.isEmpty()) return

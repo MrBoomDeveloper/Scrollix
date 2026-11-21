@@ -39,6 +39,8 @@ private suspend fun decodeWebmAnimationBlocking(
 ): WebmAnimation? {
     if (bytes.isEmpty()) return null
 
+    silenceFfmpegLogs()
+
     var grabber: FFmpegFrameGrabber? = null
 
     return try {

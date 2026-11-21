@@ -167,6 +167,7 @@ private fun openCamera(): FFmpegFrameGrabber? {
     }
 
     for ((format, source) in attempts) {
+        silenceFfmpegLogs()
         val grabber = FFmpegFrameGrabber(source)
 
         if (format != null) {
