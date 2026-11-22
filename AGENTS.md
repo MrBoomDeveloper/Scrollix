@@ -120,6 +120,73 @@ Run `./kotlin test -m shared` while iterating on shared logic. Pure common tests
 (parsers, formatters, history controllers) belong in `shared/test`; JVM or
 Android `actual` behavior belongs in the matching platform test folder.
 
+## Feature behavior notes
+
+Keep these invariants when changing the related code:
+
+- **Media cache identity.** Cached media is keyed by TDLib's durable remote
+  unique id, scoped by account. `CacheStore` hex-encodes ids because unique ids
+  are base64 and can contain `/`, `+` and `=`; a lossy filename mapping made
+  distinct files collide. `MessageMedia` carries `previewUniqueId`,
+  `fileUniqueId` and `stickerUniqueId`. UI code loads media through
+  `AccountSession.loadMediaBytes(fileId, uniqueId)`: cached bytes are preferred
+  and a runtime file id is used only when `loadFileIfUnique` confirms it still
+  resolves to the same durable id. Never render media from a bare file id that
+  came from a cached message or dialog.
+- **Drafts.** Composer text is stored on Telegram's servers with
+  `AccountSession.saveDraft` (TDLib `setChatDraftMessage`), and restored with
+  `loadDraft` when a chat opens. Draft text and custom-emoji spans travel
+  together. Debounced saves must not clear an unreadable or not-yet-loaded
+  draft.
+- **Attachment review.** Picking one or more files opens a blocking,
+  non-dismissible modal that dims the whole chat. It lists the attachments and
+  an optional caption, and the only actions are Send and Discard. Do not add
+  dismiss-on-back, dismiss-on-outside, or usable composer controls underneath
+  it.
+- **Composer layout.** The message list is the background of the chat area and
+  scrolls behind the floating composer. The list's bottom content padding is
+  the measured composer height, so the newest message rests above the composer
+  at the end of history instead of being hidden by it.
+- **Fullscreen media viewer.** Only the explicit close button or a tap on the
+  backdrop closes it. Taps on the image or video content itself are consumed
+  and must not dismiss the viewer.
+- **Notifications.** Scope-wide mutes (private chats, groups, channels) and
+  per-chat mutes are server-side TDLib settings: `loadNotificationSettings`,
+  `setScopeMuted`, `setDialogMuted` and `isDialogMuted`. The settings screen
+  exposes them per account, and profiles expose the per-chat mute toggle. Do
+  not move these to local-only storage.
+- **Reactions.** `pinnedCustomReactions` and `doubleTapReaction` in
+  `AppSettings` are `ReactionPreference` values that may carry a custom emoji
+  id. Double-tap reactions are only wired on compact/mobile layouts; the
+  message bubble shows selection checkboxes while selection mode is active.
+- **Own profile.** The accounts screen opens `Route.OwnProfile`, which renders
+  `AccountSession.loadOwnProfile()` instead of a dialog profile.
+- **Service media.** `MessageChatChangePhoto` and `MessageChatSetBackground`
+  map to photo media, so chat bubbles and dialog last-message previews show the
+  new avatar or wallpaper instead of only a text notice.
+- **Profile colors.** `UserProfileDetails.accentColorsLight/Dark` come from
+  `User.upgradedGiftColors` when the user has a collectible gift. The profile
+  header and avatar ring use them as a translucent gradient; leave the default
+  surface styling when they are empty.
+- **Profile transitions.** `App` wraps `NavDisplay` in `SharedTransitionLayout`
+  and provides `LocalSharedTransitionScope`; avatar/name wrappers use
+  `SharedProfileElement` with keys of the form `profile:<account>:<dialog>`
+  (or `own-profile:<account>`) so the chat header and accounts row fly into
+  the profile header.
+- **Folder and pack order.** `AppSettings.folderOrder` stores chip keys
+  (`all`, `folder:<account>:<folder>`, `tab:<index>`), and
+  `stickerPackOrder`/`emojiPackOrder` store pack ids. The shared
+  `ReorderDialog` changes the order with long-press dragging; the pickers apply
+  pack order through `orderedStickerPacks`, unlisted packs keep server order.
+- **Pinned chat order.** Telegram has no reorder call, so
+  `reorderPinnedDialogs` unpins the supplied chats and re-pins them in reverse
+  order to make the server store the requested order. Pass every pinned chat
+  in the target chat list, not only the moved one.
+- **Message emoji packs.** The message action menu lists packs that actually
+  occur in that message: sticker media `stickerSetId` plus the set ids returned
+  by `loadCustomEmojiSetIds` for custom emoji spans. Selecting a pack opens
+  `StickerSetDialog` through `onOpenStickerSet`.
+
 ## Releases
 
 Release scripts build and package artifacts into `dist/`:

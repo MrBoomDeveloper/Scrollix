@@ -210,7 +210,18 @@ object CacheStore {
     }
 
     private fun mediaPath(accountId: String, remoteUniqueId: String): String {
-        return "$MediaDirectory/${safeName(accountId)}/${safeName(remoteUniqueId)}"
+        return "$MediaDirectory/${safeName(accountId)}/${hexName(remoteUniqueId)}"
+    }
+
+    /**
+     * Remote unique ids are base64 and may contain '/', '+' and '='. Mapping
+     * those characters to '_' makes distinct ids collide, so media names are
+     * a lossless hex encoding of the whole id instead.
+     */
+    private fun hexName(value: String): String {
+        return value.encodeToByteArray().joinToString("") { byte ->
+            (byte.toInt() and 0xFF).toString(16).padStart(2, '0')
+        }
     }
 
     private fun safeName(value: String): String {

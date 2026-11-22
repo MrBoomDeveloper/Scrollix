@@ -1,7 +1,9 @@
 package com.mrboomdev.scrollix.features.accounts
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -14,12 +16,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +44,7 @@ import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import kotlinx.coroutines.launch
@@ -47,7 +52,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AccountsScreen(
     onBack: () -> Unit,
-    onOpenLogin: (String) -> Unit
+    onOpenLogin: (String) -> Unit,
+    onOpenOwnProfile: (String) -> Unit = {}
 ) {
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
@@ -176,7 +182,9 @@ fun AccountsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = PaddingValues(16.dp)
         ) {
             items(
                 items = accountState.accounts,
@@ -190,6 +198,7 @@ fun AccountsScreen(
                     isActivating = account.id == activatingId,
                     isDialogsLoading = account.id in dialogsLoading,
                     onOpenLogin = onOpenLogin,
+                    onOpenOwnProfile = { onOpenOwnProfile(account.id) },
                     onRemove = { removeAccount(account.id) },
                     onSetActive = { setActiveAccount(account.id) }
                 )
@@ -217,25 +226,6 @@ fun AccountsScreen(
                     }
                 }
             }
-
-            item {
-                Button(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    enabled = !isAdding,
-                    onClick = ::addAccount
-                ) {
-                    if (isAdding) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Add account")
-                    }
-                }
-            }
         }
     }
 }
@@ -249,17 +239,41 @@ private fun AccountRow(
     isActivating: Boolean,
     isDialogsLoading: Boolean,
     onOpenLogin: (String) -> Unit,
+    onOpenOwnProfile: () -> Unit,
     onRemove: () -> Unit,
     onSetActive: () -> Unit
 ) {
     val providerName = ProviderRegistry.get(account.providerId)?.displayName
         ?: account.providerId
     val isBusy = isRemoving || isActivating
+    
+    @Composable
+    fun actions() {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            OutlinedButton(
+                enabled = !isBusy && authState is AuthState.Ready,
+                onClick = onOpenOwnProfile
+            ) {
+                Text("View profile")
+            }
+            
+            OutlinedButton(
+                enabled = !isBusy,
+                onClick = onRemove
+            ) { 
+                Text("Remove")
+            }
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color.Transparent,
         enabled = !isBusy,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         onClick = {
             if (authState is AuthState.Ready) {
                 onSetActive()
@@ -269,29 +283,32 @@ private fun AccountRow(
         }
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AvatarImage(
-                avatar = account.avatar ?: Avatar.fromName(account.displayName),
-                size = 48.dp
-            )
+            SharedProfileElement(key = "own-profile:${account.id}") {
+                AvatarImage(
+                    avatar = account.avatar ?: Avatar.fromName(account.displayName),
+                    size = 48.dp
+                )
+            }
 
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                    .padding(horizontal = 12.dp)
             ) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = account.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1
-                    )
+                    SharedProfileElement(key = "own-profile:${account.id}:name") {
+                        Text(
+                            text = account.displayName,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1
+                        )
+                    }
 
                     if (isActive) {
                         Text(
@@ -319,31 +336,7 @@ private fun AccountRow(
                 )
             }
 
-            if (authState !is AuthState.Ready) {
-                TextButton(
-                    enabled = !isBusy,
-                    onClick = { onOpenLogin(account.id) }
-                ) {
-                    Text("Login")
-                }
-            }
-
-            TextButton(
-                enabled = !isBusy,
-                onClick = onRemove
-            ) {
-                if (isRemoving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text(
-                        text = "Remove",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
+            actions()
         }
     }
 }

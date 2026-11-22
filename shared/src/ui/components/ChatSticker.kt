@@ -45,7 +45,10 @@ internal fun ChatSticker(
     var bitmap by remember(fileId) { mutableStateOf<ImageBitmap?>(null) }
 
     LaunchedEffect(fileId, session) {
-        data = fileId?.let { session?.loadFile(it)?.getOrNull() }
+        data = session?.loadMediaBytes(
+            fileId = fileId,
+            uniqueId = media.stickerUniqueId ?: media.fileUniqueId
+        )
         isLoading = false
     }
 

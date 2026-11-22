@@ -45,7 +45,15 @@ enum class MessageSendState {
 data class MessageMedia(
     val kind: MessageMediaKind,
     val previewFileId: Int? = null,
+    /**
+     * Durable content id of the preview. Runtime file ids are only valid for
+     * one run, so cached messages must load media by these ids instead of
+     * trusting a file id that may now point at a completely different file.
+     */
+    val previewUniqueId: String? = null,
     val fileId: Int? = null,
+    val fileUniqueId: String? = null,
+    val stickerUniqueId: String? = null,
     val fileName: String? = null,
     val mimeType: String? = null,
     val size: Long = 0,
@@ -81,6 +89,12 @@ data class MessageReactionInfo(
     val reactorIds: List<Long> = emptyList(),
     val reactorAvatars: List<Avatar> = emptyList(),
     val customEmojiId: Long? = null
+)
+
+@Serializable
+data class MessageDraft(
+    val text: String = "",
+    val customEmojis: List<CustomEmojiSpan> = emptyList()
 )
 
 @Serializable

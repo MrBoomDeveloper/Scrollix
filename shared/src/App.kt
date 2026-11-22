@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandIn
@@ -61,6 +62,7 @@ import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.theme.appTypography
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
+import com.mrboomdev.scrollix.ui.navigation.LocalSharedTransitionScope
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -279,8 +281,12 @@ fun App() {
                     }
 
                     Column(Modifier.fillMaxSize()) {
+                        SharedTransitionLayout(modifier = Modifier.weight(1f)) {
+                            CompositionLocalProvider(
+                                LocalSharedTransitionScope provides this
+                            ) {
                         NavDisplay(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxSize(),
                             backStack = backStack,
 
                             entryProvider = rememberAppEntryProvider(
@@ -336,6 +342,8 @@ fun App() {
                                 rememberSaveableStateHolderNavEntryDecorator()
                             )
                         )
+                            }
+                        }
 
                         AnimatedVisibility(showNavigation && !useRail) {
                             ShortNavigationBar(

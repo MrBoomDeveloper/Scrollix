@@ -125,9 +125,10 @@ private fun FullscreenImageContent(
             }
         }
 
-        val bytes = (media.fileId ?: media.previewFileId)?.let { fileId ->
-            session?.loadFile(fileId)?.getOrNull()
-        }
+        val bytes = session?.loadMediaBytes(
+            fileId = media.fileId ?: media.previewFileId,
+            uniqueId = media.fileUniqueId ?: media.previewUniqueId
+        )
 
         if (bytes != null) {
             image = withContext(Dispatchers.Default) {
@@ -142,7 +143,11 @@ private fun FullscreenImageContent(
         Image(
             bitmap = bitmap,
             contentDescription = null,
-            modifier = modifier.alpha(rememberFadeIn(bitmap)),
+            // Taps on the media itself are swallowed; only the backdrop and
+            // the close button dismiss the viewer.
+            modifier = modifier
+                .alpha(rememberFadeIn(bitmap))
+                .clickable {},
             contentScale = ContentScale.Fit
         )
     } else {
@@ -172,9 +177,10 @@ private fun FullscreenVideoContent(
         }
 
         if (thumbnail == null) {
-            val bytes = media.previewFileId?.let { previewId ->
-                session?.loadFile(previewId)?.getOrNull()
-            }
+            val bytes = session?.loadMediaBytes(
+                fileId = media.previewFileId,
+                uniqueId = media.previewUniqueId
+            )
 
             if (bytes != null) {
                 thumbnail = withContext(Dispatchers.Default) {
@@ -193,7 +199,7 @@ private fun FullscreenVideoContent(
         isLoading = true
         val currentFileId = fileId ?: 0
         val bytes = if (currentFileId != 0) {
-            session?.loadFile(currentFileId)?.getOrNull()
+            session?.loadMediaBytes(currentFileId, media.fileUniqueId)
         } else {
             null
         }
@@ -216,7 +222,7 @@ private fun FullscreenVideoContent(
     val poster = thumbnail
     val isReady = video != null && video.frames.isNotEmpty()
 
-    Box(modifier, contentAlignment = Alignment.Center) {
+    Box(modifier.clickable {}, contentAlignment = Alignment.Center) {
         // The preview stays underneath, blurred until the frames are ready,
         // then the animation fades in over it.
         if (poster != null) {
@@ -347,7 +353,10 @@ fun FullscreenGalleryViewer(
                         scope.launch {
                             isDownloading = true
 
-                            val bytes = session?.loadFile(fileId)?.getOrNull()
+                            val bytes = session?.loadMediaBytes(
+                                fileId = fileId,
+                                uniqueId = current.fileUniqueId ?: current.previewUniqueId
+                            )
 
                             if (bytes != null) {
                                 downloaded = withContext(Dispatchers.IO) {
@@ -463,9 +472,10 @@ private fun GalleryThumbnail(
         }
 
         if (bitmap == null) {
-            val bytes = media.previewFileId?.let { previewId ->
-                session?.loadFile(previewId)?.getOrNull()
-            }
+            val bytes = session?.loadMediaBytes(
+                fileId = media.previewFileId,
+                uniqueId = media.previewUniqueId
+            )
 
             if (bytes != null) {
                 bitmap = withContext(Dispatchers.Default) {

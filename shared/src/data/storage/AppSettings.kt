@@ -8,10 +8,34 @@ import kotlinx.serialization.json.Json
 
 val DefaultQuickReactions = listOf("👍", "❤️", "🔥", "🎉", "😁", "😢")
 
+/**
+ * A reaction that can be either a Unicode emoji or a custom emoji sticker.
+ * Stored in settings so pinned reactions and the double-tap reaction survive
+ * restarts and are included in settings backups.
+ */
+@Serializable
+data class ReactionPreference(
+    val emoji: String = "",
+    val customEmojiId: Long? = null
+) {
+    val key: String
+        get() = customEmojiId?.let { id -> "custom:$id" } ?: "emoji:$emoji"
+}
+
 @Serializable
 data class AppSettings(
     val quickReactions: List<String> = DefaultQuickReactions,
+    /** Custom emoji reactions pinned next to the plain emoji ones. */
+    val pinnedCustomReactions: List<ReactionPreference> = emptyList(),
+    /** Reaction sent by double tapping a message; null means the first pinned one. */
+    val doubleTapReaction: ReactionPreference? = null,
     val defaultHomeTab: String = "all",
+    /** User order of folder chips; keys are "all", "folder:<account:id>" or "tab:<index>". */
+    val folderOrder: List<String> = emptyList(),
+    /** User order of installed sticker packs (ids). */
+    val stickerPackOrder: List<Long> = emptyList(),
+    /** User order of installed custom-emoji packs (ids). */
+    val emojiPackOrder: List<Long> = emptyList(),
     val showAllChatsTab: Boolean = false,
     val singleRowFilters: Boolean = false,
     val showRecentStickersAndEmojis: Boolean = true,

@@ -94,6 +94,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -101,6 +102,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.example.test.microphone_icon
@@ -118,6 +121,7 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
+import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
@@ -146,6 +150,7 @@ import com.mrboomdev.scrollix.ui.components.MessageGallery
 import com.mrboomdev.scrollix.ui.components.MessageDatePill
 import com.mrboomdev.scrollix.ui.components.MessageBubble
 import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
+import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import com.mrboomdev.scrollix.ui.components.PickedFile
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import com.mrboomdev.scrollix.ui.components.VoiceMessagePlayer
@@ -159,6 +164,8 @@ import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
 import com.mrboomdev.scrollix.isTwoPaneLayout
+import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -441,6 +448,42 @@ fun DialogScreen(
     var editingMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var selectedMessageIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
+    var composerHeightPx by remember(providerDialogId) { mutableStateOf(0) }
+    val composerInset = with(LocalDensity.current) { composerHeightPx.toDp() }
+
+    // The composer text is stored on Telegram's servers as a draft, so it is
+    // restored when the chat is reopened on this or any other device.
+    var draftRestored by remember(providerDialogId) { mutableStateOf(false) }
+    var hadServerDraft by remember(providerDialogId) { mutableStateOf(false) }
+
+    LaunchedEffect(session, providerDialogId) {
+        val currentSession = session ?: return@LaunchedEffect
+
+        currentSession.loadDraft(providerDialogId).onSuccess { draft ->
+            hadServerDraft = draft.text.isNotEmpty() || draft.customEmojis.isNotEmpty()
+
+            if (input.isEmpty() && editingMessage == null) {
+                input = draft.text
+                inputCustomEmojis = draft.customEmojis
+            }
+        }
+
+        draftRestored = true
+    }
+
+    LaunchedEffect(input, inputCustomEmojis, session, providerDialogId, editingMessage, draftRestored) {
+        if (!draftRestored || editingMessage != null) return@LaunchedEffect
+
+        // Never clear an unreadable draft just because the composer is empty.
+        if (input.isEmpty() && inputCustomEmojis.isEmpty() && !hadServerDraft) {
+            return@LaunchedEffect
+        }
+
+        // Debounce so a draft write doesn't race every keystroke.
+        delay(600.milliseconds)
+        session?.saveDraft(providerDialogId, input, inputCustomEmojis)
+        hadServerDraft = input.isNotEmpty() || inputCustomEmojis.isNotEmpty()
+    }
     var forwardingMessageIds by remember(providerDialogId) {
         mutableStateOf<LongArray?>(null)
     }
@@ -694,6 +737,26 @@ fun DialogScreen(
         isSearchPending = false
     }
 
+    val isMobileLayout = currentAdaptiveLayoutInfo().size < AdaptiveLayoutSize.EXPANDED
+    val doubleTapReaction = remember(
+        settings.doubleTapReaction,
+        settings.quickReactions,
+        settings.pinnedCustomReactions
+    ) {
+        val preferred = settings.doubleTapReaction
+
+        if (preferred != null) {
+            MessageReactionOption(
+                emoji = preferred.emoji,
+                customEmojiId = preferred.customEmojiId
+            )
+        } else {
+            settings.quickReactions.firstOrNull()?.let { emoji ->
+                MessageReactionOption(emoji)
+            }
+        }
+    }
+
     val visibleMessages = remember(displayMessages, searchResults, searchQuery.text) {
         if (searchQuery.text.isBlank()) displayMessages else searchResults.groupMessageAlbums()
     }
@@ -761,6 +824,35 @@ fun DialogScreen(
                 .map { it.messageId }
                 .toLongArray()
         )
+    }
+
+    fun applyReaction(message: ChatMessage, option: MessageReactionOption) {
+        val currentSession = session ?: return
+        val isChosen = message.reactions.any { reaction ->
+            reaction.isChosen && if (option.customEmojiId != null) {
+                reaction.customEmojiId == option.customEmojiId
+            } else {
+                reaction.customEmojiId == null && reaction.emoji == option.emoji
+            }
+        }
+
+        scope.launch {
+            if (isChosen) {
+                currentSession.removeMessageReaction(
+                    providerDialogId = providerDialogId,
+                    messageId = message.messageId,
+                    emoji = option.emoji,
+                    customEmojiId = option.customEmojiId
+                )
+            } else {
+                currentSession.addMessageReaction(
+                    providerDialogId = providerDialogId,
+                    messageId = message.messageId,
+                    emoji = option.emoji,
+                    customEmojiId = option.customEmojiId
+                )
+            }
+        }
     }
 
     fun send() {
@@ -935,6 +1027,38 @@ fun DialogScreen(
         )
     }
 
+    // Attachments are reviewed in a blocking modal: the chat stays dimmed and
+    // the composer can't be used until the message is sent or discarded.
+    if (pendingAttachments.isNotEmpty()) {
+        AttachmentReviewDialog(
+            attachments = pendingAttachments,
+            caption = input,
+            isSending = isSending,
+            onCaptionChange = { value ->
+                inputCustomEmojis = adjustCustomEmojiSpans(
+                    oldText = input,
+                    newText = value,
+                    spans = inputCustomEmojis
+                )
+
+                input = value
+            },
+            onRemove = { index ->
+                pendingAttachments = pendingAttachments.filterIndexed {
+                        itemIndex,
+                        _ -> itemIndex != index
+                }
+            },
+            onDiscard = {
+                pendingAttachments = emptyList()
+                input = ""
+                inputCustomEmojis = emptyList()
+                showAttachmentMenu = false
+            },
+            onSend = ::send
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -965,10 +1089,14 @@ fun DialogScreen(
             if (dialog?.isSavedMessages == true) {
                 SavedMessagesAvatar(size = 40.dp)
             } else {
-                AvatarImage(
-                    avatar = dialog?.avatar ?: Avatar.fromName(dialog?.title ?: "Dialog"),
-                    size = 40.dp
-                )
+                SharedProfileElement(
+                    key = "profile:$accountId:$providerDialogId"
+                ) {
+                    AvatarImage(
+                        avatar = dialog?.avatar ?: Avatar.fromName(dialog?.title ?: "Dialog"),
+                        size = 40.dp
+                    )
+                }
             }
 
             Column(
@@ -977,14 +1105,18 @@ fun DialogScreen(
                     .padding(horizontal = 12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        modifier = Modifier.weight(1f, fill = false),
-                        text = dialog?.title ?: "Dialog",
-                        style = MaterialTheme.typography.titleMedium,
-                        lineHeight = MaterialTheme.typography.titleMedium.fontSize,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    SharedProfileElement(
+                        key = "profile-name:$accountId:$providerDialogId",
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Text(
+                            text = dialog?.title ?: "Dialog",
+                            style = MaterialTheme.typography.titleMedium,
+                            lineHeight = MaterialTheme.typography.titleMedium.fontSize,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
                     dialog?.emojiStatusId?.let { emojiId ->
                         EmojiStatusIcon(
@@ -1281,6 +1413,7 @@ fun DialogScreen(
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                     when {
                         history.isLoadingInitial -> {
                             LoadingContent(
@@ -1311,7 +1444,12 @@ fun DialogScreen(
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 state = listState,
-                                contentPadding = PaddingValues(8.dp),
+                                contentPadding = PaddingValues(
+                                    start = 8.dp,
+                                    top = 8.dp,
+                                    end = 8.dp,
+                                    bottom = composerInset + 8.dp
+                                ),
                                 verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 itemsIndexed(
@@ -1559,6 +1697,18 @@ fun DialogScreen(
                                             isSelectionMode = selectedMessageIds.isNotEmpty(),
                                             isSelected = message.messageId in selectedMessageIds,
                                             isPinned = dialog?.pinnedMessageId == message.messageId,
+                                            onOpenStickerSet = { setId ->
+                                                openedStickerSetId = setId
+                                            },
+                                            onDoubleTap = if (
+                                                isMobileLayout && doubleTapReaction != null
+                                            ) {
+                                                {
+                                                    applyReaction(message, doubleTapReaction)
+                                                }
+                                            } else {
+                                                null
+                                            },
                                             onToggleSelection = {
                                                 val ids = message.allMessageIds.toSet()
                                                 selectedMessageIds =
@@ -1690,11 +1840,17 @@ fun DialogScreen(
                         isLoadingMore = history.isLoadingOlder,
                         showNewMessages = messageListState.hasNewMessages,
                         isAtBottom = messageListState.isAtBottom,
+                        bottomInset = composerInset,
                         onScrollToLatest = { scrollRequest = ScrollRequest.Latest }
                     )
+                    }
 
-                }
-
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .onSizeChanged { composerHeightPx = it.height }
+                    ) {
                 error?.let { message ->
                     Text(
                         modifier = Modifier.padding(horizontal = 12.dp),
@@ -1837,19 +1993,6 @@ fun DialogScreen(
                             }
                         }
                     }
-                }
-
-                AnimatedVisibility(visible = pendingAttachments.isNotEmpty()) {
-                    PendingAttachmentsTray(
-                        attachments = pendingAttachments,
-                        onRemove = { index ->
-                            pendingAttachments = pendingAttachments.filterIndexed {
-                                    itemIndex,
-                                    _ -> itemIndex != index
-                            }
-                        },
-                        onClear = { pendingAttachments = emptyList() }
-                    )
                 }
 
                 if (dialog?.canSendMessages == false) {
@@ -2045,6 +2188,134 @@ fun DialogScreen(
                 if (!isTwoPaneWindow && showEmojiPicker && session != null) {
                     emojiPickerContent(Modifier)
                 }
+                    }
+            }
+        }
+    }
+}
+}
+
+@Composable
+private fun AttachmentReviewDialog(
+    attachments: List<PendingAttachment>,
+    caption: String,
+    isSending: Boolean,
+    onCaptionChange: (String) -> Unit,
+    onRemove: (Int) -> Unit,
+    onDiscard: () -> Unit,
+    onSend: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.62f))
+                // Taps outside the card are swallowed, not treated as dismiss.
+                .clickable {},
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Send ${attachments.size} " +
+                            if (attachments.size == 1) "attachment" else "attachments",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        itemsIndexed(attachments) { index, attachment ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (attachment.asPhoto) "IMG" else "FILE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                Text(
+                                    modifier = Modifier.weight(1f),
+                                    text = attachment.file.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+
+                                IconButton(onClick = { onRemove(index) }) {
+                                    Icon(
+                                        imageVector = close_icon,
+                                        contentDescription = "Remove attachment"
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = caption,
+                        onValueChange = onCaptionChange,
+                        label = { Text("Caption (optional)") },
+                        minLines = 1,
+                        maxLines = 4
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            enabled = !isSending,
+                            onClick = onDiscard
+                        ) {
+                            Text("Discard")
+                        }
+
+                        Button(
+                            enabled = !isSending,
+                            onClick = onSend
+                        ) {
+                            if (isSending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("Send")
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -2215,6 +2486,7 @@ private fun BoxScope.MessageListOverlays(
     isLoadingMore: Boolean,
     showNewMessages: Boolean,
     isAtBottom: Boolean,
+    bottomInset: Dp,
     onScrollToLatest: () -> Unit
 ) {
     AnimatedVisibility(
@@ -2240,7 +2512,7 @@ private fun BoxScope.MessageListOverlays(
         visible = showNewMessages || !isAtBottom,
         modifier = Modifier
             .align(Alignment.BottomEnd)
-            .padding(12.dp)
+            .padding(end = 12.dp, bottom = bottomInset + 12.dp)
     ) {
         if (showNewMessages) {
             Button(onClick = onScrollToLatest) {
@@ -2322,9 +2594,10 @@ private fun ReplyImageThumbnail(
             }
         }
 
-        val bytes = media.previewFileId?.let { fileId ->
-            session?.loadFile(fileId)?.getOrNull()
-        }
+        val bytes = session?.loadMediaBytes(
+            fileId = media.previewFileId,
+            uniqueId = media.previewUniqueId
+        )
 
         if (bytes != null) {
             image = withContext(Dispatchers.Default) {
@@ -2375,9 +2648,10 @@ private fun MessageImagePreview(
             }
         }
 
-        val bytes = media.previewFileId?.let { fileId ->
-            session?.loadFile(fileId)?.getOrNull()
-        }
+        val bytes = session?.loadMediaBytes(
+            fileId = media.previewFileId,
+            uniqueId = media.previewUniqueId
+        )
 
         if (bytes != null) {
             image = withContext(Dispatchers.Default) {
@@ -2690,7 +2964,10 @@ private fun PollOptionMedia(
         var data by remember(media.fileId, session) { mutableStateOf<ByteArray?>(null) }
 
         LaunchedEffect(media.fileId, session) {
-            data = media.fileId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
+            data = session?.loadMediaBytes(
+                fileId = media.fileId,
+                uniqueId = media.stickerUniqueId ?: media.fileUniqueId
+            )
         }
 
         val emoji = remember(
@@ -2736,9 +3013,10 @@ private fun PollOptionMedia(
             }
         }
 
-        val bytes = (media.previewFileId ?: media.fileId)?.let { fileId ->
-            session?.loadFile(fileId)?.getOrNull()
-        }
+        val bytes = session?.loadMediaBytes(
+            fileId = media.previewFileId ?: media.fileId,
+            uniqueId = media.previewUniqueId ?: media.fileUniqueId
+        )
 
         if (bytes != null) {
             image = withContext(Dispatchers.Default) {
@@ -2898,7 +3176,7 @@ private fun MessageFileCard(
                 scope.launch {
                     isDownloading = true
 
-                    val bytes = session?.loadFile(fileId)?.getOrNull()
+                    val bytes = session?.loadMediaBytes(fileId, media.fileUniqueId)
 
                     if (bytes != null) {
                         savedPath = withContext(Dispatchers.IO) {

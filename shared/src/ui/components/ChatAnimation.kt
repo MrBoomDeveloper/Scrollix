@@ -62,9 +62,10 @@ fun ChatAnimationPreview(
         }
 
         if (thumbnail == null) {
-            val bytes = media.previewFileId?.let { fileId ->
-                session?.loadFile(fileId)?.getOrNull()
-            }
+            val bytes = session?.loadMediaBytes(
+                fileId = media.previewFileId,
+                uniqueId = media.previewUniqueId
+            )
 
             if (bytes != null) {
                 thumbnail = withContext(Dispatchers.Default) {
@@ -78,7 +79,7 @@ fun ChatAnimationPreview(
         val fileId = media.fileId
 
         if (fileId != null) {
-            val bytes = session?.loadFile(fileId)?.getOrNull()
+            val bytes = session?.loadMediaBytes(fileId, media.fileUniqueId)
 
             if (bytes != null) {
                 animation = loadWebmAnimation(

@@ -33,4 +33,7 @@ sealed interface Route: NavKey {
         val providerDialogId: String,
         val userId: Long? = null
     ) : Route
+
+    @Serializable
+    data class OwnProfile(val accountId: String) : Route
 }

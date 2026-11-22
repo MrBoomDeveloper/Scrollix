@@ -9,9 +9,12 @@ import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DownloadedFile
+import com.mrboomdev.scrollix.data.model.MessageDraft
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.NotificationScope
+import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
@@ -52,6 +55,32 @@ interface AccountSession {
     suspend fun loadFile(fileId: Int): Result<ByteArray>
 
     /**
+     * Loads bytes only when the runtime file id still belongs to the durable
+     * unique id. A file id restored from cache can be reassigned after a
+     * restart, and blindly using it shows a different file's bytes.
+     * Implementations that cannot verify the id fall back to [loadFile].
+     */
+    suspend fun loadFileIfUnique(fileId: Int, uniqueId: String): Result<ByteArray> =
+        loadFile(fileId)
+
+    /**
+     * Reads message media, preferring the durable cached entry. When a unique
+     * id is known, the file id is used only if it still resolves to it.
+     */
+    suspend fun loadMediaBytes(fileId: Int?, uniqueId: String?): ByteArray? {
+        if (uniqueId != null) {
+            loadCachedMedia(uniqueId)?.let { return it }
+            fileId?.let { id ->
+                loadFileIfUnique(id, uniqueId).getOrNull()?.let { return it }
+            }
+
+            return null
+        }
+
+        return fileId?.let { id -> loadFile(id).getOrNull() }
+    }
+
+    /**
      * Reads a file that was cached in a previous run, without asking the
      * provider for it. Media is addressed by its durable remote unique id, so
      * this works even when the runtime file ids of a cached dialog are stale.
@@ -79,15 +108,53 @@ interface AccountSession {
         customEmojis: List<CustomEmojiSpan> = emptyList()
     ): Result<Unit>
     suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray)
+
+    /** Restores the server-side draft of a chat, if it has one. */
+    suspend fun loadDraft(providerDialogId: String): Result<MessageDraft> =
+        Result.success(MessageDraft())
+
+    /** Stores the composer text as a server-side draft so other devices see it. */
+    suspend fun saveDraft(
+        providerDialogId: String,
+        text: String,
+        customEmojis: List<CustomEmojiSpan> = emptyList()
+    ): Result<Unit> = Result.success(Unit)
+
+    /** Scope-wide notification settings kept by the server. */
+    suspend fun loadNotificationSettings(): Result<NotificationSettings> =
+        Result.success(NotificationSettings())
+
+    suspend fun setScopeMuted(scope: NotificationScope, muted: Boolean): Result<Unit> =
+        Result.success(Unit)
+
+    /** Mutes or unmutes one chat (person, group or channel) on the server. */
+    suspend fun setDialogMuted(providerDialogId: String, muted: Boolean): Result<Unit> =
+        Result.success(Unit)
+
+    /** Current mute state of a chat, or null when it can't be determined. */
+    suspend fun isDialogMuted(providerDialogId: String): Boolean? = null
     suspend fun setDialogPinned(
         providerDialogId: String,
         isPinned: Boolean,
         folderId: Int? = null
     ): Result<Unit>
+
+    /**
+     * Applies a new server-side order to pinned chats. Telegram has no direct
+     * reorder call, so pinned state is re-applied in the requested order.
+     */
+    suspend fun reorderPinnedDialogs(
+        providerDialogIds: List<String>,
+        folderId: Int? = null
+    ): Result<Unit> = Result.success(Unit)
     suspend fun loadUserProfile(
         providerDialogId: String,
         userId: Long? = null
     ): Result<UserProfileDetails>
+
+    /** Profile of the signed-in user, used by the accounts screen. */
+    suspend fun loadOwnProfile(): Result<UserProfileDetails> =
+        Result.failure(UnsupportedOperationException("Own profile is not available"))
     suspend fun setChatSubscribed(providerDialogId: String, subscribed: Boolean): Result<Unit>
     suspend fun votePoll(
         providerDialogId: String,
@@ -118,6 +185,9 @@ interface AccountSession {
         messageId: Long
     ): Result<Long?>
     suspend fun loadCustomEmoji(emojiId: Long): CustomEmojiAsset?
+
+    /** Maps custom emoji ids to the sticker/emoji pack that contains them. */
+    suspend fun loadCustomEmojiSetIds(emojiIds: List<Long>): Map<Long, Long> = emptyMap()
     suspend fun resolveUsername(username: String): Result<Long>
     suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>
     suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit>

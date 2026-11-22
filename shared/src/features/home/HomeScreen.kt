@@ -85,6 +85,8 @@ import com.mrboomdev.scrollix.ui.components.DialogMediaPreview
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.FolderNameText
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.ReorderDialog
+import com.mrboomdev.scrollix.ui.components.ReorderItem
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
@@ -94,6 +96,7 @@ import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
 import com.mrboomdev.scrollix.isWideLayout
@@ -107,6 +110,24 @@ private const val TAB_DIRECT = 1
 private const val TAB_GROUPS = 2
 private const val TAB_CHANNELS = 3
 private const val TAB_BOTS = 4
+
+private fun HomePage.orderKey(): String = when (this) {
+    HomePage.All -> "all"
+    is HomePage.Folder -> "folder:$key"
+    is HomePage.Tab -> "tab:$index"
+}
+
+private fun HomePage.chipTitle(folders: List<AccountDialogFolder>): String = when (this) {
+    HomePage.All -> "All"
+    is HomePage.Folder -> folders.firstOrNull { it.key == key }?.folder?.name ?: key
+    is HomePage.Tab -> when (index) {
+        TAB_DIRECT -> "DM"
+        TAB_GROUPS -> "Groups"
+        TAB_CHANNELS -> "Channels"
+        TAB_BOTS -> "Bots"
+        else -> "Tab $index"
+    }
+}
 
 @OptIn(ExperimentalFlexBoxApi::class)
 @Composable
@@ -122,6 +143,10 @@ fun HomeScreen(
     val isAllShown = settings.showAllChatsTab
     val isSingleRowFilters = settings.singleRowFilters
     val isUsingNativeFolders = settings.useNativeFolders
+    val scope = rememberCoroutineScope()
+
+    var showFolderOrderDialog by remember { mutableStateOf(false) }
+    var showPinnedOrderDialog by remember { mutableStateOf(false) }
     
     var selectedTab by remember {
         mutableStateOf(
@@ -158,8 +183,13 @@ fun HomeScreen(
     // Every chip gets a swipeable page, so the list can be switched by
     // dragging it horizontally as well as by tapping a chip, for both native
     // folders and the built-in tabs.
-    val folderPages = remember(isUsingNativeFolders, isAllShown, folders) {
-        buildList {
+    val folderPages = remember(
+        isUsingNativeFolders,
+        isAllShown,
+        folders,
+        settings.folderOrder
+    ) {
+        val pages = buildList {
             if (isAllShown) add(HomePage.All)
 
             if (isUsingNativeFolders) {
@@ -171,6 +201,12 @@ fun HomeScreen(
                 add(HomePage.Tab(TAB_BOTS))
             }
         }
+
+        val positions = settings.folderOrder
+            .withIndex()
+            .associate { (index, key) -> key to index }
+
+        pages.sortedBy { page -> positions[page.orderKey()] ?: Int.MAX_VALUE }
     }
 
     val selectedFolderPage = remember(
@@ -373,6 +409,34 @@ fun HomeScreen(
                                         expand = false
                                     }
                                 )
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = select_check_box_icon,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    text = { Text("Reorder folders") },
+                                    onClick = {
+                                        showFolderOrderDialog = true
+                                        expand = false
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = keep_icon,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    text = { Text("Reorder pinned chats") },
+                                    onClick = {
+                                        showPinnedOrderDialog = true
+                                        expand = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -410,57 +474,57 @@ fun HomeScreen(
                             grow(1f)
                         }
 
-                        if(isUsingNativeFolders) {
-                            if(isAllShown) {
-                                HomeTab(
+                        folderPages.forEach { page ->
+                            when (page) {
+                                HomePage.All -> HomeTab(
                                     modifier = chipModifier,
-                                    selected = selectedNativeFolder == null,
+                                    selected = if (isUsingNativeFolders) {
+                                        selectedNativeFolder == null
+                                    } else {
+                                        selectedTab == TAB_ALL
+                                    },
                                     label = "All",
                                     icon = home_icon,
                                     unreadCount = allUnreadCount,
-                                    onClick = { selectedNativeFolderKey = null }
-                                )
-                            }
-
-                            folders.forEach { folder ->
-                                NativeFolderTab(
-                                    modifier = chipModifier,
-                                    selected = selectedNativeFolder?.key == folder.key,
-                                    folder = folder.folder,
-                                    account = folder.account,
-                                    unreadCount = folderUnreadCounts[folder.key] ?: 0,
-                                    showAccountIndicator = folder.folder.name in duplicateFolderNames,
                                     onClick = {
-                                        selectedNativeFolderKey = folder.key
+                                        if (isUsingNativeFolders) {
+                                            selectedNativeFolderKey = null
+                                        } else {
+                                            selectedTab = TAB_ALL
+                                        }
                                     }
                                 )
-                            }
-                        } else {
-                            if(isAllShown) {
-                                HomeTab(
-                                    modifier = chipModifier,
-                                    selected = selectedTab == TAB_ALL,
-                                    label = "All",
-                                    icon = home_icon,
-                                    onClick = { selectedTab = TAB_ALL }
-                                )
-                            }
 
-                            for((title, index, icon) in remember {
-                                listOf(
-                                    Triple("DM", TAB_DIRECT, account_circle_icon),
-                                    Triple("Groups", TAB_GROUPS, group_icon),
-                                    Triple("Channels", TAB_CHANNELS, brand_awareness_icon),
-                                    Triple("Bots", TAB_BOTS, smart_toy_icon)
-                                )
-                            }) {
-                                HomeTab(
+                                is HomePage.Folder -> {
+                                    val folder = folders.firstOrNull { it.key == page.key }
+                                        ?: return@forEach
+
+                                    NativeFolderTab(
+                                        modifier = chipModifier,
+                                        selected = selectedNativeFolder?.key == folder.key,
+                                        folder = folder.folder,
+                                        account = folder.account,
+                                        unreadCount = folderUnreadCounts[folder.key] ?: 0,
+                                        showAccountIndicator =
+                                            folder.folder.name in duplicateFolderNames,
+                                        onClick = {
+                                            selectedNativeFolderKey = folder.key
+                                        }
+                                    )
+                                }
+
+                                is HomePage.Tab -> HomeTab(
                                     modifier = chipModifier,
-                                    selected = selectedTab == index,
-                                    label = title,
-                                    icon = icon,
-                                    unreadCount = tabUnreadCounts[index] ?: 0,
-                                    onClick = { selectedTab = index }
+                                    selected = selectedTab == page.index,
+                                    label = page.chipTitle(folders),
+                                    icon = when (page.index) {
+                                        TAB_DIRECT -> account_circle_icon
+                                        TAB_GROUPS -> group_icon
+                                        TAB_CHANNELS -> brand_awareness_icon
+                                        else -> smart_toy_icon
+                                    },
+                                    unreadCount = tabUnreadCounts[page.index] ?: 0,
+                                    onClick = { selectedTab = page.index }
                                 )
                             }
                         }
@@ -518,6 +582,52 @@ fun HomeScreen(
                     .weight(1f)
             )
         }
+    }
+
+    if (showFolderOrderDialog) {
+        ReorderDialog(
+            title = "Reorder folders",
+            items = folderPages.map { page ->
+                ReorderItem(key = page.orderKey(), title = page.chipTitle(folders))
+            },
+            onDismiss = { showFolderOrderDialog = false },
+            onConfirm = { keys ->
+                AppSettingsStore.update { it.copy(folderOrder = keys) }
+                showFolderOrderDialog = false
+            }
+        )
+    }
+
+    if (showPinnedOrderDialog) {
+        val pinnedEntries = entries.filter { entry -> entry.dialog.isPinnedIn(null) }
+
+        ReorderDialog(
+            title = "Reorder pinned chats",
+            items = pinnedEntries.map { entry ->
+                ReorderItem(
+                    key = "${entry.account.id}:${entry.dialog.providerDialogId}",
+                    title = entry.dialog.title
+                )
+            },
+            onDismiss = { showPinnedOrderDialog = false },
+            onConfirm = { keys ->
+                showPinnedOrderDialog = false
+
+                val byAccount = keys.mapNotNull { key ->
+                    val separator = key.indexOf(':')
+                    if (separator <= 0) return@mapNotNull null
+
+                    key.substring(0, separator) to key.substring(separator + 1)
+                }.groupBy({ it.first }, { it.second })
+
+                scope.launch {
+                    byAccount.forEach { (accountId, dialogIds) ->
+                        ApiManager.session(accountId)
+                            ?.reorderPinnedDialogs(dialogIds)
+                    }
+                }
+            }
+        )
     }
 }
 

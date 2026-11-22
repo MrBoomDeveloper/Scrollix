@@ -21,10 +21,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -45,13 +47,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.NotificationScope
+import com.mrboomdev.scrollix.data.model.NotificationSettings
+import com.mrboomdev.scrollix.data.model.StickerPackKind
+import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.ReactionPreference
 import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
 import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.ui.components.EmojiCatalog
+import com.mrboomdev.scrollix.ui.components.EmojiPicker
+import com.mrboomdev.scrollix.ui.components.ReorderDialog
+import com.mrboomdev.scrollix.ui.components.ReorderItem
+import com.mrboomdev.scrollix.ui.components.orderedStickerPacks
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +79,7 @@ private enum class SettingsCategory(
     val description: String
 ) {
     ChatList("Chat list", "Folders, filters and chat sorting"),
+    Notifications("Notifications", "Mutes, alerts and double-tap reaction"),
     Backup("Backup", "Export or import your settings"),
     Storage("Storage", "Cached data and disk usage"),
     Accounts("Accounts", "Connected messaging accounts"),
@@ -278,6 +294,47 @@ private fun SettingsCategoryContent(
                     }
                 )
 
+                val accountState by ApiManager.accountState.collectAsState()
+                val activeSession = remember(accountState.activeAccountId) {
+                    accountState.activeAccountId?.let { accountId ->
+                        ApiManager.session(accountId)
+                    }
+                }
+                var reorderKind by remember { mutableStateOf<StickerPackKind?>(null) }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { reorderKind = StickerPackKind.Sticker }) {
+                        Text("Reorder sticker packs")
+                    }
+
+                    Button(onClick = { reorderKind = StickerPackKind.CustomEmoji }) {
+                        Text("Reorder emoji packs")
+                    }
+                }
+
+                reorderKind?.let { kind ->
+                    PackOrderDialog(
+                        kind = kind,
+                        session = activeSession,
+                        order = if (kind == StickerPackKind.Sticker) {
+                            settings.stickerPackOrder
+                        } else {
+                            settings.emojiPackOrder
+                        },
+                        onDismiss = { reorderKind = null },
+                        onSave = { orderedIds ->
+                            AppSettingsStore.update { current ->
+                                if (kind == StickerPackKind.Sticker) {
+                                    current.copy(stickerPackOrder = orderedIds)
+                                } else {
+                                    current.copy(emojiPackOrder = orderedIds)
+                                }
+                            }
+                            reorderKind = null
+                        }
+                    )
+                }
+
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
                 SettingsSwitch(
@@ -403,6 +460,14 @@ private fun SettingsCategoryContent(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
+                PinnedReactionsEditor()
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+                DoubleTapReactionEditor()
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
                 Text(
                     text = "Default home tab",
                     style = MaterialTheme.typography.titleMedium
@@ -437,6 +502,8 @@ private fun SettingsCategoryContent(
                     }
                 }
             }
+
+            SettingsCategory.Notifications -> SettingsNotificationsContent()
 
             SettingsCategory.Backup -> SettingsBackupContent()
 
@@ -545,6 +612,60 @@ private fun SettingsStorageContent() {
         ) {
             Text("Clear all")
         }
+    }
+}
+
+@Composable
+private fun PackOrderDialog(
+    kind: StickerPackKind,
+    session: AccountSession?,
+    order: List<Long>,
+    onDismiss: () -> Unit,
+    onSave: (List<Long>) -> Unit
+) {
+    var items by remember(kind, session) { mutableStateOf<List<ReorderItem>?>(null) }
+
+    LaunchedEffect(kind, session, order) {
+        val packs = session?.loadStickerPacks(kind)
+            ?.getOrDefault(emptyList())
+            .orEmpty()
+
+        items = orderedStickerPacks(packs, order).map { pack ->
+            ReorderItem(key = pack.id.toString(), title = pack.title)
+        }
+    }
+
+    val loadedItems = items
+
+    when {
+        loadedItems == null -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Loading packs") },
+            text = { CircularProgressIndicator() },
+            confirmButton = {}
+        )
+
+        loadedItems.isEmpty() -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("No packs installed") },
+            text = { Text("Install a pack in Telegram to reorder it here.") },
+            confirmButton = {
+                TextButton(onClick = onDismiss) { Text("OK") }
+            }
+        )
+
+        else -> ReorderDialog(
+            title = if (kind == StickerPackKind.Sticker) {
+                "Sticker packs"
+            } else {
+                "Emoji packs"
+            },
+            items = loadedItems,
+            onDismiss = onDismiss,
+            onConfirm = { keys ->
+                onSave(keys.mapNotNull { key -> key.toLongOrNull() })
+            }
+        )
     }
 }
 
@@ -746,6 +867,323 @@ private fun QuickReactionsDialog(
             }
         }
     )
+}
+
+@Composable
+private fun PinnedReactionsEditor() {
+    val settings by AppSettingsStore.state.collectAsState()
+    val accountState by ApiManager.accountState.collectAsState()
+    val session = remember(accountState.activeAccountId) {
+        accountState.activeAccountId?.let { accountId -> ApiManager.session(accountId) }
+    }
+    var pickerOpen by remember { mutableStateOf(false) }
+
+    Text(
+        text = "Pinned reactions",
+        style = MaterialTheme.typography.titleMedium
+    )
+
+    Text(
+        text = "These reactions stay one tap away above a message's action menu. " +
+            "Custom emoji reactions are supported too.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary
+    )
+
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        settings.pinnedCustomReactions.forEach { preference ->
+            OutlinedButton(
+                onClick = {
+                    AppSettingsStore.update { current ->
+                        current.copy(
+                            pinnedCustomReactions = current.pinnedCustomReactions
+                                .filterNot { it.key == preference.key }
+                        )
+                    }
+                }
+            ) {
+                Text(preference.emoji.ifBlank { "Custom emoji" })
+                Text("  ✕", color = MaterialTheme.colorScheme.secondary)
+            }
+        }
+    }
+
+    Button(
+        enabled = session != null,
+        onClick = { pickerOpen = true }
+    ) {
+        Text("Add custom reaction")
+    }
+
+    if (pickerOpen && session != null) {
+        Dialog(
+            onDismissRequest = { pickerOpen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.padding(24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                EmojiPicker(
+                    session = session,
+                    onEmojiSelected = { emoji ->
+                        AppSettingsStore.update { current ->
+                            current.copy(
+                                pinnedCustomReactions = current.pinnedCustomReactions +
+                                    ReactionPreference(emoji = emoji)
+                            )
+                        }
+                        pickerOpen = false
+                    },
+                    onCustomEmojiSelected = { emojiId, fallback ->
+                        AppSettingsStore.update { current ->
+                            current.copy(
+                                pinnedCustomReactions = current.pinnedCustomReactions +
+                                    ReactionPreference(emoji = fallback, customEmojiId = emojiId)
+                            )
+                        }
+                        pickerOpen = false
+                    },
+                    onStickerSelected = { pickerOpen = false },
+                    onAnimationSelected = { pickerOpen = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DoubleTapReactionEditor() {
+    val settings by AppSettingsStore.state.collectAsState()
+    var emojiPickerOpen by remember { mutableStateOf(false) }
+
+    Text(
+        text = "Double-tap reaction",
+        style = MaterialTheme.typography.titleMedium
+    )
+
+    Text(
+        text = "Sent when a message is double-tapped on a phone. " +
+            "Without an explicit choice the first pinned reaction is used.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary
+    )
+
+    val pinned = settings.quickReactions.map { emoji -> ReactionPreference(emoji) } +
+        settings.pinnedCustomReactions
+    val current = settings.doubleTapReaction
+
+    Text(
+        text = current?.emoji?.ifBlank { "Custom emoji" }
+            ?: pinned.firstOrNull()?.emoji?.ifBlank { "Custom emoji" }
+            ?: "Default",
+        style = MaterialTheme.typography.titleMedium
+    )
+
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        pinned.forEach { preference ->
+            val selected = current?.key == preference.key
+
+            OutlinedButton(
+                onClick = {
+                    AppSettingsStore.update { it.copy(doubleTapReaction = preference) }
+                }
+            ) {
+                Text(
+                    text = preference.emoji.ifBlank { "Custom" },
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+            }
+        }
+
+        TextButton(
+            onClick = {
+                AppSettingsStore.update { it.copy(doubleTapReaction = null) }
+            }
+        ) {
+            Text("First pinned")
+        }
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { emojiPickerOpen = true }) {
+            Text("Choose another emoji")
+        }
+
+        if (current != null) {
+            TextButton(
+                onClick = {
+                    AppSettingsStore.update { it.copy(doubleTapReaction = null) }
+                }
+            ) {
+                Text("Reset")
+            }
+        }
+    }
+
+    if (emojiPickerOpen) {
+        AlertDialog(
+            onDismissRequest = { emojiPickerOpen = false },
+            title = { Text("Double-tap reaction") },
+            text = {
+                LazyVerticalGrid(
+                    modifier = Modifier.height(360.dp),
+                    columns = GridCells.Adaptive(40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(ReactionCatalog) { emoji ->
+                        Box(
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable {
+                                    AppSettingsStore.update {
+                                        it.copy(
+                                            doubleTapReaction = ReactionPreference(emoji = emoji)
+                                        )
+                                    }
+                                    emojiPickerOpen = false
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = emoji, fontSize = 20.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { emojiPickerOpen = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsNotificationsContent() {
+    val accountState by ApiManager.accountState.collectAsState()
+    val sessionStates by ApiManager.sessionStates.collectAsState()
+    val accounts = accountState.accounts.filter { account ->
+        sessionStates[account.id] is AuthState.Ready
+    }
+
+    Text(
+        text = "Notification settings are stored on Telegram's servers and apply " +
+            "to every device signed in to the account.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary
+    )
+
+    if (accounts.isEmpty()) {
+        Text(
+            text = "Sign in to an account to change its notification settings.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.secondary
+        )
+        return
+    }
+
+    accounts.forEach { account ->
+        AccountNotificationSettings(account.id, account.displayName)
+    }
+}
+
+@Composable
+private fun AccountNotificationSettings(accountId: String, displayName: String) {
+    val session = remember(accountId) { ApiManager.session(accountId) }
+    val scope = rememberCoroutineScope()
+    var settings by remember(accountId) { mutableStateOf<NotificationSettings?>(null) }
+    var busy by remember(accountId) { mutableStateOf(false) }
+    var refreshKey by remember(accountId) { mutableStateOf(0) }
+
+    LaunchedEffect(accountId, refreshKey) {
+        settings = session?.loadNotificationSettings()?.getOrNull()
+    }
+
+    fun setScope(scopeValue: NotificationScope, muted: Boolean) {
+        val currentSession = session ?: return
+        if (busy) return
+
+        busy = true
+        scope.launch {
+            currentSession.setScopeMuted(scopeValue, muted).onSuccess {
+                settings = settings?.let { current ->
+                    current.copy(
+                        mutedScopes = if (muted) {
+                            current.mutedScopes + scopeValue
+                        } else {
+                            current.mutedScopes - scopeValue
+                        }
+                    )
+                }
+            }
+            busy = false
+        }
+    }
+
+    fun setAll(muted: Boolean) {
+        val currentSession = session ?: return
+        if (busy) return
+
+        busy = true
+        scope.launch {
+            NotificationScope.entries.forEach { scopeValue ->
+                currentSession.setScopeMuted(scopeValue, muted)
+            }
+            busy = false
+            refreshKey++
+        }
+    }
+
+    Text(
+        modifier = Modifier.padding(top = 8.dp),
+        text = displayName,
+        style = MaterialTheme.typography.titleMedium
+    )
+
+    val loaded = settings
+    val allMuted = loaded?.allMuted == true
+
+    SettingsSwitch(
+        title = "All notifications from this account",
+        description = "Mute private chats, groups and channels at once.",
+        checked = loaded != null && !allMuted,
+        onCheckedChange = { enabled -> setAll(!enabled) }
+    )
+
+    NotificationScope.entries.forEach { notificationScope ->
+        SettingsSwitch(
+            title = notificationScope.title,
+            description = if (loaded == null) {
+                "Loading server settings..."
+            } else if (loaded.isMuted(notificationScope)) {
+                "Muted on the server."
+            } else {
+                "Notifications are enabled."
+            },
+            checked = loaded?.isMuted(notificationScope) != true,
+            onCheckedChange = { enabled -> setScope(notificationScope, !enabled) }
+        )
+    }
+
+    if (busy) {
+        CircularProgressIndicator(modifier = Modifier.height(20.dp))
+    }
+
+    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 }
 
 private val HomeTabOptions = listOf(

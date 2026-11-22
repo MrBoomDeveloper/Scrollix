@@ -106,8 +106,10 @@ private fun GalleryTile(
             }
         }
 
-        val previewId = media.previewFileId ?: media.fileId
-        val bytes = previewId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
+        val bytes = session?.loadMediaBytes(
+            fileId = media.previewFileId ?: media.fileId,
+            uniqueId = media.previewUniqueId ?: media.fileUniqueId
+        )
 
         if (bytes != null) {
             bitmap = withContext(Dispatchers.Default) {

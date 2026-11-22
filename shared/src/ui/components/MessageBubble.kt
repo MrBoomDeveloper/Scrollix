@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -115,6 +116,8 @@ fun MessageBubble(
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     isPinned: Boolean = false,
+    onOpenStickerSet: ((Long) -> Unit)? = null,
+    onDoubleTap: (() -> Unit)? = null,
     onOpenSender: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
     onToggleSelection: (() -> Unit)? = null,
@@ -133,6 +136,32 @@ fun MessageBubble(
     val uriHandler = LocalUriHandler.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
     var readTimestamp by remember(message.messageId) { mutableStateOf<Long?>(null) }
+    var usedEmojiPacks by remember(message.messageId) {
+        mutableStateOf<List<StickerPack>>(emptyList())
+    }
+
+    // The menu lists packs that actually occur in this message: sticker media
+    // sets plus the sets of every custom emoji used in the text.
+    LaunchedEffect(menuExpanded, session, message.messageId) {
+        if (!menuExpanded || session == null) return@LaunchedEffect
+
+        val customSetIds = session
+            .loadCustomEmojiSetIds(message.customEmojis.map { it.emojiId })
+            .values
+        val setIds = (
+            message.allMedia.mapNotNull { media -> media.stickerSetId } + customSetIds
+        ).distinct()
+
+        usedEmojiPacks = setIds.mapNotNull { setId ->
+            session.loadStickerSet(setId).getOrNull()?.let { set ->
+                StickerPack(
+                    id = setId,
+                    title = set.title,
+                    isInstalled = set.isInstalled
+                )
+            }
+        }
+    }
 
     LaunchedEffect(
         menuExpanded,
@@ -196,8 +225,16 @@ fun MessageBubble(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelection?.invoke() }
+                )
+            }
+
             if (message.isOutgoing) {
                 Spacer(Modifier.weight(1f))
             } else if (!dialogKind.isPeer) {
@@ -234,6 +271,11 @@ fun MessageBubble(
                                     onToggleSelection?.invoke()
                                 } else {
                                     menuExpanded = true
+                                }
+                            },
+                            onDoubleClick = {
+                                if (!isSelectionMode) {
+                                    onDoubleTap?.invoke()
                                 }
                             }
                         )
@@ -729,6 +771,25 @@ fun MessageBubble(
                         }
                     }
                     
+                    if (usedEmojiPacks.isNotEmpty() && onOpenStickerSet != null) {
+                        HorizontalDivider()
+
+                        Text(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            text = "Emoji packs used",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+
+                        usedEmojiPacks.forEach { pack ->
+                            action(
+                                text = pack.title,
+                                icon = select_check_box_icon,
+                                onClick = { onOpenStickerSet.invoke(pack.id) }
+                            )
+                        }
+                    }
+
                     if(readTimestamp != null) {
                         HorizontalDivider()
 
@@ -829,11 +890,19 @@ private fun ReactionPickerRow(
         }
     }
 
-    val quick = remember(settings.quickReactions) {
-        val selected = settings.quickReactions.takeIf { it.isNotEmpty() }
-            ?: DefaultQuickReactions
+    val quick = remember(
+        settings.quickReactions,
+        settings.pinnedCustomReactions
+    ) {
+        val pinned = settings.quickReactions.map(::MessageReactionOption) +
+            settings.pinnedCustomReactions.mapNotNull { custom ->
+                custom.customEmojiId?.let { id ->
+                    MessageReactionOption(emoji = custom.emoji, customEmojiId = id)
+                }
+            }
 
-        selected.map(::MessageReactionOption)
+        pinned.takeIf { it.isNotEmpty() }
+            ?: DefaultQuickReactions.map(::MessageReactionOption)
     }
 
     val entries = remember(quick, available, packs, packItems) {

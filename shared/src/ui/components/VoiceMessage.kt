@@ -89,7 +89,7 @@ internal fun VoiceMessagePlayer(
 
                     scope.launch {
                         isLoading = true
-                        val bytes = session?.loadFile(fileId)?.getOrNull()
+                        val bytes = session?.loadMediaBytes(fileId, media.fileUniqueId)
                         isLoading = false
 
                         if (bytes != null) {

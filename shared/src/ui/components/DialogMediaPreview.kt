@@ -81,9 +81,10 @@ private fun DialogImagePreview(
         }
 
         if (image == null) {
-            val bytes = media.previewFileId?.let { fileId ->
-                session?.loadFile(fileId)?.getOrNull()
-            }
+            val bytes = session?.loadMediaBytes(
+                fileId = media.previewFileId ?: media.fileId,
+                uniqueId = media.previewUniqueId ?: media.fileUniqueId
+            )
 
             if (bytes != null) {
                 image = withContext(Dispatchers.Default) {
@@ -136,7 +137,10 @@ private fun DialogStickerPreview(
 
     LaunchedEffect(fileId, session) {
         finished = false
-        data = session?.loadFile(fileId)?.getOrNull()
+        data = session?.loadMediaBytes(
+            fileId = fileId,
+            uniqueId = media.stickerUniqueId ?: media.fileUniqueId
+        )
         finished = true
     }
 

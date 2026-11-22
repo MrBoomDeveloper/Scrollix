@@ -3,7 +3,9 @@ package com.mrboomdev.scrollix.features.profile
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +62,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
@@ -84,6 +88,7 @@ import com.mrboomdev.scrollix.data.model.ChatMemberInfo
 import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import com.mrboomdev.scrollix.data.model.ProfileTrack
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.provider.AccountSession
@@ -241,9 +246,11 @@ private fun ProfileScreenActions(
     isChannel: Boolean,
     isSubscribed: Boolean,
     isUpdatingSubscription: Boolean,
+    isMuted: Boolean?,
     stretch: Boolean,
     onMessage: () -> Unit,
-    onToggleSubscription: () -> Unit
+    onToggleSubscription: () -> Unit,
+    onToggleMute: () -> Unit
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -294,14 +301,22 @@ private fun ProfileScreenActions(
         OutlinedButton(
             modifier = actionModifier,
             contentPadding = PaddingValues(0.dp),
-            onClick = {
-
-            }
+            enabled = isMuted != null,
+            onClick = onToggleMute
         ) {
             Icon(
                 modifier = Modifier.size(ButtonDefaults.IconSize),
+                tint = if (isMuted == true) {
+                    MaterialTheme.colorScheme.secondary
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
                 imageVector = notifications_icon,
-                contentDescription = null
+                contentDescription = if (isMuted == true) {
+                    "Unmute notifications"
+                } else {
+                    "Mute notifications"
+                }
             )
         }
 
@@ -510,6 +525,7 @@ fun ProfileScreen(
     accountId: String,
     providerDialogId: String,
     userId: Long? = null,
+    ownAccount: Boolean = false,
     onOpenChannelProfile: (String) -> Unit = {},
     onMessage: (String) -> Unit = {},
     onBack: () -> Unit
@@ -534,13 +550,39 @@ fun ProfileScreen(
     var actionError by remember(accountId, providerDialogId) {
         mutableStateOf<String?>(null)
     }
+    var isMuted by remember(accountId, providerDialogId) { mutableStateOf<Boolean?>(null) }
 
-    LaunchedEffect(accountId, providerDialogId, userId) {
-        details = ApiManager.loadUserProfile(
-            accountId = accountId,
-            providerDialogId = providerDialogId,
-            userId = userId
-        ).getOrNull()
+    LaunchedEffect(accountId, providerDialogId, session, ownAccount) {
+        if (!ownAccount && providerDialogId.isNotBlank()) {
+            isMuted = session?.isDialogMuted(providerDialogId)
+        }
+    }
+
+    fun toggleMute() {
+        val currentSession = session ?: return
+        val muted = isMuted ?: return
+        val next = !muted
+
+        isMuted = next
+
+        scope.launch {
+            currentSession.setDialogMuted(providerDialogId, next).onFailure {
+                isMuted = muted
+                actionError = it.message ?: "Failed to update notifications"
+            }
+        }
+    }
+
+    LaunchedEffect(accountId, providerDialogId, userId, ownAccount) {
+        details = if (ownAccount) {
+            session?.loadOwnProfile()?.getOrNull()
+        } else {
+            ApiManager.loadUserProfile(
+                accountId = accountId,
+                providerDialogId = providerDialogId,
+                userId = userId
+            ).getOrNull()
+        }
     }
 
     val isSubscribed = subscriptionOverride ?: details?.isSubscribed == true
@@ -625,7 +667,7 @@ fun ProfileScreen(
             }
 
             Text(
-                text = "Profile",
+                text = if (ownAccount) "Your profile" else "Profile",
                 style = MaterialTheme.typography.titleLarge
             )
         }
@@ -636,7 +678,7 @@ fun ProfileScreen(
         val isChannel = (details?.kind ?: dialog?.kind) == DialogKind.Channel
         val profile = details
 
-        if (entry == null && profile == null) {
+        if (entry == null && profile == null && !ownAccount) {
             Text(
                 modifier = Modifier.padding(24.dp),
                 text = "This dialog is no longer available.",
@@ -653,14 +695,46 @@ fun ProfileScreen(
                 .padding(24.dp)
         ) {
             val displayName = profile?.displayName ?: dialog?.title ?: "Profile"
+            val sharedProfileKey = if (ownAccount) {
+                "own-profile:$accountId"
+            } else {
+                "profile:$accountId:${userId ?: providerDialogId}"
+            }
             val avatar = profile?.avatar
                 ?: dialog?.avatar
                 ?: Avatar.fromName(displayName)
             val kind = profile?.kind ?: dialog?.kind
             val emojiStatusId = dialog?.emojiStatusId ?: profile?.emojiStatusId
-            
+            val accentColors = (
+                if (isSystemInDarkTheme()) {
+                    profile?.accentColorsDark
+                } else {
+                    profile?.accentColorsLight
+                }
+            ).orEmpty()
+            val accentBrush = accentColors
+                .takeIf { it.isNotEmpty() }
+                ?.let { colors ->
+                    Brush.linearGradient(
+                        colors.map { color ->
+                            Color(color or (0xFF shl 24)).copy(alpha = 0.32f)
+                        }
+                    )
+                }
+
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (accentBrush != null) {
+                            Modifier
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(accentBrush)
+                                .padding(16.dp)
+                        } else {
+                            Modifier
+                        }
+                    ),
                 horizontalAlignment = if(isWide) {
                     Alignment.Start
                 } else Alignment.CenterHorizontally
@@ -671,22 +745,35 @@ fun ProfileScreen(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    AvatarImage(
-                        avatar = avatar,
-                        size = 96.dp
-                    )
+                    SharedProfileElement(key = sharedProfileKey) {
+                        AvatarImage(
+                            modifier = if (accentBrush != null) {
+                                Modifier.border(
+                                    width = 2.dp,
+                                    brush = accentBrush,
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                )
+                            } else {
+                                Modifier
+                            },
+                            avatar = avatar,
+                            size = 96.dp
+                        )
+                    }
 
-                    AnimatedVisibility(isWide) {
+                    AnimatedVisibility(isWide && !ownAccount) {
                         ProfileScreenActions(
                             dialog = dialog,
                             isChannel = isChannel,
                             isSubscribed = isSubscribed,
                             isUpdatingSubscription = isUpdatingSubscription,
+                            isMuted = isMuted,
                             stretch = false,
                             onMessage = {
                                 onMessage(details?.discussionChatId ?: providerDialogId)
                             },
-                            onToggleSubscription = ::toggleSubscription
+                            onToggleSubscription = ::toggleSubscription,
+                            onToggleMute = ::toggleMute
                         )
                     }
 
@@ -705,12 +792,14 @@ fun ProfileScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
+                    SharedProfileElement(key = "$sharedProfileKey:name") {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
 
                     emojiStatusId?.let { emojiId ->
                         EmojiStatusIcon(
@@ -733,17 +822,19 @@ fun ProfileScreen(
                 }
             }
             
-            AnimatedVisibility(!isWide) {
+            AnimatedVisibility(!isWide && !ownAccount) {
                 ProfileScreenActions(
                     dialog = dialog,
                     isChannel = isChannel,
                     isSubscribed = isSubscribed,
                     isUpdatingSubscription = isUpdatingSubscription,
+                    isMuted = isMuted,
                     stretch = true,
                     onMessage = {
                         onMessage(details?.discussionChatId ?: providerDialogId)
                     },
-                    onToggleSubscription = ::toggleSubscription
+                    onToggleSubscription = ::toggleSubscription,
+                    onToggleMute = ::toggleMute
                 )
             }
             

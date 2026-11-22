@@ -60,6 +60,9 @@ data class UserProfileDetails(
     val status: String? = null,
     val isOnline: Boolean = false,
     val emojiStatusId: Long? = null,
+    /** Custom profile colors from a collectible gift, when Telegram exposes them. */
+    val accentColorsLight: List<Long> = emptyList(),
+    val accentColorsDark: List<Long> = emptyList(),
     val kind: DialogKind? = null,
     val memberCount: Int? = null,
     val description: String? = null,

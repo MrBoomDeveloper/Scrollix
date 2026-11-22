@@ -203,7 +203,10 @@ private fun StickerSetCell(
     var data by remember(media.fileId) { mutableStateOf<ByteArray?>(null) }
 
     LaunchedEffect(media.fileId) {
-        data = media.fileId?.let { fileId -> session.loadFile(fileId).getOrNull() }
+        data = session.loadMediaBytes(
+            fileId = media.fileId,
+            uniqueId = media.stickerUniqueId ?: media.fileUniqueId
+        )
     }
 
     val bytes = data

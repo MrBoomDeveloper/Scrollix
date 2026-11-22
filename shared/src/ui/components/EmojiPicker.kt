@@ -71,6 +71,17 @@ import kotlinx.coroutines.withContext
 
 private val GridSpacing = 2.dp
 
+/** Applies the user's pack order, keeping unlisted packs in server order. */
+internal fun orderedStickerPacks(
+    packs: List<StickerPack>,
+    order: List<Long>
+): List<StickerPack> {
+    if (order.isEmpty()) return packs
+
+    val positions = order.withIndex().associate { (index, id) -> id to index }
+    return packs.sortedBy { pack -> positions[pack.id] ?: Int.MAX_VALUE }
+}
+
 /**
  * Inline picker shown above the composer. Emoji recents are local, sticker
  * and GIF lists come from the server (installed packs, recent stickers and
@@ -161,6 +172,7 @@ private fun EmojiTab(
     onStickerSelected: (MessageMedia) -> Unit
 ) {
     val recents by EmojiRecentsStore.recents.collectAsState()
+    val settings by AppSettingsStore.state.collectAsState()
     var packs by remember(session) { mutableStateOf<List<StickerPack>>(emptyList()) }
     var packItems by remember(session) {
         mutableStateOf<Map<Long, List<MessageMedia>>>(emptyMap())
@@ -169,9 +181,12 @@ private fun EmojiTab(
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session) {
-        val loadedPacks = session.loadStickerPacks(StickerPackKind.CustomEmoji)
-            .getOrDefault(emptyList())
+    LaunchedEffect(session, settings.emojiPackOrder) {
+        val loadedPacks = orderedStickerPacks(
+            session.loadStickerPacks(StickerPackKind.CustomEmoji)
+                .getOrDefault(emptyList()),
+            settings.emojiPackOrder
+        )
 
         packs = loadedPacks
         packItems = coroutineScope {
@@ -323,6 +338,7 @@ private fun StickerTab(
     showRecents: Boolean,
     onStickerSelected: (MessageMedia) -> Unit
 ) {
+    val settings by AppSettingsStore.state.collectAsState()
     var recents by remember(session) { mutableStateOf<List<MessageMedia>>(emptyList()) }
     var packs by remember(session) { mutableStateOf<List<StickerPack>>(emptyList()) }
     var packItems by remember(session) {
@@ -333,13 +349,16 @@ private fun StickerTab(
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session) {
+    LaunchedEffect(session, settings.stickerPackOrder) {
         isLoading = true
         recents = session.loadRecentStickers(StickerPackKind.Sticker)
             .getOrDefault(emptyList())
 
-        val loadedPacks = session.loadStickerPacks(StickerPackKind.Sticker)
-            .getOrDefault(emptyList())
+        val loadedPacks = orderedStickerPacks(
+            session.loadStickerPacks(StickerPackKind.Sticker)
+                .getOrDefault(emptyList()),
+            settings.stickerPackOrder
+        )
 
         packs = loadedPacks
         packItems = coroutineScope {
@@ -784,7 +803,10 @@ private fun PickerSticker(
     var data by remember(fileId) { mutableStateOf<ByteArray?>(null) }
 
     LaunchedEffect(fileId, session) {
-        data = fileId?.let { id -> session.loadFile(id).getOrNull() }
+        data = session.loadMediaBytes(
+            fileId = fileId,
+            uniqueId = media.stickerUniqueId ?: media.fileUniqueId
+        )
     }
 
     val emoji = remember(fileId, data, media.stickerFormat, media.needsRepainting) {
@@ -881,11 +903,11 @@ private fun PickerAnimation(
 
     LaunchedEffect(media.fileId, session, sizePx) {
         val fileId = media.fileId
-        val bytes = fileId?.let { id -> session.loadFile(id).getOrNull() }
+        val bytes = session.loadMediaBytes(fileId, media.fileUniqueId)
 
         if (bytes != null) {
             animation = loadWebmAnimation(
-                customEmojiId = fileId.toLong(),
+                customEmojiId = (fileId ?: 0).toLong(),
                 bytes = bytes,
                 widthPx = sizePx,
                 heightPx = sizePx

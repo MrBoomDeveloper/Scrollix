@@ -95,6 +95,21 @@ fun rememberAppEntryProvider(
                 },
                 onOpenLogin = { accountId ->
                     backStack += Route.Login(accountId)
+                },
+                onOpenOwnProfile = { accountId ->
+                    backStack += Route.OwnProfile(accountId)
+                }
+            )
+        }
+
+        entry<Route.OwnProfile> { route ->
+            ProfileScreen(
+                accountId = route.accountId,
+                providerDialogId = "",
+                ownAccount = true,
+                onMessage = {},
+                onBack = {
+                    backStack.removeLastOrNull()
                 }
             )
         }

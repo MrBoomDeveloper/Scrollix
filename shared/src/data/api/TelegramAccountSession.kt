@@ -20,8 +20,11 @@ import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.DialogFolderPosition
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageDraft
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.NotificationScope
+import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
@@ -328,6 +331,16 @@ class TelegramAccountSession(
         return withContext(Dispatchers.IO) {
             CacheStore.readMedia(accountId, remoteUniqueId)
         }
+    }
+
+    override suspend fun loadFileIfUnique(fileId: Int, uniqueId: String): Result<ByteArray> {
+        // A stale file id from the cache can now belong to another file. Only
+        // download it when the runtime id still resolves to the same content.
+        if (cacheKeyFor(fileId) != uniqueId) {
+            return Result.failure(IllegalStateException("File id is no longer valid"))
+        }
+
+        return loadFile(fileId)
     }
 
     override suspend fun sendMessage(
@@ -702,6 +715,44 @@ class TelegramAccountSession(
         }
     }
 
+    override suspend fun reorderPinnedDialogs(
+        providerDialogIds: List<String>,
+        folderId: Int?
+    ): Result<Unit> {
+        val chatIds = providerDialogIds.mapNotNull { id -> id.toLongOrNull() }
+        if (chatIds.isEmpty()) return Result.success(Unit)
+
+        val chatList = folderId?.let { folder -> ChatListFolder(folder) } ?: ChatListMain()
+
+        return try {
+            // Telegram orders pinned chats by the moment they were pinned.
+            // Unpin everything first, then pin from the last item to the first
+            // so the requested order is what the server returns.
+            chatIds.forEach { chatId ->
+                client.toggleChatIsPinned(
+                    chatList = chatList,
+                    chatId = chatId,
+                    isPinned = false
+                )
+            }
+
+            chatIds.asReversed().forEach { chatId ->
+                client.toggleChatIsPinned(
+                    chatList = chatList,
+                    chatId = chatId,
+                    isPinned = true
+                )
+            }
+
+            emitDialogs()
+            Result.success(Unit)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun setDialogPinned(
         providerDialogId: String,
         isPinned: Boolean,
@@ -730,6 +781,46 @@ class TelegramAccountSession(
 
                 is TdlResult.Failure -> Result.failure(Exception(result.message))
             }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadOwnProfile(): Result<UserProfileDetails> {
+        return try {
+            val user = when (val result = client.getMe()) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val fullInfo = when (val result = client.getUserFullInfo(user.id)) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> null
+            }
+
+            Result.success(
+                UserProfileDetails(
+                    displayName = userDisplayName(user),
+                    avatar = userAvatar(user),
+                    username = user.usernames?.activeUsernames?.firstOrNull(),
+                    phoneNumber = user.phoneNumber.ifBlank { null },
+                    bio = fullInfo?.bio?.text?.ifBlank { null },
+                    birthdate = fullInfo?.birthdate?.let(::formatBirthdate),
+                    status = userStatusText(user),
+                    isOnline = (user.status as? UserStatusOnline) != null,
+                    emojiStatusId = emojiStatusId(user.emojiStatus),
+                    accentColorsLight = user.upgradedGiftColors
+                        ?.lightThemeColors
+                        ?.map { color -> color.toLong() }
+                        .orEmpty(),
+                    accentColorsDark = user.upgradedGiftColors
+                        ?.darkThemeColors
+                        ?.map { color -> color.toLong() }
+                        .orEmpty()
+                )
+            )
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
@@ -784,6 +875,14 @@ class TelegramAccountSession(
                     status = userStatusText(user),
                     isOnline = currentStatus is UserStatusOnline,
                     emojiStatusId = emojiStatusId(user.emojiStatus),
+                    accentColorsLight = user.upgradedGiftColors
+                        ?.lightThemeColors
+                        ?.map { color -> color.toLong() }
+                        .orEmpty(),
+                    accentColorsDark = user.upgradedGiftColors
+                        ?.darkThemeColors
+                        ?.map { color -> color.toLong() }
+                        .orEmpty(),
                     personalChannel = if (personalChatId != 0L) {
                         loadPersonalChannel(personalChatId)
                     } else {
@@ -1284,6 +1383,208 @@ class TelegramAccountSession(
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
+        }
+    }
+
+    override suspend fun loadDraft(providerDialogId: String): Result<MessageDraft> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val chat = when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val content = chat.draftMessage?.content as? DraftMessageContentText
+                ?: return Result.success(MessageDraft())
+
+            Result.success(
+                MessageDraft(
+                    text = content.text.text,
+                    customEmojis = customEmojiSpans(content.text)
+                )
+            )
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun saveDraft(
+        providerDialogId: String,
+        text: String,
+        customEmojis: List<CustomEmojiSpan>
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            // An empty draft content clears the server-side draft.
+            val content = DraftMessageContentText(
+                text = FormattedText(
+                    text = text,
+                    entities = customEmojiEntities(text, customEmojis)
+                ),
+                linkPreviewOptions = null
+            )
+
+            when (val result = client.setChatDraftMessage(
+                chatId = chatId,
+                draftMessage = DraftMessage(
+                    date = 0,
+                    replyTo = null,
+                    content = content,
+                    effectId = 0,
+                    suggestedPostInfo = null
+                )
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadNotificationSettings(): Result<NotificationSettings> {
+        return try {
+            val muted = NotificationScope.entries.filter { scope ->
+                val settings = when (val result = client.getScopeNotificationSettings(
+                    scope = scope.toTdlibScope()
+                )) {
+                    is TdlResult.Success -> result.result
+                    is TdlResult.Failure -> return Result.failure(Exception(result.message))
+                }
+
+                settings.muteFor > 0
+            }.toSet()
+
+            Result.success(NotificationSettings(mutedScopes = muted))
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun setScopeMuted(scope: NotificationScope, muted: Boolean): Result<Unit> {
+        return try {
+            val tdlibScope = scope.toTdlibScope()
+            val current = when (val result = client.getScopeNotificationSettings(tdlibScope)) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val updated = ScopeNotificationSettings(
+                muteFor = if (muted) Int.MAX_VALUE else 0,
+                soundId = current.soundId,
+                showPreview = current.showPreview,
+                useDefaultMuteStories = current.useDefaultMuteStories,
+                muteStories = current.muteStories,
+                storySoundId = current.storySoundId,
+                showStoryPoster = current.showStoryPoster,
+                disablePinnedMessageNotifications =
+                    current.disablePinnedMessageNotifications,
+                disableMentionNotifications = current.disableMentionNotifications
+            )
+
+            when (val result = client.setScopeNotificationSettings(
+                scope = tdlibScope,
+                notificationSettings = updated
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun setDialogMuted(providerDialogId: String, muted: Boolean): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val chat = when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val current = chat.notificationSettings
+            val settings = ChatNotificationSettings(
+                useDefaultMuteFor = false,
+                muteFor = if (muted) Int.MAX_VALUE else 0,
+                useDefaultSound = current.useDefaultSound,
+                soundId = current.soundId,
+                useDefaultShowPreview = current.useDefaultShowPreview,
+                showPreview = current.showPreview,
+                useDefaultMuteStories = current.useDefaultMuteStories,
+                muteStories = current.muteStories,
+                useDefaultStorySound = current.useDefaultStorySound,
+                storySoundId = current.storySoundId,
+                useDefaultShowStoryPoster = current.useDefaultShowStoryPoster,
+                showStoryPoster = current.showStoryPoster,
+                useDefaultDisablePinnedMessageNotifications =
+                    current.useDefaultDisablePinnedMessageNotifications,
+                disablePinnedMessageNotifications =
+                    current.disablePinnedMessageNotifications,
+                useDefaultDisableMentionNotifications =
+                    current.useDefaultDisableMentionNotifications,
+                disableMentionNotifications = current.disableMentionNotifications
+            )
+
+            when (val result = client.setChatNotificationSettings(
+                chatId = chatId,
+                notificationSettings = settings
+            )) {
+                is TdlResult.Success -> {
+                    when (val refreshed = client.getChat(chatId)) {
+                        is TdlResult.Success -> upsertChat(refreshed.result)
+                        is TdlResult.Failure -> Unit
+                    }
+
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun isDialogMuted(providerDialogId: String): Boolean? {
+        val chatId = providerDialogId.toLongOrNull() ?: return null
+
+        return try {
+            when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> {
+                    val settings = result.result.notificationSettings
+                    !settings.useDefaultMuteFor && settings.muteFor > 0
+                }
+
+                is TdlResult.Failure -> null
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun NotificationScope.toTdlibScope(): NotificationSettingsScope {
+        return when (this) {
+            NotificationScope.PrivateChats -> NotificationSettingsScopePrivateChats()
+            NotificationScope.Groups -> NotificationSettingsScopeGroupChats()
+            NotificationScope.Channels -> NotificationSettingsScopeChannelChats()
         }
     }
 
@@ -3215,8 +3516,11 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.Sticker,
                     previewFileId = sticker.thumbnail?.file?.id,
+                    previewUniqueId = sticker.thumbnail?.file?.remote?.uniqueId,
                     fileId = sticker.sticker.id,
+                    fileUniqueId = sticker.sticker.remote.uniqueId,
                     stickerFileId = sticker.sticker.id,
+                    stickerUniqueId = sticker.sticker.remote.uniqueId,
                     stickerSetId = sticker.setId,
                     width = sticker.width,
                     height = sticker.height,
@@ -3235,7 +3539,10 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.Photo,
                     previewFileId = size?.photo?.id,
+                    previewUniqueId = size?.photo?.remote?.uniqueId,
                     fileId = photo.sizes.maxByOrNull { it.photo.size }?.photo?.id,
+                    fileUniqueId = photo.sizes.maxByOrNull { it.photo.size }
+                        ?.photo?.remote?.uniqueId,
                     width = size?.width ?: 0,
                     height = size?.height ?: 0,
                     minithumbnail = photo.minithumbnail?.data
@@ -3248,7 +3555,9 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.Animation,
                     previewFileId = animation.thumbnail?.file?.id,
+                    previewUniqueId = animation.thumbnail?.file?.remote?.uniqueId,
                     fileId = animation.animation.id,
+                    fileUniqueId = animation.animation.remote.uniqueId,
                     width = animation.width,
                     height = animation.height,
                     minithumbnail = animation.minithumbnail?.data
@@ -3263,6 +3572,7 @@ class TelegramAccountSession(
         return MessageMedia(
             kind = MessageMediaKind.Audio,
             fileId = audio.audio.id,
+            fileUniqueId = audio.audio.remote.uniqueId,
             fileName = audio.fileName.ifBlank {
                 listOf(audio.performer, audio.title)
                     .filter(String::isNotBlank)
@@ -3289,7 +3599,9 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.Photo,
                     previewFileId = preview?.photo?.id,
+                    previewUniqueId = preview?.photo?.remote?.uniqueId,
                     fileId = full?.photo?.id,
+                    fileUniqueId = full?.photo?.remote?.uniqueId,
                     fileName = "Photo",
                     mimeType = "image/jpeg",
                     size = full?.photo?.size ?: 0,
@@ -3299,13 +3611,42 @@ class TelegramAccountSession(
                 )
             }
 
+            is MessageChatSetBackground -> {
+                // The service bubble should show the new wallpaper image
+                // instead of only saying that the background changed.
+                val document = content.background.background.document
+                val preview = document?.thumbnail?.file
+                val full = document?.document
+
+                if (preview == null && full == null) {
+                    null
+                } else {
+                    MessageMedia(
+                        kind = MessageMediaKind.Photo,
+                        previewFileId = preview?.id ?: full?.id,
+                        previewUniqueId = preview?.remote?.uniqueId
+                            ?: full?.remote?.uniqueId,
+                        fileId = full?.id,
+                        fileUniqueId = full?.remote?.uniqueId,
+                        fileName = "Wallpaper",
+                        mimeType = "image/jpeg",
+                        size = full?.size ?: 0L,
+                        width = document?.thumbnail?.width ?: 0,
+                        height = document?.thumbnail?.height ?: 0
+                    )
+                }
+            }
+
             is MessagePhoto -> {
                 val size = content.photo.previewSize()
 
                 MessageMedia(
                     kind = MessageMediaKind.Photo,
                     previewFileId = size?.photo?.id,
+                    previewUniqueId = size?.photo?.remote?.uniqueId,
                     fileId = content.photo.sizes.maxByOrNull { it.photo.size }?.photo?.id,
+                    fileUniqueId = content.photo.sizes.maxByOrNull { it.photo.size }
+                        ?.photo?.remote?.uniqueId,
                     fileName = "Photo",
                     mimeType = "image/jpeg",
                     size = size?.photo?.size ?: 0,
@@ -3327,7 +3668,14 @@ class TelegramAccountSession(
                     } else {
                         null
                     },
+                    previewUniqueId = if (isImage) {
+                        thumbnail?.file?.remote?.uniqueId
+                            ?: document.document.remote.uniqueId
+                    } else {
+                        null
+                    },
                     fileId = document.document.id,
+                    fileUniqueId = document.document.remote.uniqueId,
                     fileName = document.fileName,
                     mimeType = document.mimeType,
                     size = document.document.size,
@@ -3345,7 +3693,9 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.Animation,
                     previewFileId = animation.thumbnail?.file?.id,
+                    previewUniqueId = animation.thumbnail?.file?.remote?.uniqueId,
                     fileId = animation.animation.id,
+                    fileUniqueId = animation.animation.remote.uniqueId,
                     fileName = animation.fileName.ifBlank { "GIF" },
                     mimeType = animation.mimeType,
                     size = animation.animation.size,
@@ -3361,6 +3711,7 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.VoiceNote,
                     fileId = note.voice.id,
+                    fileUniqueId = note.voice.remote.uniqueId,
                     fileName = "Voice message",
                     mimeType = note.mimeType,
                     size = note.voice.size,
@@ -3375,7 +3726,9 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.VideoNote,
                     previewFileId = note.thumbnail?.file?.id,
+                    previewUniqueId = note.thumbnail?.file?.remote?.uniqueId,
                     fileId = note.video.id,
+                    fileUniqueId = note.video.remote.uniqueId,
                     fileName = "Video message",
                     mimeType = "video/mp4",
                     size = note.video.size,
@@ -3391,7 +3744,9 @@ class TelegramAccountSession(
                 MessageMedia(
                     kind = MessageMediaKind.Video,
                     previewFileId = video.thumbnail?.file?.id,
+                    previewUniqueId = video.thumbnail?.file?.remote?.uniqueId,
                     fileId = video.video.id,
+                    fileUniqueId = video.video.remote.uniqueId,
                     fileName = video.fileName,
                     mimeType = video.mimeType,
                     size = video.video.size,
@@ -3410,7 +3765,9 @@ class TelegramAccountSession(
                     width = sticker.width,
                     height = sticker.height,
                     fileId = sticker.sticker.id,
+                    fileUniqueId = sticker.sticker.remote.uniqueId,
                     stickerFileId = sticker.sticker.id,
+                    stickerUniqueId = sticker.sticker.remote.uniqueId,
                     stickerSetId = sticker.setId,
                     stickerFormat = when (sticker.format) {
                         is StickerFormatTgs -> MessageStickerFormat.Tgs
@@ -3427,7 +3784,9 @@ class TelegramAccountSession(
                     width = sticker.width,
                     height = sticker.height,
                     fileId = sticker.sticker.id,
+                    fileUniqueId = sticker.sticker.remote.uniqueId,
                     stickerFileId = sticker.sticker.id,
+                    stickerUniqueId = sticker.sticker.remote.uniqueId,
                     stickerFormat = when (sticker.format) {
                         is StickerFormatTgs -> MessageStickerFormat.Tgs
                         is StickerFormatWebm -> MessageStickerFormat.Webm
@@ -3443,7 +3802,9 @@ class TelegramAccountSession(
                     width = sticker.width,
                     height = sticker.height,
                     fileId = sticker.sticker.id,
+                    fileUniqueId = sticker.sticker.remote.uniqueId,
                     stickerFileId = sticker.sticker.id,
+                    stickerUniqueId = sticker.sticker.remote.uniqueId,
                     stickerFormat = when (sticker.format) {
                         is StickerFormatTgs -> MessageStickerFormat.Tgs
                         is StickerFormatWebm -> MessageStickerFormat.Webm
@@ -3539,6 +3900,15 @@ class TelegramAccountSession(
                 is TdlResult.Success -> {
                     val set = response.result
 
+                    // Remember the full sticker objects: a custom emoji picked
+                    // from an installed pack must not depend on a second
+                    // getCustomEmojiStickers round trip to start rendering.
+                    customEmojiCacheMutex.withLock {
+                        set.stickers.forEach { sticker ->
+                            customEmojiCache[sticker.id] = sticker
+                        }
+                    }
+
                     Result.success(
                         StickerSetInfo(
                             id = set.id,
@@ -3549,8 +3919,11 @@ class TelegramAccountSession(
                                 MessageMedia(
                                     kind = MessageMediaKind.Sticker,
                                     previewFileId = sticker.thumbnail?.file?.id,
+                                    previewUniqueId = sticker.thumbnail?.file?.remote?.uniqueId,
                                     fileId = sticker.sticker.id,
+                                    fileUniqueId = sticker.sticker.remote.uniqueId,
                                     stickerFileId = sticker.sticker.id,
+                                    stickerUniqueId = sticker.sticker.remote.uniqueId,
                                     stickerSetId = sticker.setId,
                                     stickerId = sticker.id,
                                     stickerEmoji = sticker.emoji,
@@ -3862,7 +4235,13 @@ class TelegramAccountSession(
                 }
             }
 
-            val data = loadFile(sticker.sticker.id).getOrNull() ?: return null
+            // Fall back to the thumbnail when the full sticker file is not
+            // available yet, so a custom emoji never degrades to plain text.
+            val data = loadFile(sticker.sticker.id).getOrNull()
+                ?: sticker.thumbnail?.file?.id?.let { fileId ->
+                    loadFile(fileId).getOrNull()
+                }
+                ?: return null
 
             CustomEmojiAsset(
                 data = data,
@@ -3872,6 +4251,25 @@ class TelegramAccountSession(
             throw exception
         } catch (exception: Exception) {
             null
+        }
+    }
+
+    override suspend fun loadCustomEmojiSetIds(emojiIds: List<Long>): Map<Long, Long> {
+        val distinct = emojiIds.distinct()
+        if (distinct.isEmpty()) return emptyMap()
+
+        return try {
+            loadCustomEmojiStickers(distinct)
+                .mapNotNull { (emojiId, sticker) ->
+                    sticker.setId
+                        .takeIf { setId -> setId != 0L }
+                        ?.let { setId -> emojiId to setId }
+                }
+                .toMap()
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Exception) {
+            emptyMap()
         }
     }
 
@@ -3911,8 +4309,11 @@ class TelegramAccountSession(
         return MessageMedia(
             kind = MessageMediaKind.Sticker,
             previewFileId = sticker.thumbnail?.file?.id,
+            previewUniqueId = sticker.thumbnail?.file?.remote?.uniqueId,
             fileId = sticker.sticker.id,
+            fileUniqueId = sticker.sticker.remote.uniqueId,
             stickerFileId = sticker.sticker.id,
+            stickerUniqueId = sticker.sticker.remote.uniqueId,
             stickerSetId = sticker.setId,
             stickerId = sticker.id,
             stickerEmoji = sticker.emoji,
