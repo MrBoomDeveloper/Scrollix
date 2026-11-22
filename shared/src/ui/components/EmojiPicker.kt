@@ -787,12 +787,13 @@ private fun PickerSticker(
         data = fileId?.let { id -> session.loadFile(id).getOrNull() }
     }
 
-    val emoji = remember(fileId, data, media.stickerFormat) {
+    val emoji = remember(fileId, data, media.stickerFormat, media.needsRepainting) {
         DialogFolderEmoji(
             customEmojiId = (fileId ?: 0).toLong(),
             offset = 0,
             length = 0,
             fallback = "",
+            needsRepainting = media.needsRepainting,
             format = when (media.stickerFormat) {
                 MessageStickerFormat.Tgs -> DialogFolderEmojiFormat.Tgs
                 MessageStickerFormat.Webm -> DialogFolderEmojiFormat.Webm

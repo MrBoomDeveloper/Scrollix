@@ -208,12 +208,13 @@ private fun StickerSetCell(
 
     val bytes = data
 
-    val emoji = remember(media.fileId, bytes, media.stickerFormat) {
+    val emoji = remember(media.fileId, bytes, media.stickerFormat, media.needsRepainting) {
         DialogFolderEmoji(
             customEmojiId = (media.fileId ?: 0).toLong(),
             offset = 0,
             length = 0,
             fallback = "",
+            needsRepainting = media.needsRepainting,
             format = when (media.stickerFormat) {
                 MessageStickerFormat.Tgs -> DialogFolderEmojiFormat.Tgs
                 MessageStickerFormat.Webm -> DialogFolderEmojiFormat.Webm

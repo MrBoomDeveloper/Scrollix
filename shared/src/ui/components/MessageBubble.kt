@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
@@ -106,6 +107,7 @@ fun MessageBubble(
     mediaContent: (@Composable () -> Unit)? = null,
     richMedia: (@Composable (MessageMedia) -> Unit)? = null,
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
+    customEmojiAdaptive: Set<Long> = emptySet(),
     session: AccountSession? = null,
     reply: MessageReply? = null,
     replyThumbnail: (@Composable () -> Unit)? = null,
@@ -344,6 +346,7 @@ fun MessageBubble(
                                             onMedia = true,
                                             isChannel = dialogKind == DialogKind.Channel,
                                             customEmojiData = customEmojiData,
+                                            customEmojiAdaptive = customEmojiAdaptive,
                                             session = session,
                                             onReaction = onReaction,
                                             modifier = Modifier
@@ -391,6 +394,7 @@ fun MessageBubble(
                                         text = message.text,
                                         emojis = message.customEmojis,
                                         data = customEmojiData,
+                                        adaptiveEmojis = customEmojiAdaptive,
                                         onMentionClick = onMentionClick,
                                         onPhoneClick = onPhoneClick,
                                         trailingContent = if (isFooterInline) {
@@ -413,6 +417,7 @@ fun MessageBubble(
                                     message = message,
                                     isChannel = dialogKind == DialogKind.Channel,
                                     customEmojiData = customEmojiData,
+                                    customEmojiAdaptive = customEmojiAdaptive,
                                     session = session,
                                     onReaction = onReaction,
                                     modifier = Modifier
@@ -433,6 +438,7 @@ fun MessageBubble(
                                     onMedia = true,
                                     isChannel = dialogKind == DialogKind.Channel,
                                     customEmojiData = customEmojiData,
+                                    customEmojiAdaptive = customEmojiAdaptive,
                                     session = session,
                                     onReaction = onReaction,
                                     modifier = Modifier
@@ -499,6 +505,7 @@ fun MessageBubble(
                         ReactionPickerRow(
                             message = message,
                             data = customEmojiData,
+                            adaptiveEmojis = customEmojiAdaptive,
                             session = session,
                             onReaction = { option ->
                                 menuExpanded = false
@@ -653,6 +660,7 @@ fun MessageBubble(
 private fun ReactionPickerRow(
     message: ChatMessage,
     data: Map<Long, ByteArray>,
+    adaptiveEmojis: Set<Long> = emptySet(),
     session: AccountSession?,
     onReaction: (MessageReactionOption) -> Unit
 ) {
@@ -747,6 +755,7 @@ private fun ReactionPickerRow(
                         option = option,
                         chosen = isChosen(option),
                         data = data,
+                        adaptiveEmojis = adaptiveEmojis,
                         session = session,
                         onClick = { onReaction(option) }
                     )
@@ -785,6 +794,7 @@ private fun ReactionPickerRow(
                                             customEmojiId = cover.stickerId
                                         ),
                                         data = data,
+                                        adaptiveEmojis = adaptiveEmojis,
                                         color = LocalContentColor.current,
                                         session = session
                                     )
@@ -821,6 +831,7 @@ private fun ReactionPickerRow(
                                     option = option,
                                     chosen = isChosen(option),
                                     data = data,
+                                    adaptiveEmojis = adaptiveEmojis,
                                     session = session,
                                     onClick = { onReaction(option) }
                                 )
@@ -863,6 +874,7 @@ private fun ReactionPickerRow(
                                     option = option,
                                     chosen = isChosen(option),
                                     data = data,
+                                    adaptiveEmojis = adaptiveEmojis,
                                     session = session,
                                     onClick = { onReaction(option) }
                                 )
@@ -901,6 +913,7 @@ private fun ReactionPickerButton(
     option: MessageReactionOption,
     chosen: Boolean,
     data: Map<Long, ByteArray>,
+    adaptiveEmojis: Set<Long> = emptySet(),
     session: AccountSession?,
     onClick: () -> Unit
 ) {
@@ -921,6 +934,7 @@ private fun ReactionPickerButton(
                     customEmojiId = option.customEmojiId
                 ),
                 data = data,
+                adaptiveEmojis = adaptiveEmojis,
                 color = LocalContentColor.current,
                 session = session
             )
@@ -1001,6 +1015,7 @@ private fun MessageFooter(
     onMedia: Boolean = false,
     isChannel: Boolean = false,
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
+    customEmojiAdaptive: Set<Long> = emptySet(),
     session: AccountSession? = null,
     onReaction: ((MessageReactionOption) -> Unit)? = null
 ) {
@@ -1019,6 +1034,7 @@ private fun MessageFooter(
                 onMedia = onMedia,
                 showAvatars = !isChannel && message.reactions.sumOf { it.count } < 4,
                 customEmojiData = customEmojiData,
+                customEmojiAdaptive = customEmojiAdaptive,
                 session = session,
                 onReaction = onReaction
             )
@@ -1042,6 +1058,7 @@ private fun MessageReactionsRow(
     onMedia: Boolean,
     showAvatars: Boolean = false,
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
+    customEmojiAdaptive: Set<Long> = emptySet(),
     session: AccountSession? = null,
     onReaction: ((MessageReactionOption) -> Unit)? = null
 ) {
@@ -1095,6 +1112,7 @@ private fun MessageReactionsRow(
                     ReactionGlyph(
                         reaction = reaction,
                         data = customEmojiData,
+                        adaptiveEmojis = customEmojiAdaptive,
                         color = textColor,
                         session = session
                     )
@@ -1127,12 +1145,13 @@ private fun MessageReactionsRow(
 private fun ReactionGlyph(
     reaction: MessageReactionInfo,
     data: Map<Long, ByteArray>,
+    adaptiveEmojis: Set<Long> = emptySet(),
     color: Color,
     session: AccountSession?
 ) {
     val emojiId = reaction.customEmojiId
     val cached = emojiId?.let(data::get)
-    var loaded by remember(emojiId) { mutableStateOf<ByteArray?>(null) }
+    var loaded by remember(emojiId) { mutableStateOf<CustomEmojiAsset?>(null) }
     var loadFinished by remember(emojiId) { mutableStateOf(false) }
 
     // The dialog preloads emoji for every message, but a reaction can arrive on its own,
@@ -1145,12 +1164,19 @@ private fun ReactionGlyph(
         }
     }
 
-    val bytes = cached ?: loaded
+    val bytes = cached ?: loaded?.data
+    val needsRepainting = if (cached != null) {
+        emojiId != null && emojiId in adaptiveEmojis
+    } else {
+        loaded?.needsRepainting == true
+    }
 
     if (emojiId != null) {
         if (bytes != null) {
             FolderEmojiImage(
-                emoji = remember(emojiId, bytes) { customEmojiModel(emojiId, bytes) },
+                emoji = remember(emojiId, bytes, needsRepainting) {
+                    customEmojiModel(emojiId, bytes, needsRepainting)
+                },
                 animate = true,
                 size = 20.dp,
                 color = Color.Unspecified,

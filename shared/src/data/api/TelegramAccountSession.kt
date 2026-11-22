@@ -9,6 +9,7 @@ import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.CommonGroup
+import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.ChatMemberInfo
 import com.mrboomdev.scrollix.data.model.ChatMessage
@@ -3500,7 +3501,7 @@ class TelegramAccountSession(
         }
     }
 
-    override suspend fun loadCustomEmoji(emojiId: Long): ByteArray? {
+    override suspend fun loadCustomEmoji(emojiId: Long): CustomEmojiAsset? {
         return try {
             val sticker = customEmojiCacheMutex.withLock {
                 customEmojiCache[emojiId]
@@ -3520,12 +3521,21 @@ class TelegramAccountSession(
                 }
             }
 
-            loadFile(sticker.sticker.id).getOrNull()
+            val data = loadFile(sticker.sticker.id).getOrNull() ?: return null
+
+            CustomEmojiAsset(
+                data = data,
+                needsRepainting = sticker.needsRepainting()
+            )
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
             null
         }
+    }
+
+    private fun Sticker.needsRepainting(): Boolean {
+        return (fullType as? StickerFullTypeCustomEmoji)?.needsRepainting == true
     }
 
     /** Builds the custom emoji entities for outgoing formatted text. */
@@ -3565,6 +3575,7 @@ class TelegramAccountSession(
             stickerSetId = sticker.setId,
             stickerId = sticker.id,
             stickerEmoji = sticker.emoji,
+            needsRepainting = sticker.needsRepainting(),
             size = sticker.sticker.size,
             width = sticker.width,
             height = sticker.height,

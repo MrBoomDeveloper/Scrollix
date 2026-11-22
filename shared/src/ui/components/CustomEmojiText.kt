@@ -44,6 +44,7 @@ internal fun CustomEmojiMessageText(
     lineHeight: TextUnit = TextUnit.Unspecified,
     emojis: List<CustomEmojiSpan>,
     data: Map<Long, ByteArray>,
+    adaptiveEmojis: Set<Long> = emptySet(),
     style: TextStyle = LocalTextStyle.current,
     color: Color = LocalContentColor.current,
     maxLines: Int = Int.MAX_VALUE,
@@ -116,7 +117,8 @@ internal fun CustomEmojiMessageText(
     val inlineContent = spans.associate { span ->
         span.emojiId.toString() to inlineEmoji(
             id = span.emojiId,
-            bytes = data.getValue(span.emojiId)
+            bytes = data.getValue(span.emojiId),
+            needsRepainting = span.emojiId in adaptiveEmojis
         )
     }.toMutableMap()
 
@@ -183,18 +185,27 @@ private fun inlineTrailingContent(
 }
 
 /** Builds a renderable custom emoji out of the raw sticker bytes. */
-internal fun customEmojiModel(id: Long, bytes: ByteArray): DialogFolderEmoji {
+internal fun customEmojiModel(
+    id: Long,
+    bytes: ByteArray,
+    needsRepainting: Boolean = false
+): DialogFolderEmoji {
     return DialogFolderEmoji(
         customEmojiId = id,
         offset = 0,
         length = 0,
         fallback = "",
+        needsRepainting = needsRepainting,
         format = detectEmojiFormat(bytes),
         data = bytes
     )
 }
 
-private fun inlineEmoji(id: Long, bytes: ByteArray): InlineTextContent {
+private fun inlineEmoji(
+    id: Long,
+    bytes: ByteArray,
+    needsRepainting: Boolean
+): InlineTextContent {
     return InlineTextContent(
         Placeholder(
             width = EmojiSize,
@@ -202,7 +213,9 @@ private fun inlineEmoji(id: Long, bytes: ByteArray): InlineTextContent {
             placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
         )
     ) {
-        val emoji = remember(id, bytes) { customEmojiModel(id, bytes) }
+        val emoji = remember(id, bytes, needsRepainting) {
+            customEmojiModel(id, bytes, needsRepainting)
+        }
 
         FolderEmojiImage(
             emoji = emoji,

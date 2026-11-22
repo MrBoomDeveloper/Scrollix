@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.data.model.AccountProfile
 import com.mrboomdev.scrollix.data.model.AuthAction
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
@@ -100,7 +101,7 @@ interface AccountSession {
         providerDialogId: String,
         messageId: Long
     ): Result<ChatMessage?>
-    suspend fun loadCustomEmoji(emojiId: Long): ByteArray?
+    suspend fun loadCustomEmoji(emojiId: Long): CustomEmojiAsset?
     suspend fun resolveUsername(username: String): Result<Long>
     suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>
     suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit>

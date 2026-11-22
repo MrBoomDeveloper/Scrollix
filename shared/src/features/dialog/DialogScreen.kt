@@ -384,6 +384,9 @@ fun DialogScreen(
     var inputEmojiData by remember(providerDialogId) {
         mutableStateOf<Map<Long, ByteArray>>(emptyMap())
     }
+    var inputEmojiAdaptive by remember(providerDialogId) {
+        mutableStateOf<Set<Long>>(emptySet())
+    }
 
     // Drafts reset to an empty string programmatically, which never reaches
     // onValueChange, so their custom emoji spans are dropped here.
@@ -405,11 +408,14 @@ fun DialogScreen(
         if (missing.isEmpty()) return@LaunchedEffect
 
         val loaded = missing.mapNotNull { id ->
-            currentSession.loadCustomEmoji(id)?.let { bytes -> id to bytes }
+            currentSession.loadCustomEmoji(id)?.let { asset -> id to asset }
         }.toMap()
 
         if (loaded.isNotEmpty()) {
-            inputEmojiData = inputEmojiData + loaded
+            inputEmojiData = inputEmojiData + loaded.mapValues { (_, asset) -> asset.data }
+            inputEmojiAdaptive = inputEmojiAdaptive + loaded
+                .filterValues { asset -> asset.needsRepainting }
+                .keys
         }
     }
     var error by remember(providerDialogId) { mutableStateOf<String?>(null) }
@@ -622,6 +628,9 @@ fun DialogScreen(
     var customEmojiData by remember(providerDialogId) {
         mutableStateOf<Map<Long, ByteArray>>(emptyMap())
     }
+    var customEmojiAdaptive by remember(providerDialogId) {
+        mutableStateOf<Set<Long>>(emptySet())
+    }
 
     LaunchedEffect(session, messages) {
         if (session == null) return@LaunchedEffect
@@ -640,11 +649,14 @@ fun DialogScreen(
         if (ids.isEmpty()) return@LaunchedEffect
 
         val loaded = ids.mapNotNull { id ->
-            session.loadCustomEmoji(id)?.let { bytes -> id to bytes }
+            session.loadCustomEmoji(id)?.let { asset -> id to asset }
         }.toMap()
 
         if (loaded.isNotEmpty()) {
-            customEmojiData = customEmojiData + loaded
+            customEmojiData = customEmojiData + loaded.mapValues { (_, asset) -> asset.data }
+            customEmojiAdaptive = customEmojiAdaptive + loaded
+                .filterValues { asset -> asset.needsRepainting }
+                .keys
         }
     }
 
@@ -1297,6 +1309,7 @@ fun DialogScreen(
                                                     isOutgoing = message.isOutgoing,
                                                     session = session,
                                                     customEmojiData = customEmojiData,
+                                                    customEmojiAdaptive = customEmojiAdaptive,
                                                     onOptionClick = { option ->
                                                         if (session != null) {
                                                             scope.launch {
@@ -1409,6 +1422,7 @@ fun DialogScreen(
                                                 RichBlockMediaPreview(richBlockMedia, session)
                                             },
                                             customEmojiData = customEmojiData,
+                                            customEmojiAdaptive = customEmojiAdaptive,
                                             session = session,
                                             reply = reply,
                                             replyThumbnail = replyThumbnail,
@@ -1773,7 +1787,8 @@ fun DialogScreen(
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             emojis = inputCustomEmojis,
-                                            data = inputEmojiData
+                                            data = inputEmojiData,
+                                            adaptiveEmojis = inputEmojiAdaptive
                                         )
                                     }
 
@@ -2160,6 +2175,7 @@ private fun MessagePollCard(
     isOutgoing: Boolean,
     session: AccountSession?,
     customEmojiData: Map<Long, ByteArray>,
+    customEmojiAdaptive: Set<Long> = emptySet(),
     onOptionClick: (MessagePollOptionInfo) -> Unit,
     onRetractVote: () -> Unit
 ) {
@@ -2218,6 +2234,7 @@ private fun MessagePollCard(
                 showResults = showResults,
                 isCorrect = poll.isQuiz && index in poll.correctOptionIds,
                 customEmojiData = customEmojiData,
+                customEmojiAdaptive = customEmojiAdaptive,
                 session = session,
                 accent = accent,
                 contentColor = contentColor,
@@ -2269,6 +2286,7 @@ private fun PollOptionRow(
     showResults: Boolean,
     isCorrect: Boolean,
     customEmojiData: Map<Long, ByteArray>,
+    customEmojiAdaptive: Set<Long> = emptySet(),
     session: AccountSession?,
     accent: Color,
     contentColor: Color,
@@ -2324,7 +2342,8 @@ private fun PollOptionRow(
                     modifier = Modifier.weight(1f),
                     text = option.text,
                     emojis = option.customEmojis,
-                    data = customEmojiData
+                    data = customEmojiData,
+                    adaptiveEmojis = customEmojiAdaptive
                 )
             }
 

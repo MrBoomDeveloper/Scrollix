@@ -735,6 +735,9 @@ private fun DialogPreviewText(
     var data by remember(dialog.providerDialogId, emojis) {
         mutableStateOf<Map<Long, ByteArray>>(emptyMap())
     }
+    var adaptive by remember(dialog.providerDialogId, emojis) {
+        mutableStateOf<Set<Long>>(emptySet())
+    }
 
     LaunchedEffect(session, emojis) {
         val currentSession = session ?: return@LaunchedEffect
@@ -746,11 +749,14 @@ private fun DialogPreviewText(
         if (missing.isEmpty()) return@LaunchedEffect
 
         val loaded = missing.mapNotNull { id ->
-            currentSession.loadCustomEmoji(id)?.let { bytes -> id to bytes }
+            currentSession.loadCustomEmoji(id)?.let { asset -> id to asset }
         }.toMap()
 
         if (loaded.isNotEmpty()) {
-            data = data + loaded
+            data = data + loaded.mapValues { (_, asset) -> asset.data }
+            adaptive = adaptive + loaded
+                .filterValues { asset -> asset.needsRepainting }
+                .keys
         }
     }
 
@@ -759,6 +765,7 @@ private fun DialogPreviewText(
         text = dialog.preview,
         emojis = emojis,
         data = data,
+        adaptiveEmojis = adaptive,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.secondary,
         maxLines = 1,

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
@@ -57,8 +59,10 @@ internal fun FolderEmojiImage(
     contentModifier: Modifier? = null,
     showFallback: Boolean = true
 ) {
+    // Adaptive custom emoji are monochrome silhouettes: they take the
+    // theme's primary color instead of keeping the artist's palette.
     val colorFilter = if (emoji.needsRepainting) {
-        ColorFilter.tint(color)
+        ColorFilter.tint(MaterialTheme.colorScheme.primary)
     } else {
         null
     }
@@ -126,17 +130,19 @@ internal fun EmojiStatusIcon(
     modifier: Modifier = Modifier,
     size: Dp = 16.dp
 ) {
-    var data by remember(emojiId, session) { mutableStateOf<ByteArray?>(null) }
+    var asset by remember(emojiId, session) { mutableStateOf<CustomEmojiAsset?>(null) }
 
     LaunchedEffect(emojiId, session) {
-        data = session?.loadCustomEmoji(emojiId)
+        asset = session?.loadCustomEmoji(emojiId)
     }
 
-    val bytes = data
+    val current = asset
 
     Box(modifier = modifier.size(size)) {
-        if (bytes != null) {
-            val emoji = remember(emojiId, bytes) { customEmojiModel(emojiId, bytes) }
+        if (current != null) {
+            val emoji = remember(emojiId, current) {
+                customEmojiModel(emojiId, current.data, current.needsRepainting)
+            }
 
             FolderEmojiImage(
                 emoji = emoji,

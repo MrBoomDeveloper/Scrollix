@@ -21,6 +21,12 @@ data class CustomEmojiSpan(
     val emojiId: Long
 )
 
+/** Loaded custom emoji bytes together with their recolor metadata. */
+data class CustomEmojiAsset(
+    val data: ByteArray,
+    val needsRepainting: Boolean = false
+)
+
 @Serializable
 enum class MessageStickerFormat {
     Webp,
@@ -54,7 +60,9 @@ data class MessageMedia(
     /** The TDLib sticker id, which is also the custom emoji entity id. */
     val stickerId: Long? = null,
     /** The emoji a custom emoji sticker stands for. */
-    val stickerEmoji: String? = null
+    val stickerEmoji: String? = null,
+    /** Whether the sticker should be drawn in the theme's primary color. */
+    val needsRepainting: Boolean = false
 )
 
 data class MessageReactionOption(
