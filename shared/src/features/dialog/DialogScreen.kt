@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -1747,7 +1748,10 @@ fun DialogScreen(
                     Row(
                         modifier = Modifier
                             .padding(bottom = 4.dp)
-                            .windowInsetsPadding(WindowInsets.safeDrawing.only(
+                            // The screen already applies imePadding(), so only the
+                            // navigation bar may add bottom inset here. Using
+                            // safeDrawing would add the keyboard height twice.
+                            .windowInsetsPadding(WindowInsets.navigationBars.only(
                                 WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal
                             )).clip(RoundedCornerShape(32.dp))
                             .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(32.dp))
