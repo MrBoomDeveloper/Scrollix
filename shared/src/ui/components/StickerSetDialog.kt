@@ -43,9 +43,19 @@ import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.launch
+
+internal sealed interface StickerSetTarget {
+    data class ById(val setId: Long) : StickerSetTarget
+
+    data class ByName(
+        val name: String,
+        val kind: StickerPackKind = StickerPackKind.Sticker
+    ) : StickerSetTarget
+}
 
 /**
  * Modal that shows the whole pack a sticker belongs to, together with the
@@ -53,21 +63,32 @@ import kotlinx.coroutines.launch
  */
 @Composable
 internal fun StickerSetDialog(
-    setId: Long,
+    target: StickerSetTarget,
     session: AccountSession,
     onDismiss: () -> Unit
 ) {
-    var info by remember(setId) { mutableStateOf<StickerSetInfo?>(null) }
-    var isLoading by remember(setId) { mutableStateOf(true) }
-    var isUpdating by remember(setId) { mutableStateOf(false) }
-    var error by remember(setId) { mutableStateOf<String?>(null) }
+    var info by remember(target) { mutableStateOf<StickerSetInfo?>(null) }
+    var isLoading by remember(target) { mutableStateOf(true) }
+    var isUpdating by remember(target) { mutableStateOf(false) }
+    var error by remember(target) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
 
-    LaunchedEffect(setId) {
+    val kind = info?.kind ?: when (target) {
+        is StickerSetTarget.ById -> StickerPackKind.Sticker
+        is StickerSetTarget.ByName -> target.kind
+    }
+    val noun = if (kind == StickerPackKind.CustomEmoji) "emoji" else "stickers"
+
+    LaunchedEffect(target) {
         isLoading = true
 
-        session.loadStickerSet(setId)
+        val result = when (target) {
+            is StickerSetTarget.ById -> session.loadStickerSet(target.setId)
+            is StickerSetTarget.ByName -> session.loadStickerSetByName(target.name, target.kind)
+        }
+
+        result
             .onSuccess { loaded -> info = loaded }
             .onFailure { failure ->
                 error = failure.message ?: "Failed to load the sticker pack"
@@ -105,7 +126,7 @@ internal fun StickerSetDialog(
 
                         if (count > 0) {
                             Text(
-                                text = "$count stickers",
+                                text = "$count $noun",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.secondary
                             )
@@ -183,9 +204,9 @@ internal fun StickerSetDialog(
                     } else {
                         Text(
                             if (info?.isInstalled == true) {
-                                "Remove from my stickers"
+                                "Remove from my $noun"
                             } else {
-                                "Add to my stickers"
+                                "Add to my $noun"
                             }
                         )
                     }

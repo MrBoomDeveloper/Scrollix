@@ -5,7 +5,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.mrboomdev.scrollix.ui.components.ScrollixContextMenuRepresentation
+import com.mrboomdev.scrollix.ui.components.shutdownCaptchaBrowser
 import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.max.MaxIntegration
 import com.mrboomdev.scrollix.data.telegram.TelegramIntegration
 import kotlinx.coroutines.runBlocking
 import java.awt.AWTEvent
@@ -17,6 +19,7 @@ import java.awt.event.MouseWheelEvent
 
 fun main() {
     TelegramIntegration.init()
+    MaxIntegration.init()
     installHorizontalScrollSupport()
 
     application {
@@ -25,6 +28,7 @@ fun main() {
                 runBlocking {
                     ApiManager.shutdown()
                 }
+                shutdownCaptchaBrowser()
                 exitApplication()
             },
             title = "Scrollix"

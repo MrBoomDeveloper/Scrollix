@@ -24,6 +24,8 @@ actual fun openDialer(phoneNumber: String) {
     runCatching { AndroidAppContext.context.startActivity(intent) }
 }
 
+actual fun showDesktopNotification(title: String, body: String) = Unit
+
 actual suspend fun fetchUrlBytes(url: String): ByteArray? = withContext(Dispatchers.IO) {
     runCatching {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {

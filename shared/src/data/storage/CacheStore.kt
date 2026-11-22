@@ -5,6 +5,7 @@ import com.mrboomdev.scrollix.data.cache.CachedDialogsEntity
 import com.mrboomdev.scrollix.data.cache.CachedMessagesEntity
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.MessageSendState
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
@@ -88,6 +89,7 @@ object CacheStore {
             val payload = dao.messages(accountId, providerDialogId) ?: return emptyList()
 
             json.decodeFromString(ListSerializer(ChatMessage.serializer()), payload)
+                .filter { message -> message.sendState == MessageSendState.Sent }
                 .takeLast(limit)
                 .map { message ->
                     // Cached messages written before service rows were modelled
@@ -110,20 +112,32 @@ object CacheStore {
         }
     }
 
+    /** Drops the cached window of a chat that was deleted or left. */
+    suspend fun deleteMessages(accountId: String, providerDialogId: String) {
+        runCatching { dao.deleteMessages(accountId, providerDialogId) }
+    }
+
     suspend fun saveMessages(
         accountId: String,
         providerDialogId: String,
         messages: List<ChatMessage>
     ) {
         if (messages.isEmpty()) return
+        if (messages.none { message -> message.sendState == MessageSendState.Sent }) return
 
         runCatching {
-            val cached = messages.takeLast(MaxCachedMessages).map { message ->
-                message.copy(
-                    senderAvatar = message.senderAvatar?.copy(image = null),
-                    forwardedFromAvatar = message.forwardedFromAvatar?.copy(image = null)
-                )
-            }
+            // A pending or failed message has a temporary id that TDLib will
+            // not resolve after a restart, so caching it would restore a
+            // permanent "Sending" ghost.
+            val cached = messages
+                .filter { message -> message.sendState == MessageSendState.Sent }
+                .takeLast(MaxCachedMessages)
+                .map { message ->
+                    message.copy(
+                        senderAvatar = message.senderAvatar?.copy(image = null),
+                        forwardedFromAvatar = message.forwardedFromAvatar?.copy(image = null)
+                    )
+                }
 
             dao.putMessages(
                 CachedMessagesEntity(

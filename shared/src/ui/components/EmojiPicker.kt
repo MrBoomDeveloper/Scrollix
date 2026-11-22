@@ -26,8 +26,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -91,6 +94,49 @@ internal fun orderedStickerPacks(
  * headers show the pack's featured sticker, and the row above the grid jumps
  * straight to a pack.
  */
+/**
+ * The emoji/sticker picker as a dialog on wide layouts and as a bottom sheet
+ * on mobile. Shared by the composer, the poll composer and attachment review.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun EmojiPickerDialog(
+    isMobile: Boolean,
+    session: AccountSession,
+    onDismiss: () -> Unit,
+    onEmojiSelected: (String) -> Unit,
+    onCustomEmojiSelected: (emojiId: Long, fallback: String) -> Unit
+) {
+    val content: @Composable () -> Unit = {
+        EmojiPicker(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(420.dp),
+            session = session,
+            onEmojiSelected = onEmojiSelected,
+            onCustomEmojiSelected = onCustomEmojiSelected,
+            onStickerSelected = {},
+            onAnimationSelected = {}
+        )
+    }
+
+    if (isMobile) {
+        ModalBottomSheet(onDismissRequest = onDismiss) {
+            content()
+        }
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            text = { content() },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+}
+
 @Composable
 internal fun EmojiPicker(
     modifier: Modifier = Modifier,
@@ -98,7 +144,11 @@ internal fun EmojiPicker(
     onEmojiSelected: (String) -> Unit,
     onCustomEmojiSelected: (emojiId: Long, fallback: String) -> Unit,
     onStickerSelected: (MessageMedia) -> Unit,
-    onAnimationSelected: (MessageMedia) -> Unit
+    onAnimationSelected: (MessageMedia) -> Unit,
+    /** Sessions whose packs are shown alongside this account's own packs. */
+    otherSessions: List<AccountSession> = emptyList(),
+    /** Importing is only offered where the callback is provided. */
+    onCrossProviderStickerSelected: ((AccountSession, MessageMedia) -> Unit)? = null
 ) {
     val settings by AppSettingsStore.state.collectAsState()
 
@@ -149,7 +199,9 @@ internal fun EmojiPicker(
                 1 -> StickerTab(
                     session = session,
                     showRecents = settings.showRecentStickersAndEmojis,
-                    onStickerSelected = onStickerSelected
+                    onStickerSelected = onStickerSelected,
+                    otherSessions = otherSessions,
+                    onCrossProviderStickerSelected = onCrossProviderStickerSelected
                 )
 
                 2 -> GifTab(
@@ -336,13 +388,18 @@ private fun EmojiTab(
 private fun StickerTab(
     session: AccountSession,
     showRecents: Boolean,
-    onStickerSelected: (MessageMedia) -> Unit
+    onStickerSelected: (MessageMedia) -> Unit,
+    otherSessions: List<AccountSession>,
+    onCrossProviderStickerSelected: ((AccountSession, MessageMedia) -> Unit)?
 ) {
     val settings by AppSettingsStore.state.collectAsState()
     var recents by remember(session) { mutableStateOf<List<MessageMedia>>(emptyList()) }
     var packs by remember(session) { mutableStateOf<List<StickerPack>>(emptyList()) }
     var packItems by remember(session) {
         mutableStateOf<Map<Long, List<MessageMedia>>>(emptyMap())
+    }
+    var foreignPacks by remember(session) {
+        mutableStateOf<List<ForeignStickerPack>>(emptyList())
     }
     var isLoading by remember(session) { mutableStateOf(true) }
 
@@ -371,10 +428,53 @@ private fun StickerTab(
                 }
             }.awaitAll().toMap()
         }
+
+        foreignPacks = if (onCrossProviderStickerSelected == null) {
+            emptyList()
+        } else {
+            coroutineScope {
+                otherSessions
+                    .filter { source -> source.accountId != session.accountId }
+                    .map { source ->
+                        async {
+                            val sourcePacks = orderedStickerPacks(
+                                source.loadStickerPacks(StickerPackKind.Sticker)
+                                    .getOrDefault(emptyList()),
+                                settings.stickerPackOrders[source.accountId].orEmpty()
+                            )
+
+                            sourcePacks.mapNotNull { pack ->
+                                val items = source.loadStickerSet(pack.id)
+                                    .getOrNull()
+                                    ?.stickers
+                                    .orEmpty()
+
+                                if (items.isEmpty()) {
+                                    null
+                                } else {
+                                    ForeignStickerPack(source, pack, items)
+                                }
+                            }
+                        }
+                    }
+                    .awaitAll()
+                    .flatten()
+            }
+        }
+
         isLoading = false
     }
 
-    val entries = remember(recents, packs, packItems, showRecents) {
+    val showForeignPacks = onCrossProviderStickerSelected != null
+
+    val entries = remember(
+        recents,
+        packs,
+        packItems,
+        foreignPacks,
+        showRecents,
+        showForeignPacks
+    ) {
         buildList {
             if (showRecents && recents.isNotEmpty()) {
                 add(StickerEntry.RecentsHeader)
@@ -385,6 +485,15 @@ private fun StickerTab(
                 add(StickerEntry.PackHeader(pack))
                 packItems[pack.id].orEmpty().forEach { media ->
                     add(StickerEntry.Sticker(packId = pack.id, media = media))
+                }
+            }
+
+            if (showForeignPacks) {
+                foreignPacks.forEach { foreign ->
+                    add(StickerEntry.ForeignPackHeader(foreign))
+                    foreign.items.forEach { media ->
+                        add(StickerEntry.ForeignSticker(foreign, media))
+                    }
                 }
             }
         }
@@ -515,6 +624,29 @@ private fun StickerTab(
                             session = session,
                             size = 52.dp,
                             onClick = { onStickerSelected(entry.media) }
+                        )
+                    }
+
+                    is StickerEntry.ForeignPackHeader -> PackSectionHeader(
+                        pack = entry.pack.pack.copy(title = entry.pack.title),
+                        featured = entry.pack.items.firstOrNull(),
+                        session = entry.pack.source
+                    )
+
+                    is StickerEntry.ForeignSticker -> Box(
+                        modifier = Modifier.aspectRatio(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PickerSticker(
+                            media = entry.media,
+                            session = entry.pack.source,
+                            size = 52.dp,
+                            onClick = {
+                                onCrossProviderStickerSelected?.invoke(
+                                    entry.pack.source,
+                                    entry.media
+                                )
+                            }
                         )
                     }
                 }
@@ -990,6 +1122,15 @@ private sealed interface EmojiEntry {
     }
 }
 
+private data class ForeignStickerPack(
+    val source: AccountSession,
+    val pack: StickerPack,
+    val items: List<MessageMedia>
+) {
+    val title: String
+        get() = "${source.providerId.replaceFirstChar(Char::uppercase)} · ${pack.title}"
+}
+
 private sealed interface StickerEntry {
     val key: String
     val isHeader: Boolean get() = false
@@ -1013,5 +1154,21 @@ private sealed interface StickerEntry {
         val media: MessageMedia
     ) : StickerEntry {
         override val key: String = "sticker-item-$packId-${media.fileId}"
+    }
+
+    data class ForeignPackHeader(
+        val pack: ForeignStickerPack
+    ) : StickerEntry {
+        override val key: String =
+            "sticker-foreign-pack-${pack.source.accountId}-${pack.pack.id}"
+        override val isHeader: Boolean get() = true
+    }
+
+    data class ForeignSticker(
+        val pack: ForeignStickerPack,
+        val media: MessageMedia
+    ) : StickerEntry {
+        override val key: String =
+            "sticker-foreign-${pack.source.accountId}-${pack.pack.id}-${media.fileId}"
     }
 }

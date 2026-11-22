@@ -55,6 +55,9 @@ object ApiManager {
     val downloads: StateFlow<List<AccountDownloadedFile>> = _downloads.asStateFlow()
 
     private val _sessions = MutableStateFlow<Map<String, AccountSession>>(emptyMap())
+
+    /** Every live account session, used by the cross-provider sticker picker. */
+    val sessions: StateFlow<Map<String, AccountSession>> = _sessions.asStateFlow()
     private val _dialogsByAccount = MutableStateFlow<Map<String, List<Dialog>>>(emptyMap())
     private val _foldersByAccount = MutableStateFlow<Map<String, List<DialogFolder>>>(emptyMap())
     private val _downloadsByAccount = MutableStateFlow<Map<String, List<DownloadedFile>>>(emptyMap())
@@ -193,6 +196,39 @@ object ApiManager {
             ?: return Result.failure(IllegalStateException("Account session not found"))
 
         return session.setDialogPinned(providerDialogId, isPinned, folderId)
+    }
+
+    suspend fun deleteDialog(
+        accountId: String,
+        providerDialogId: String,
+        revoke: Boolean = true
+    ): Result<Unit> {
+        val session = session(accountId)
+            ?: return Result.failure(IllegalStateException("Account session not found"))
+
+        val result = session.deleteDialog(providerDialogId, revoke)
+
+        if (result.isSuccess) {
+            _dialogs.update { entries ->
+                entries.filterNot { entry ->
+                    entry.account.id == accountId &&
+                        entry.dialog.providerDialogId == providerDialogId
+                }
+            }
+        }
+
+        return result
+    }
+
+    suspend fun setUserBlocked(
+        accountId: String,
+        userId: Long,
+        blocked: Boolean
+    ): Result<Unit> {
+        val session = session(accountId)
+            ?: return Result.failure(IllegalStateException("Account session not found"))
+
+        return session.setUserBlocked(userId, blocked)
     }
 
     suspend fun loadUserProfile(

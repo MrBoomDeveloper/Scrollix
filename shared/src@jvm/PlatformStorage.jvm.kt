@@ -1,5 +1,8 @@
 package com.mrboomdev.scrollix.data.storage
 
+import io.github.vinceglb.filekit.FileKit
+import io.github.vinceglb.filekit.dialogs.openFileSaver
+import io.github.vinceglb.filekit.path
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -81,30 +84,25 @@ actual fun readFileBytes(path: String): ByteArray? {
     }.getOrNull()
 }
 
-actual fun saveFileToDevice(fileName: String, bytes: ByteArray): String? {
+actual suspend fun saveFileToDevice(fileName: String, bytes: ByteArray): String? {
+    val safeName = fileName.ifBlank { "file" }
+        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+
+    // Let the user pick both the directory and the file name. Cancelling the
+    // dialog is a normal outcome, not a failure.
+    val target = runCatching {
+        FileKit.openFileSaver(
+            suggestedName = safeName,
+            defaultExtension = safeName.substringAfterLast('.', "")
+                .takeIf { extension -> extension.isNotBlank() }
+        )
+    }.getOrNull() ?: return null
+
     return runCatching {
-        val safeName = fileName.ifBlank { "file" }
-            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-        val directory = File(System.getProperty("user.home"), "Downloads/Scrollix")
-            .apply { mkdirs() }
-
-        var target = File(directory, safeName)
-        var index = 1
-        val dot = safeName.lastIndexOf('.')
-
-        while (target.exists()) {
-            val candidate = if (dot > 0) {
-                "${safeName.substring(0, dot)} ($index)${safeName.substring(dot)}"
-            } else {
-                "$safeName ($index)"
-            }
-
-            target = File(directory, candidate)
-            index++
-        }
-
-        target.writeBytes(bytes)
-        target.absolutePath
+        val file = File(target.path)
+        file.parentFile?.mkdirs()
+        file.writeBytes(bytes)
+        file.absolutePath
     }.getOrNull()
 }
 

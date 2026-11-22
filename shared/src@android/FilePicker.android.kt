@@ -15,6 +15,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
+actual fun readClipboardImages(): List<PickedFile> {
+    // Android exposes clipboard images only through a context-bound reader.
+    // The compose picker path is used there instead of a global clipboard call.
+    return emptyList()
+}
+
 @Composable
 actual fun rememberFilePicker(
     onImagesPicked: (List<PickedFile>) -> Unit,

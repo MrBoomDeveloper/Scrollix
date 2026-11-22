@@ -2,6 +2,8 @@ package com.mrboomdev.scrollix.features.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -182,7 +184,7 @@ private fun SettingsCategories(
     selected: SettingsCategory?,
     onSelect: (SettingsCategory) -> Unit
 ) {
-    Column(modifier) {
+    Column(modifier.verticalScroll(rememberScrollState())) {
         Text(
             modifier = Modifier.padding(16.dp),
             text = "Settings",
@@ -228,7 +230,9 @@ private fun SettingsCategoryContent(
     onOpenAccountsScreen: () -> Unit
 ) {
     Column(
-        modifier = modifier.padding(16.dp),
+        modifier = modifier
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
@@ -750,15 +754,17 @@ private fun SettingsBackupContent() {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = {
-                val path = saveFileToDevice(
-                    fileName = "scrollix-settings.json",
-                    bytes = AppSettingsStore.exportJson().encodeToByteArray()
-                )
+                scope.launch {
+                    val path = saveFileToDevice(
+                        fileName = "scrollix-settings.json",
+                        bytes = AppSettingsStore.exportJson().encodeToByteArray()
+                    )
 
-                message = if (path != null) {
-                    "Backup saved to $path"
-                } else {
-                    "Could not save the backup."
+                    message = if (path != null) {
+                        "Backup saved to $path"
+                    } else {
+                        "Could not save the backup."
+                    }
                 }
             }
         ) {

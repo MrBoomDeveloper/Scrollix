@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -42,11 +43,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AuthAction
+import com.mrboomdev.scrollix.data.model.AuthCaptchaValueId
 import com.mrboomdev.scrollix.data.model.AuthChallenge
 import com.mrboomdev.scrollix.data.model.AuthField
 import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.ui.components.CaptchaView
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import io.github.alexzhirkevich.qrose.rememberQrCodePainter
@@ -114,7 +117,7 @@ fun LoginScreen(
                 is AuthState.Initializing -> {
                     LoadingContent(
                         modifier = contentModifier,
-                        text = "Connecting to Telegram..."
+                        text = "Connecting…"
                     )
                 }
 
@@ -162,6 +165,9 @@ private fun AuthChallengeContent(
     }
     var pendingAction by remember(challenge.id) {
         mutableStateOf<AuthAction?>(null)
+    }
+    var captchaError by remember(challenge.id) {
+        mutableStateOf<String?>(null)
     }
 
     // Telegram blocks code requests for a while if they are repeated too
@@ -216,6 +222,50 @@ private fun AuthChallengeContent(
                 maxLines = 8,
                 overflow = TextOverflow.Ellipsis,
                 text = description
+            )
+        }
+
+        challenge.captchaUrl?.let { captchaUrl ->
+            CaptchaView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                url = captchaUrl,
+                enabled = !isBusy && session != null,
+                onToken = { token ->
+                    if (session != null && !isBusy) {
+                        scope.launch {
+                            session.submitAuth(mapOf(AuthCaptchaValueId to token))
+                        }
+                    }
+                },
+                onError = { message -> captchaError = message }
+            )
+
+            if (challenge.isSubmitting) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Text(
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        text = "Checking the captcha…"
+                    )
+                }
+            }
+        }
+
+        captchaError?.let { message ->
+            Text(
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                text = message
             )
         }
 
@@ -321,6 +371,18 @@ private fun AuthChallengeContent(
                             isBusy = pendingAction == action,
                             enabled = !isBusy && session != null,
                             onClick = { performAction(action) }
+                        )
+                    }
+
+                    is AuthAction.RefreshCaptcha -> {
+                        AuthActionButton(
+                            text = "Reload captcha",
+                            isBusy = pendingAction == action,
+                            enabled = !isBusy && session != null,
+                            onClick = {
+                                captchaError = null
+                                performAction(action)
+                            }
                         )
                     }
 

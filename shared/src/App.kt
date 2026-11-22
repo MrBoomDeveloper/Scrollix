@@ -30,6 +30,8 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.ShortNavigationBarItemDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
@@ -37,8 +39,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
@@ -50,6 +54,11 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.savedstate.serialization.SavedStateConfiguration
 import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.NotificationScope
+import com.mrboomdev.scrollix.data.model.NotificationSettings
+import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.explore_icon
@@ -60,6 +69,8 @@ import com.mrboomdev.scrollix.ui.icons.qr_code_scanner_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
 import com.mrboomdev.scrollix.ui.components.QrScannerDialog
+import com.mrboomdev.scrollix.ui.components.StickerSetDialog
+import com.mrboomdev.scrollix.ui.components.StickerSetTarget
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.theme.appTypography
@@ -129,30 +140,166 @@ fun App() {
     }
     var showQrScanner by remember { mutableStateOf(false) }
     val accountState by ApiManager.accountState.collectAsState()
+    val sessionStates by ApiManager.sessionStates.collectAsState()
     val pendingDeepLink by DeepLinkHandler.pending.collectAsState()
     val currentRoute = backStack.lastOrNull()
+    val uriHandler = LocalUriHandler.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    var stickerSetOverlay by remember {
+        mutableStateOf<Pair<String, StickerSetTarget>?>(null)
+    }
 
-    LaunchedEffect(pendingDeepLink, accountState.accounts) {
-        val link = pendingDeepLink ?: return@LaunchedEffect
+    // Desktop notifications for chats that receive a new message while their
+    // conversation is not the one on screen. Only an increase of the unread
+    // counter is announced, so re-emitting the dialog list stays silent.
+    LaunchedEffect(Unit) {
+        val seenUnread = mutableMapOf<String, Int>()
+        val settingsCache = mutableMapOf<String, Pair<Long, NotificationSettings?>>()
 
-        val account = accountState.accounts.firstOrNull() ?: return@LaunchedEffect
-        val session = ApiManager.session(account.id) ?: return@LaunchedEffect
-        val resolved = session.resolveTelegramLink(link).getOrNull() ?: return@LaunchedEffect
+        suspend fun notificationSettings(accountId: String): NotificationSettings? {
+            val cached = settingsCache[accountId]
+            val now = System.currentTimeMillis()
+
+            if (cached != null && now - cached.first < 60_000L) return cached.second
+
+            val settings = ApiManager.session(accountId)
+                ?.loadNotificationSettings()
+                ?.getOrNull()
+
+            settingsCache[accountId] = now to settings
+            return settings
+        }
+
+        ApiManager.dialogs.collect { entries ->
+            entries.forEach { entry ->
+                val dialog = entry.dialog
+                val key = "${entry.account.id}:${dialog.providerDialogId}"
+                val unread = dialog.unreadCount
+                val previous = seenUnread.put(key, unread)
+
+                if (previous == null || unread <= previous) return@forEach
+
+                val open = selectedDialog.value
+                val isOpen = open != null &&
+                    open.accountId == entry.account.id &&
+                    open.providerDialogId == dialog.providerDialogId
+
+                if (isOpen) return@forEach
+
+                // Server-side notification settings win: a muted scope or a
+                // muted chat must not raise an OS notification.
+                val scope = when (dialog.kind) {
+                    DialogKind.Group -> NotificationScope.Groups
+                    DialogKind.Channel -> NotificationScope.Channels
+                    else -> NotificationScope.PrivateChats
+                }
+
+                if (notificationSettings(entry.account.id)?.isMuted(scope) == true) {
+                    return@forEach
+                }
+
+                val session = ApiManager.session(entry.account.id)
+                if (session?.isDialogMuted(dialog.providerDialogId) == true) {
+                    return@forEach
+                }
+
+                showDesktopNotification(
+                    title = dialog.title,
+                    body = dialog.preview.ifBlank { "New message" }
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(
+        pendingDeepLink?.id,
+        accountState.accounts,
+        accountState.activeAccountId,
+        sessionStates
+    ) {
+        val request = pendingDeepLink ?: return@LaunchedEffect
+        val accounts = accountState.accounts
+        if (accounts.isEmpty()) return@LaunchedEffect
+
+        // Prefer the active account, but try every ready session: shared code
+        // must not hard-code the Telegram provider. MAX and other providers
+        // simply fail the default link resolver.
+        val ordered = buildList {
+            val activeId = accountState.activeAccountId
+            if (activeId != null) {
+                accounts.firstOrNull { account -> account.id == activeId }?.let(::add)
+            }
+            accounts.forEach { account ->
+                if (account.id != activeId) add(account)
+            }
+        }
+
+        var resolvedAccountId: String? = null
+        var resolvedTarget: TelegramLinkTarget? = null
+        var lastError: String? = null
+
+        for (account in ordered) {
+            val session = ApiManager.session(account.id) ?: continue
+            if (sessionStates[account.id] !is AuthState.Ready) continue
+
+            session.resolveTelegramLinkTarget(request.url)
+                .onSuccess { target ->
+                    resolvedAccountId = account.id
+                    resolvedTarget = target
+                }
+                .onFailure { failure ->
+                    lastError = failure.message
+                }
+
+            if (resolvedTarget != null) break
+        }
+
+        if (resolvedTarget == null) {
+            // Keep the link pending while authentication is still running.
+            val anyReady = ordered.any { account ->
+                sessionStates[account.id] is AuthState.Ready
+            }
+            if (!anyReady) return@LaunchedEffect
+
+            DeepLinkHandler.consume()
+
+            // The app could not handle the link; hand it to the system
+            // browser instead of dropping it. The guard stops a loop when
+            // Scrollix itself is the default handler for the same URL.
+            val openedInBrowser = DeepLinkHandler.allowBrowserFallback(request.url) &&
+                runCatching { uriHandler.openUri(request.url) }.isSuccess
+
+            if (!openedInBrowser) {
+                snackbarHostState.showSnackbar(
+                    lastError ?: "This link could not be opened"
+                )
+            }
+
+            return@LaunchedEffect
+        }
+
+        val target = resolvedTarget
+        val accountId = resolvedAccountId ?: return@LaunchedEffect
 
         DeepLinkHandler.consume()
 
-        val messageId = link
-            .substringBefore('?')
-            .trimEnd('/')
-            .substringAfterLast('/')
-            .toLongOrNull()
+        when (target) {
+            is TelegramLinkTarget.Dialog -> {
+                selectedDialog.value = null
+                backStack += Route.Dialog(
+                    accountId = accountId,
+                    providerDialogId = target.providerDialogId,
+                    messageId = target.messageId
+                )
+            }
 
-        selectedDialog.value = null
-        backStack += Route.Dialog(
-            accountId = account.id,
-            providerDialogId = resolved,
-            messageId = messageId
-        )
+            is TelegramLinkTarget.StickerSet -> {
+                stickerSetOverlay = accountId to StickerSetTarget.ByName(
+                    name = target.name,
+                    kind = target.kind
+                )
+            }
+        }
     }
     
     val showNavigation = remember(currentRoute, layoutInfo.isTwoPane) {
@@ -413,7 +560,9 @@ fun App() {
                                         colors = ShortNavigationBarItemDefaults.colors(
                                             selectedIndicatorColor = MaterialTheme.colorScheme.primary,
                                             selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                                            selectedTextColor = MaterialTheme.colorScheme.primary
+                                            selectedTextColor = if(layoutInfo.size >= AdaptiveLayoutSize.MEDIUM) {
+                                                MaterialTheme.colorScheme.onPrimary
+                                            } else MaterialTheme.colorScheme.primary,
 //                                            selectedTextColorTopIconPosition = MaterialTheme.colorScheme.primary,
 //                                            selectedTextColorStartIconPosition = MaterialTheme.colorScheme.onPrimary
                                         ),
@@ -439,6 +588,16 @@ fun App() {
 
                 MediaViewerOverlay()
 
+                stickerSetOverlay?.let { (accountId, target) ->
+                    ApiManager.session(accountId)?.let { stickerSession ->
+                        StickerSetDialog(
+                            target = target,
+                            session = stickerSession,
+                            onDismiss = { stickerSetOverlay = null }
+                        )
+                    }
+                }
+
                 if (showQrScanner) {
                     val activeSession = remember(accountState.accounts) {
                         accountState.accounts.firstOrNull()?.let { account ->
@@ -451,6 +610,11 @@ fun App() {
                         onDismiss = { showQrScanner = false }
                     )
                 }
+
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         }
     }

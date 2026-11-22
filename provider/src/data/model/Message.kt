@@ -41,6 +41,21 @@ enum class MessageSendState {
     Failed
 }
 
+/** One selectable re-encoded quality of a video. */
+@Serializable
+data class MessageVideoQuality(
+    val width: Int = 0,
+    val height: Int = 0,
+    val codec: String = "",
+    val fileId: Int? = null,
+    val fileUniqueId: String? = null,
+    val size: Long = 0
+) {
+    /** Human readable label such as `720p`. */
+    val label: String
+        get() = if (height > 0) "${height}p" else "${width}×${height}"
+}
+
 @Serializable
 data class MessageMedia(
     val kind: MessageMediaKind,
@@ -70,7 +85,9 @@ data class MessageMedia(
     /** The emoji a custom emoji sticker stands for. */
     val stickerEmoji: String? = null,
     /** Whether the sticker should be drawn in the theme's primary color. */
-    val needsRepainting: Boolean = false
+    val needsRepainting: Boolean = false,
+    /** Alternative encodings of a video, best last. */
+    val videoQualities: List<MessageVideoQuality> = emptyList()
 )
 
 data class MessageReactionOption(
@@ -157,11 +174,14 @@ data class MessagePollOptionInfo(
 data class MessagePollInfo(
     val id: Long,
     val question: String,
+    val customEmojis: List<CustomEmojiSpan> = emptyList(),
     val options: List<MessagePollOptionInfo> = emptyList(),
     val totalVoterCount: Int = 0,
     val isClosed: Boolean = false,
     val isAnonymous: Boolean = true,
     val allowsMultipleAnswers: Boolean = false,
+    /** Whether voters may retract or change their vote. */
+    val allowsRevoting: Boolean = true,
     val canSeeResults: Boolean = true,
     val isQuiz: Boolean = false,
     val correctOptionIds: List<Int> = emptyList(),
@@ -218,7 +238,9 @@ data class StickerSetInfo(
     val title: String,
     val name: String = "",
     val isInstalled: Boolean = false,
-    val stickers: List<MessageMedia> = emptyList()
+    val stickers: List<MessageMedia> = emptyList(),
+    /** Whether this is a sticker or a custom-emoji pack. */
+    val kind: StickerPackKind = StickerPackKind.Sticker
 )
 
 @Serializable
@@ -268,4 +290,27 @@ data class ChatMessage(
     /** Every TDLib message id represented by this row, albums included. */
     val allMessageIds: List<Long>
         get() = messageIds.ifEmpty { listOf(messageId) }
+
+    /**
+     * Stable identity for list rows. An album keeps the same row id for its
+     * whole life, even when an older member loads and changes the base
+     * [messageId]. Accounts and providers are part of the id so a combined
+     * search list can never produce duplicate keys.
+     */
+    val rowId: String
+        get() = buildString {
+            append(accountId)
+            append(':')
+            append(providerId)
+            append(':')
+
+            val albumId = mediaAlbumId
+            if (albumId != null) {
+                append("album:")
+                append(albumId)
+            } else {
+                append("message:")
+                append(messageId)
+            }
+        }
 }

@@ -73,5 +73,7 @@ data class UserProfileDetails(
     val tracks: List<ProfileTrack> = emptyList(),
     val members: List<ChatMemberInfo> = emptyList(),
     val isSubscribed: Boolean? = null,
-    val discussionChatId: String? = null
+    val discussionChatId: String? = null,
+    /** True when the signed-in user has blocked this user. */
+    val isBlocked: Boolean? = null
 )

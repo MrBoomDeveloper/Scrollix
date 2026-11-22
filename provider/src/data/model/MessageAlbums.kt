@@ -2,45 +2,58 @@ package com.mrboomdev.scrollix.data.model
 
 /**
  * TDLib delivers every item of a media album as its own message. The chat UI
- * shows the whole album as one row, so consecutive messages sharing a
+ * shows the whole album as one row, so messages sharing a
  * [ChatMessage.mediaAlbumId] are merged here.
+ *
+ * Grouping is global within the supplied list, not limited to consecutive
+ * runs. A page boundary can otherwise split an album into two rows, and the
+ * partial rows would change identity when the missing member finally loads.
  *
  * The newest item provides the timestamp and send state, while the first
  * item stays the row identity. A caption may live on any item; the first
- * non-blank one is used.
+ * non-blank one is used. [ChatMessage.rowId] is derived from the album id, so
+ * it stays stable even when the first loaded item changes.
  */
 fun List<ChatMessage>.groupMessageAlbums(): List<ChatMessage> {
     if (none { message -> message.mediaAlbumId != null }) return this
 
-    val result = ArrayList<ChatMessage>(size)
-    var album = mutableListOf<ChatMessage>()
-
-    fun flush() {
-        if (album.isNotEmpty()) {
-            result += if (album.size > 1) mergeAlbum(album) else album.first()
-            album = mutableListOf()
-        }
-    }
+    val order = ArrayList<Any>(size)
+    val albums = LinkedHashMap<Long, MutableList<ChatMessage>>()
 
     for (message in this) {
         val albumId = message.mediaAlbumId
 
         if (albumId == null) {
-            flush()
-            result += message
+            order += message
             continue
         }
 
-        if (album.isNotEmpty() && album.first().mediaAlbumId != albumId) {
-            flush()
+        val members = albums.getOrPut(albumId) {
+            order += AlbumReference(albumId)
+            mutableListOf()
         }
 
-        album += message
+        members += message
     }
 
-    flush()
-    return result
+    return order.map { entry ->
+        when (entry) {
+            is AlbumReference -> {
+                val members = albums[entry.albumId].orEmpty()
+                when {
+                    members.isEmpty() -> error("Album reference without members")
+                    members.size > 1 -> mergeAlbum(members)
+                    else -> members.first()
+                }
+            }
+
+            is ChatMessage -> entry
+            else -> error("Unexpected album entry")
+        }
+    }
 }
+
+private data class AlbumReference(val albumId: Long)
 
 private fun mergeAlbum(messages: List<ChatMessage>): ChatMessage {
     val base = messages.first()

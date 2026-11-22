@@ -19,6 +19,7 @@ relevant module's `module.yaml`; version aliases live in `libs.versions.toml`.
 | `shared/` | Kotlin Multiplatform library with all UI and app-shell logic (Android + JVM) |
 | `provider/` | Messenger contracts and plain data models (`AccountSession`, `MessengerProvider`, `ChatMessage`, …) |
 | `telegram/` | Telegram integration: `TelegramSession`, `TelegramProvider`, TDLib DTO mapping and `TelegramIntegration` |
+| `max/` | MAX integration: `MaxSession`, `MaxProvider`, the OneMe JSON WebSocket transport and `MaxIntegration` |
 | `build-config/` | Kotlin Toolchain plugin that generates `com.mrboomdev.scrollix.generated.BuildConfig` from `local.properties` (enabled by the `telegram` module) |
 | `scripts/` | Release scripts (`release.sh` and platform helpers) |
 | `build/` | Generated build output |
@@ -46,6 +47,13 @@ relevant module's `module.yaml`; version aliases live in `libs.versions.toml`.
   `TelegramSession.kt` (session implementation), `TelegramProvider.kt`,
   and `TelegramIntegration.kt` (registers the provider with `ProviderRegistry`).
   App entry points call `TelegramIntegration.init()` before composing `App()`.
+- `max/src/network/` — MAX transport: `MaxRpc.kt` (opcode frames over the
+  WebSocket, responses matched by `seq`, `cmd=0` frames delivered as pushes),
+  `MaxJson.kt` (JSON accessors and phone normalization) and the platform
+  `MaxSocket` implementations (OkHttp on Android and JVM).
+- `max/src/data/api/` — `MaxSession.kt` (MAX protocol mapping: sign-in, chats,
+  history, live updates, profiles, search) and `MaxProvider.kt`.
+  App entry points call `MaxIntegration.init()` next to the Telegram integration.
 - `shared/src/data/api/ApiManager.kt` — account/session lifecycle for the app shell;
   it must not reference a concrete messenger provider.
 - `shared/src/data/storage/` — settings, account stores, and platform storage.

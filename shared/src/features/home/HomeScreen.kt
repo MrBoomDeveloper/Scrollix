@@ -36,6 +36,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -48,6 +49,7 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -91,6 +93,7 @@ import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
 import com.mrboomdev.scrollix.ui.icons.check_icon
+import com.mrboomdev.scrollix.ui.icons.delete_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
@@ -931,6 +934,7 @@ private fun DialogItem(
     val scope = rememberCoroutineScope()
     val session = remember(dialog.accountId) { ApiManager.session(dialog.accountId) }
     var menuExpanded by remember(dialog.providerDialogId) { mutableStateOf(false) }
+    var confirmDelete by remember(dialog.providerDialogId) { mutableStateOf(false) }
 
     Box {
         Surface(
@@ -1153,7 +1157,65 @@ private fun DialogItem(
                     }
                 }
             )
+
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = delete_icon,
+                        contentDescription = null
+                    )
+                },
+
+                text = {
+                    Text(text = "Delete chat")
+                },
+
+                onClick = {
+                    menuExpanded = false
+                    confirmDelete = true
+                }
+            )
         }
+    }
+
+    if (confirmDelete) {
+        val isSharedChat = dialog.kind == DialogKind.Group ||
+            dialog.kind == DialogKind.Channel
+
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete chat") },
+            text = {
+                Text(
+                    if (isSharedChat) {
+                        "Leave \"${dialog.title}\" and remove it from your chat list?"
+                    } else {
+                        "Delete the conversation with \"${dialog.title}\" for both sides?"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+
+                        scope.launch {
+                            ApiManager.deleteDialog(
+                                accountId = entry.account.id,
+                                providerDialogId = dialog.providerDialogId
+                            )
+                        }
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

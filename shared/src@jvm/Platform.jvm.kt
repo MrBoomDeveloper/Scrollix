@@ -13,6 +13,24 @@ actual fun getPlatform(): Platform = JVMPlatform()
 
 actual fun openDialer(phoneNumber: String) = Unit
 
+actual fun showDesktopNotification(title: String, body: String) {
+    // Linux desktops implement the freedesktop notification spec through
+    // notify-send. Other systems have no implementation here yet.
+    if (!System.getProperty("os.name").orEmpty().startsWith("Linux", ignoreCase = true)) {
+        return
+    }
+
+    runCatching {
+        ProcessBuilder(
+            "notify-send",
+            "--app-name=Scrollix",
+            "--expire-time=5000",
+            title,
+            body
+        ).start()
+    }
+}
+
 actual suspend fun fetchUrlBytes(url: String): ByteArray? = withContext(Dispatchers.IO) {
     runCatching {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {

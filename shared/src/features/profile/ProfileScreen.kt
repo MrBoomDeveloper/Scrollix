@@ -48,6 +48,8 @@ import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -252,11 +254,22 @@ private fun ProfileScreenActions(
     isSubscribed: Boolean,
     isUpdatingSubscription: Boolean,
     isMuted: Boolean?,
+    canBlock: Boolean,
+    isBlocked: Boolean,
     stretch: Boolean,
     onMessage: () -> Unit,
     onToggleSubscription: () -> Unit,
-    onToggleMute: () -> Unit
+    onToggleMute: () -> Unit,
+    onToggleBlock: () -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    // Notification settings only make sense for chats the account is part of.
+    // A group or channel the user has not joined has nothing to mute.
+    val isMemberChat = dialog?.kind == DialogKind.Group ||
+        dialog?.kind == DialogKind.Channel
+    val showMute = !isMemberChat || isSubscribed
+
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -303,40 +316,61 @@ private fun ProfileScreenActions(
             }
         }
 
-        OutlinedButton(
-            modifier = actionModifier,
-            contentPadding = PaddingValues(0.dp),
-            enabled = isMuted != null,
-            onClick = onToggleMute
-        ) {
-            Icon(
-                modifier = Modifier.size(ButtonDefaults.IconSize),
-                tint = if (isMuted == true) {
-                    MaterialTheme.colorScheme.secondary
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-                imageVector = notifications_icon,
-                contentDescription = if (isMuted == true) {
-                    "Unmute notifications"
-                } else {
-                    "Mute notifications"
-                }
-            )
+        if (showMute) {
+            OutlinedButton(
+                modifier = actionModifier,
+                contentPadding = PaddingValues(0.dp),
+                enabled = isMuted != null,
+                onClick = onToggleMute
+            ) {
+                Icon(
+                    modifier = Modifier.size(ButtonDefaults.IconSize),
+                    tint = if (isMuted == true) {
+                        MaterialTheme.colorScheme.secondary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    imageVector = notifications_icon,
+                    contentDescription = if (isMuted == true) {
+                        "Unmute notifications"
+                    } else {
+                        "Mute notifications"
+                    }
+                )
+            }
         }
 
-        OutlinedButton(
-            modifier = actionModifier,
-            contentPadding = PaddingValues(0.dp),
-            onClick = {
-
+        Box {
+            OutlinedButton(
+                modifier = actionModifier,
+                contentPadding = PaddingValues(0.dp),
+                onClick = {
+                    if (canBlock) {
+                        menuExpanded = true
+                    }
+                }
+            ) {
+                Icon(
+                    modifier = Modifier.size(ButtonDefaults.IconSize),
+                    imageVector = more_vertical_icon,
+                    contentDescription = null
+                )
             }
-        ) {
-            Icon(
-                modifier = Modifier.size(ButtonDefaults.IconSize),
-                imageVector = more_vertical_icon,
-                contentDescription = null
-            )
+
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Text(if (isBlocked) "Unblock user" else "Block user")
+                    },
+                    onClick = {
+                        menuExpanded = false
+                        onToggleBlock()
+                    }
+                )
+            }
         }
     }
 }
@@ -588,6 +622,21 @@ fun ProfileScreen(
         }
     }
 
+    fun toggleBlock() {
+        val currentSession = session ?: return
+        val targetUserId = details?.userId ?: return
+        val blocked = details?.isBlocked == true
+
+        details = details?.copy(isBlocked = !blocked)
+
+        scope.launch {
+            currentSession.setUserBlocked(targetUserId, !blocked).onFailure {
+                details = details?.copy(isBlocked = blocked)
+                actionError = it.message ?: "Failed to update the block state"
+            }
+        }
+    }
+
     LaunchedEffect(accountId, providerDialogId, userId, ownAccount) {
         details = if (ownAccount) {
             session?.loadOwnProfile()?.getOrNull()
@@ -790,12 +839,16 @@ fun ProfileScreen(
                             isSubscribed = isSubscribed,
                             isUpdatingSubscription = isUpdatingSubscription,
                             isMuted = isMuted,
+                            canBlock = dialog?.kind == DialogKind.Direct &&
+                                details?.userId != null,
+                            isBlocked = details?.isBlocked == true,
                             stretch = false,
                             onMessage = {
                                 onMessage(details?.discussionChatId ?: providerDialogId)
                             },
                             onToggleSubscription = ::toggleSubscription,
-                            onToggleMute = ::toggleMute
+                            onToggleMute = ::toggleMute,
+                            onToggleBlock = ::toggleBlock
                         )
                     }
 
@@ -856,12 +909,16 @@ fun ProfileScreen(
                     isSubscribed = isSubscribed,
                     isUpdatingSubscription = isUpdatingSubscription,
                     isMuted = isMuted,
+                    canBlock = dialog?.kind == DialogKind.Direct &&
+                        details?.userId != null,
+                    isBlocked = details?.isBlocked == true,
                     stretch = true,
                     onMessage = {
                         onMessage(details?.discussionChatId ?: providerDialogId)
                     },
                     onToggleSubscription = ::toggleSubscription,
-                    onToggleMute = ::toggleMute
+                    onToggleMute = ::toggleMute,
+                    onToggleBlock = ::toggleBlock
                 )
             }
             

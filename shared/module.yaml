@@ -2,6 +2,10 @@ product:
   type: kmp/lib
   platforms: [android, jvm]
 
+# The desktop webview (KCEF) pulls JOGL, which is only published here.
+repositories:
+  - https://jogamp.org/deployment/maven
+
 dependencies:
   - //provider
   - $kotlin.serialization.json
@@ -39,6 +43,9 @@ dependencies@android:
   - $libs.alpha.video.vpx
 
 dependencies@jvm:
+  # Desktop captcha: an embedded Chromium browser (KCEF) wrapped by Compose.
+  - $libs.compose.webview.multiplatform
+  - $libs.kcef
   - $libs.filekit.dialogs
   - $libs.javacv
   - com.google.zxing:core:3.5.3

@@ -16,8 +16,17 @@ data class AuthChallenge(
     val actions: List<AuthAction> = emptyList(),
     val error: String? = null,
     val isSubmitting: Boolean = false,
-    val qrLink: String? = null
+    val qrLink: String? = null,
+    /**
+     * Link of a provider captcha that has to be solved before the next step.
+     * The solved token is passed to [AccountSession.submitAuth] under
+     * [AuthCaptchaValueId].
+     */
+    val captchaUrl: String? = null
 )
+
+/** Value key used by `submitAuth` for a solved [AuthChallenge.captchaUrl]. */
+const val AuthCaptchaValueId = "captcha"
 
 data class AuthField(
     val id: String,
@@ -41,5 +50,9 @@ sealed interface AuthAction {
     data object ResendCode : AuthAction
     data object RecoverPassword : AuthAction
     data object UseQrCode : AuthAction
+
+    /** Fetches a fresh [AuthChallenge.captchaUrl] after the previous one failed. */
+    data object RefreshCaptcha : AuthAction
+
     data class OpenUrl(val url: String) : AuthAction
 }

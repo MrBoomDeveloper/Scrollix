@@ -1,11 +1,17 @@
 product: jvm/app
 
+# Transitive JOGL artifacts of the desktop webview come from this repository.
+repositories:
+  - https://jogamp.org/deployment/maven
+
 dependencies:
+  - //max
   - //shared
   - //telegram
   - $compose.desktop.currentOs
   - $compose.preview
   - $libs.kotlinx.coroutines.swing
+  - $libs.kcef
   - $libs.logback.classic
 
 settings:

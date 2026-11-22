@@ -16,6 +16,7 @@ import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.storage.DialogScrollPosition
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.abs
 
 /**
  * Owns everything that concerns scrolling inside a dialog:
@@ -28,18 +29,21 @@ class DialogMessageListState internal constructor(
     val listState: LazyListState,
     startReady: Boolean,
     startNewestId: Long?,
+    /** Whether the restored position is the bottom of the history. */
+    val startsAtBottom: Boolean,
     private val history: () -> MessageHistory,
     /** Messages as rendered, with media albums merged into single rows. */
     private val displayMessages: () -> List<ChatMessage>,
     private val requestOlderPage: suspend () -> Result<Boolean>,
     private val requestMessage: suspend (Long) -> Result<Boolean>,
+    private val requestAround: suspend (Long) -> Result<Boolean>,
     private val refreshNewest: suspend () -> Result<Unit>,
     private val onError: (Throwable) -> Unit
 ) {
     var hasNewMessages by mutableStateOf(false)
         internal set
 
-    var isAtBottom by mutableStateOf(true)
+    var isAtBottom by mutableStateOf(startsAtBottom)
         internal set
 
     var isJumping by mutableStateOf(false)
@@ -52,43 +56,78 @@ class DialogMessageListState internal constructor(
     internal var newestSeenId: Long? = startNewestId
     internal var isPaging = false
 
+    private var queuedJumpMessageId: Long? = null
+
     /**
-     * Scrolls to [messageId], paging history backwards first when the
-     * message has not been loaded yet.
+     * Scrolls to [messageId]. A message outside the window is fetched with a
+     * windowed load around the target, not by paging the whole chat.
+     *
+     * While a jump is running, a second request replaces the target instead
+     * of being dropped: tapping a pinned message during a long jump used to
+     * surface "Couldn't load the message".
      */
     suspend fun jumpToMessage(messageId: Long): Boolean {
-        if (isJumping) return false
+        if (isJumping) {
+            queuedJumpMessageId = messageId
+            return true
+        }
 
         isJumping = true
         hasNewMessages = false
 
         try {
-            if (!history().contains(messageId)) {
-                val loaded = requestMessage(messageId).getOrElse { throwable ->
-                    onError(throwable)
-                    return false
-                }
+            var target: Long? = messageId
 
-                if (!loaded) return false
+            while (target != null) {
+                if (!runJump(target)) return false
+                target = queuedJumpMessageId.also { queuedJumpMessageId = null }
             }
 
-            val index = displayMessages().indexOfFirst { message ->
-                messageId in message.allMessageIds
-            }
-
-            if (index < 0) return false
-
-            listState.animateScrollToItem(index)
             return true
         } finally {
+            queuedJumpMessageId = null
             isJumping = false
         }
     }
 
+    private suspend fun runJump(messageId: Long): Boolean {
+        if (!history().contains(messageId)) {
+            val around = requestAround(messageId)
+
+            val loaded = if (around.isSuccess && around.getOrThrow()) {
+                true
+            } else {
+                requestMessage(messageId).getOrElse { throwable ->
+                    onError(throwable)
+                    return false
+                }
+            }
+
+            if (!loaded) return false
+        }
+
+        val index = displayMessages().indexOfFirst { message ->
+            messageId in message.allMessageIds
+        }
+
+        if (index < 0) return false
+
+        // Animating across a long distance composes every intermediate row
+        // and starts their media loads. An instant scroll is both faster and
+        // less jarring for a jump.
+        if (abs(index - listState.firstVisibleItemIndex) > 10) {
+            listState.scrollToItem(index)
+        } else {
+            listState.animateScrollToItem(index)
+        }
+
+        return true
+    }
+
     /**
-     * Lands on the newest message that is already loaded first, so the jump
-     * never depends on the network refresh. The newest page is then refreshed
-     * so messages that were never merged into the window are included too.
+     * Lands on the newest message with one scroll. The newest page is
+     * refreshed first only so messages that were never merged are included;
+     * the scroll itself is never animated across the whole gap.
      */
     suspend fun jumpToLatest() {
         if (isJumping) return
@@ -97,19 +136,15 @@ class DialogMessageListState internal constructor(
         hasNewMessages = false
 
         try {
-            val loaded = displayMessages()
-            if (loaded.isNotEmpty()) {
-                listState.scrollToItem(loaded.lastIndex)
-            }
-
             refreshNewest().exceptionOrNull()?.let(onError)
 
             val messages = displayMessages()
             if (messages.isNotEmpty()) {
-                listState.animateScrollToItem(messages.lastIndex)
+                listState.scrollToItem(messages.lastIndex, Int.MAX_VALUE)
             }
 
             newestSeenId = history().newestMessageId
+            isAtBottom = true
         } finally {
             isJumping = false
         }
@@ -122,9 +157,13 @@ class DialogMessageListState internal constructor(
         isJumping = true
 
         try {
-            listState.scrollToItem(0)
+            var pages = 0
 
-            while (history().hasMoreOlder && history().messages.isNotEmpty()) {
+            while (
+                pages < MaxFirstMessagePages &&
+                history().hasMoreOlder &&
+                history().messages.isNotEmpty()
+            ) {
                 val sizeBefore = history().messages.size
                 val result = requestOlderPage()
 
@@ -134,6 +173,7 @@ class DialogMessageListState internal constructor(
                 }
 
                 if (history().messages.size == sizeBefore) break
+                pages++
             }
 
             listState.scrollToItem(0)
@@ -153,6 +193,7 @@ fun rememberDialogMessageListState(
     trackPosition: Boolean,
     loadOlder: suspend () -> Result<Boolean>,
     loadUntilLoaded: suspend (Long) -> Result<Boolean>,
+    loadAround: suspend (Long) -> Result<Boolean> = loadUntilLoaded,
     loadLatest: suspend () -> Result<Unit>,
     onPositionChanged: (DialogScrollPosition) -> Unit,
     onError: (Throwable) -> Unit
@@ -198,9 +239,14 @@ fun rememberDialogMessageListState(
     val latestSavedPosition = rememberUpdatedState(savedPosition)
     val latestLoadOlder = rememberUpdatedState(loadOlder)
     val latestLoadUntilLoaded = rememberUpdatedState(loadUntilLoaded)
+    val latestLoadAround = rememberUpdatedState(loadAround)
     val latestLoadLatest = rememberUpdatedState(loadLatest)
     val latestOnPositionChanged = rememberUpdatedState(onPositionChanged)
     val latestOnError = rememberUpdatedState(onError)
+
+    val startAtBottom = initialPosition != null &&
+        initialMessageId == null &&
+        (savedPosition?.atBottom != false)
 
     val state = remember(providerDialogId) {
         DialogMessageListState(
@@ -211,10 +257,12 @@ fun rememberDialogMessageListState(
             } else {
                 null
             },
+            startsAtBottom = startAtBottom,
             history = { latestHistory.value },
             displayMessages = { latestDisplayMessages.value },
             requestOlderPage = { latestLoadOlder.value() },
             requestMessage = { messageId -> latestLoadUntilLoaded.value(messageId) },
+            requestAround = { messageId -> latestLoadAround.value(messageId) },
             refreshNewest = { latestLoadLatest.value() },
             onError = { throwable -> latestOnError.value(throwable) }
         )
@@ -223,7 +271,7 @@ fun rememberDialogMessageListState(
     LaunchedEffect(providerDialogId) {
         state.newestSeenId = if (state.isReady) history.newestMessageId else null
         state.hasNewMessages = false
-        state.isAtBottom = true
+        state.isAtBottom = state.startsAtBottom
     }
 
     // Restore the saved anchor on the first paint, paging history back when
@@ -235,7 +283,14 @@ fun rememberDialogMessageListState(
         history.messages.isNotEmpty()
     ) {
         if (state.isReady) return@LaunchedEffect
-        if (history.isLoadingInitial || history.messages.isEmpty()) return@LaunchedEffect
+        if (history.isLoadingInitial) return@LaunchedEffect
+
+        // A failed initial load leaves the window empty forever unless the
+        // gate is released; the screen shows its error state above the list.
+        if (history.messages.isEmpty()) {
+            state.isReady = true
+            return@LaunchedEffect
+        }
 
         val initialTarget = latestInitialMessageId.value
 
@@ -249,6 +304,16 @@ fun rememberDialogMessageListState(
                 index = latestDisplayMessages.value.indexOfFirst { message ->
                     initialTarget in message.allMessageIds
                 }
+            }
+
+            if (index < 0) {
+                // The target was deleted: land on the nearest surviving
+                // message instead of falling through to the newest one.
+                index = latestDisplayMessages.value.indexOfFirst { message ->
+                    message.messageId > initialTarget
+                }
+
+                if (index < 0) index = latestDisplayMessages.value.lastIndex
             }
 
             if (index >= 0) {
@@ -274,6 +339,14 @@ fun rememberDialogMessageListState(
                 index = latestDisplayMessages.value.indexOfFirst { message ->
                     saved.anchorMessageId in message.allMessageIds
                 }
+            }
+
+            if (index < 0) {
+                index = latestDisplayMessages.value.indexOfFirst { message ->
+                    message.messageId > saved.anchorMessageId
+                }
+
+                if (index < 0) index = latestDisplayMessages.value.lastIndex
             }
 
             if (index >= 0) {
@@ -311,7 +384,9 @@ fun rememberDialogMessageListState(
         // shifting under a finger is what makes the history look like it
         // jumped. A plain scroll also avoids an animation that the user could
         // fight with.
-        if (state.isAtBottom && !listState.isScrollInProgress) {
+        val laidOut = listState.layoutInfo.visibleItemsInfo.isNotEmpty()
+
+        if (state.isAtBottom && laidOut && !listState.isScrollInProgress) {
             listState.scrollToItem(index)
         } else {
             state.hasNewMessages = true
@@ -321,14 +396,12 @@ fun rememberDialogMessageListState(
     LaunchedEffect(providerDialogId, listState) {
         snapshotFlow {
             val info = listState.layoutInfo
-            val lastVisible = info.visibleItemsInfo.lastOrNull()
 
-            // The last message counts as visible only when it is fully inside
-            // the viewport. A partially visible one still leaves scroll room,
-            // so following new messages would yank the list away.
-            lastVisible != null &&
-                lastVisible.index == info.totalItemsCount - 1 &&
-                lastVisible.offset + lastVisible.size <= info.viewportEndOffset
+            // canScrollForward already accounts for the bottom content
+            // padding, which is the measured composer height. Comparing the
+            // last item to viewportEndOffset marked the list "at bottom" while
+            // the newest message was still behind the floating composer.
+            info.visibleItemsInfo.isNotEmpty() && !listState.canScrollForward
         }
             .distinctUntilChanged()
             .collect { atBottom ->
@@ -358,13 +431,12 @@ fun rememberDialogMessageListState(
                 val first = info.visibleItemsInfo.firstOrNull() ?: return@collect
                 val anchor = latestDisplayMessages.value.getOrNull(first.index)
                     ?: return@collect
-                val last = info.visibleItemsInfo.lastOrNull()
 
                 latestOnPositionChanged.value(
                     DialogScrollPosition(
                         anchorMessageId = anchor.messageId,
                         offset = listState.firstVisibleItemScrollOffset,
-                        atBottom = last != null && last.index >= info.totalItemsCount - 1
+                        atBottom = !listState.canScrollForward
                     )
                 )
             }
@@ -445,3 +517,5 @@ fun rememberDialogMessageListState(
 
     return state
 }
+
+private const val MaxFirstMessagePages = 200

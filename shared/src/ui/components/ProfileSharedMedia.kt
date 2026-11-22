@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -14,6 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -165,6 +170,42 @@ fun ProfileSharedMediaSection(
                 color = MaterialTheme.colorScheme.secondary
             )
 
+            // Photos, videos and GIFs are a grid of tiles; the other tabs
+            // read better as a list of rows.
+            selectedTab.isVisual -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 104.dp),
+                modifier = Modifier.heightIn(max = 360.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(loaded, key = { message -> message.messageId }) { message ->
+                    SharedMediaTile(
+                        message = message,
+                        tab = selectedTab,
+                        session = session,
+                        onOpenMessage = onOpenMessage
+                    )
+                }
+
+                if (hasMore[selectedTab] == true) {
+                    item(
+                        key = "shared-media-sentinel",
+                        span = { GridItemSpan(maxLineSpan) }
+                    ) {
+                        SharedMediaLoadMore(
+                            failure = error,
+                            effectKey = Triple(selectedTab, loaded.size, error),
+                            onLoadMore = {
+                                loadPage(
+                                    fromMessageId = loaded.lastOrNull()?.messageId ?: 0,
+                                    replace = false
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
             else -> LazyColumn(
                 modifier = Modifier.heightIn(max = 360.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -177,23 +218,109 @@ fun ProfileSharedMediaSection(
                         onOpenMessage = onOpenMessage
                     )
                 }
-            }
-        }
 
-        if (hasMore[selectedTab] == true) {
-            TextButton(
-                enabled = !isLoading,
-                onClick = {
-                    scope.launch {
-                        loadPage(
-                            fromMessageId = loaded.lastOrNull()?.messageId ?: 0,
-                            replace = false
+                if (hasMore[selectedTab] == true) {
+                    item(key = "shared-media-sentinel") {
+                        SharedMediaLoadMore(
+                            failure = error,
+                            effectKey = Triple(selectedTab, loaded.size, error),
+                            onLoadMore = {
+                                loadPage(
+                                    fromMessageId = loaded.lastOrNull()?.messageId ?: 0,
+                                    replace = false
+                                )
+                            }
                         )
                     }
                 }
-            ) {
-                Text(if (isLoading) "Loading…" else "Load more")
             }
+        }
+    }
+}
+
+/**
+ * The end-of-page marker shared by the grid and the list. Composing it means
+ * the next page is near, so it loads without a button; a failure shows a retry.
+ */
+@Composable
+private fun SharedMediaLoadMore(
+    failure: String?,
+    effectKey: Any,
+    onLoadMore: suspend () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (failure != null) {
+            Text(
+                text = failure,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+
+            TextButton(onClick = { scope.launch { onLoadMore() } }) {
+                Text("Retry")
+            }
+        } else {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+        }
+
+        LaunchedEffect(effectKey) {
+            if (failure == null) {
+                onLoadMore()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SharedMediaTile(
+    message: ChatMessage,
+    tab: SharedMediaTab,
+    session: AccountSession?,
+    onOpenMessage: (Long) -> Unit
+) {
+    val media = message.media
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable { onOpenMessage(message.messageId) }
+    ) {
+        if (media != null) {
+            SharedMediaThumbnail(
+                media = media,
+                session = session,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        val badge = when (tab) {
+            SharedMediaTab.Videos -> "▶"
+            SharedMediaTab.Gifs -> "GIF"
+            else -> null
+        }
+
+        if (badge != null) {
+            Text(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                text = badge,
+                style = MaterialTheme.typography.labelSmall
+            )
         }
     }
 }
@@ -246,7 +373,8 @@ private fun SharedMediaRow(
 @Composable
 private fun SharedMediaThumbnail(
     media: MessageMedia,
-    session: AccountSession?
+    session: AccountSession?,
+    modifier: Modifier = Modifier.size(44.dp)
 ) {
     var bitmap by remember(media.previewFileId, media.previewUniqueId, session) {
         mutableStateOf<ImageBitmap?>(null)
@@ -268,8 +396,7 @@ private fun SharedMediaThumbnail(
     }
 
     Box(
-        modifier = Modifier
-            .size(44.dp)
+        modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center

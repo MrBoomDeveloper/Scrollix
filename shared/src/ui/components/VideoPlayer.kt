@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -19,12 +20,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -97,6 +100,12 @@ fun VideoPlayer(
     var isMuted by remember(media.fileId) { mutableStateOf(false) }
     var isSeeking by remember(media.fileId) { mutableStateOf(false) }
     var seekValue by remember(media.fileId) { mutableLongStateOf(0L) }
+    var qualityIndex by remember(media.fileId) { mutableIntStateOf(-1) }
+
+    val qualities = media.videoQualities
+    val selectedQuality = qualities.getOrNull(qualityIndex)
+    val servedFileId = selectedQuality?.fileId ?: media.fileId
+    val servedUniqueId = selectedQuality?.fileUniqueId ?: media.fileUniqueId
 
     val durationMs = state.durationMs.takeIf { it > 0L }
         ?: (media.durationSeconds.toLong() * 1000L).coerceAtLeast(0L)
@@ -106,7 +115,7 @@ fun VideoPlayer(
         onDispose { player.stop() }
     }
 
-    LaunchedEffect(media.fileId, media.fileUniqueId, session) {
+    LaunchedEffect(servedFileId, servedUniqueId, session) {
         poster = media.minithumbnail?.let { bytes ->
             withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
         }
@@ -124,13 +133,15 @@ fun VideoPlayer(
             }
         }
 
-        val fileId = media.fileId
+        val fileId = servedFileId
         if (fileId == null) {
             loadError = "This video isn't available"
             return@LaunchedEffect
         }
 
-        val bytes = session?.loadMediaBytes(fileId, media.fileUniqueId)
+        player.stop()
+
+        val bytes = session?.loadMediaBytes(fileId, servedUniqueId)
         if (bytes == null) {
             loadError = "Couldn't download this video"
             return@LaunchedEffect
@@ -204,6 +215,37 @@ fun VideoPlayer(
                     .clickable {},
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                if (qualities.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            modifier = Modifier.weight(1f),
+                            text = "Quality",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 11.sp
+                        )
+
+                        QualityLabel(
+                            text = "Auto",
+                            selected = qualityIndex == -1,
+                            onClick = { qualityIndex = -1 }
+                        )
+
+                        qualities.forEachIndexed { index, quality ->
+                            QualityLabel(
+                                text = quality.label,
+                                selected = qualityIndex == index,
+                                onClick = { qualityIndex = index }
+                            )
+                        }
+                    }
+                }
+
                 Slider(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -259,6 +301,27 @@ fun VideoPlayer(
             }
         }
     }
+}
+
+@Composable
+private fun QualityLabel(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Text(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (selected) Color.White.copy(alpha = 0.28f)
+                else Color.White.copy(alpha = 0.08f)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        text = text,
+        color = Color.White,
+        fontSize = 12.sp
+    )
 }
 
 private fun formatVideoTime(milliseconds: Long): String {

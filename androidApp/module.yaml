@@ -1,6 +1,7 @@
 product: android/app
 
 dependencies:
+  - //max
   - //shared
   - //telegram
   - $libs.androidx.activity.compose

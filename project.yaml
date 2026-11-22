@@ -2,6 +2,7 @@ modules:
   - androidApp
   - build-config
   - desktopApp
+  - max
   - provider
   - shared
   - telegram

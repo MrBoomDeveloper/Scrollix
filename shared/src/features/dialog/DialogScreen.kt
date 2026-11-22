@@ -40,14 +40,17 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
+import com.mrboomdev.scrollix.ui.components.StickerSetTarget
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.clearText
@@ -58,7 +61,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -125,6 +132,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.data.model.ChatWallpaper
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.Dialog
@@ -154,6 +162,7 @@ import com.mrboomdev.scrollix.ui.components.ChatSticker
 import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
 import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
 import com.mrboomdev.scrollix.ui.components.EmojiPicker
+import com.mrboomdev.scrollix.ui.components.EmojiPickerDialog
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
 import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
@@ -170,6 +179,7 @@ import com.mrboomdev.scrollix.ui.components.PickedFile
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import com.mrboomdev.scrollix.ui.components.VoiceMessagePlayer
 import com.mrboomdev.scrollix.ui.components.messageDate
+import com.mrboomdev.scrollix.ui.components.readClipboardImages
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
@@ -316,12 +326,15 @@ fun DialogScreen(
     }
 
     val dialogs by (session?.dialogs ?: fallbackDialogs).collectAsState()
+    val allSessions by ApiManager.sessions.collectAsState()
     val historyFlow = remember(session, providerDialogId) {
         session?.messageHistory(providerDialogId) ?: fallbackHistory
     }
     val history by historyFlow.collectAsState()
     val messages = history.messages
     val displayMessages = remember(messages) { messages.groupMessageAlbums() }
+    // Reply lookups used to scan the whole window for every visible row.
+    val messagesById = remember(messages) { messages.associateBy { it.messageId } }
     val dialog = dialogs.firstOrNull { it.providerDialogId == providerDialogId }
     val settings by AppSettingsStore.state.collectAsState()
     var appWallpaper by remember(settings.wallpaperUpdatedAt) {
@@ -502,6 +515,13 @@ fun DialogScreen(
     var editingMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var selectedMessageIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
+    // Only messages that this device sent may play the entrance animation,
+    // and each one may play it exactly once. Both sets live outside the
+    // LazyColumn so a row that is disposed and recomposed cannot replay it.
+    var locallySentMessageIds by remember(providerDialogId) {
+        mutableStateOf<Set<Long>>(emptySet())
+    }
+    var animatedMessageIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
     var composerHeightPx by remember(providerDialogId) { mutableStateOf(0) }
     val composerInset = with(LocalDensity.current) { composerHeightPx.toDp() }
 
@@ -604,11 +624,9 @@ fun DialogScreen(
             !messages[index].isOutgoing
         } ?: start
 
-        val anchorId = messages[anchorIndex].messageId
-        unreadAnchorMessageId = displayMessages
-            .firstOrNull { message -> anchorId in message.allMessageIds }
-            ?.messageId
-            ?: anchorId
+        // Keep the raw id: the album base can change when an earlier member
+        // loads, but the raw id stays inside allMessageIds of the row.
+        unreadAnchorMessageId = messages[anchorIndex].messageId
     }
 
     val messageListState = rememberDialogMessageListState(
@@ -628,6 +646,10 @@ fun DialogScreen(
             session?.loadMessagesUntil(providerDialogId, messageId)
                 ?: Result.failure(IllegalStateException("Account session not found"))
         },
+        loadAround = { messageId ->
+            session?.loadMessagesAround(providerDialogId, messageId)
+                ?: Result.failure(IllegalStateException("Account session not found"))
+        },
         loadLatest = {
             session?.loadMessages(providerDialogId)
                 ?: Result.failure(IllegalStateException("Account session not found"))
@@ -639,7 +661,15 @@ fun DialogScreen(
             error = throwable.message ?: "Failed to load messages"
         }
     )
-    val listState = messageListState.listState
+    // Search results and history have different item counts and keys. Sharing
+    // one LazyListState applied the history index to the search list and vice
+    // versa, which is what made switching modes jump.
+    val searchListState = rememberLazyListState()
+    val listState = if (searchQuery.text.isBlank()) {
+        messageListState.listState
+    } else {
+        searchListState
+    }
 
     fun addAttachments(picked: List<PickedFile>, asPhoto: Boolean) {
         if (picked.isEmpty() || editingMessage != null) return
@@ -880,6 +910,23 @@ fun DialogScreen(
         )
     }
 
+    // A pending outgoing message is by definition one this device sent;
+    // messages from another device arrive already marked as sent.
+    LaunchedEffect(messages) {
+        val pending = messages
+            .filter { message ->
+                message.isOutgoing && message.sendState == MessageSendState.Sending
+            }
+            .flatMap { message -> message.allMessageIds }
+
+        if (pending.isNotEmpty()) {
+            locallySentMessageIds = (locallySentMessageIds + pending)
+                .toList()
+                .takeLast(200)
+                .toSet()
+        }
+    }
+
     fun applyReaction(message: ChatMessage, option: MessageReactionOption) {
         val currentSession = session ?: return
         val isChosen = message.reactions.any { reaction ->
@@ -1075,7 +1122,7 @@ fun DialogScreen(
 
     if (stickerSetId != null && session != null) {
         StickerSetDialog(
-            setId = stickerSetId,
+            target = StickerSetTarget.ById(stickerSetId),
             session = session,
             onDismiss = { openedStickerSetId = null }
         )
@@ -1083,19 +1130,30 @@ fun DialogScreen(
 
     if (showPollDialog) {
         PollCreateDialog(
+            session = session,
+            isMobile = isMobileLayout,
             onDismiss = { showPollDialog = false },
-            onCreate = { question, options, anonymous, multiple ->
+            onCreate = { draft ->
                 val currentSession = session
                 showPollDialog = false
 
                 if (currentSession != null) {
+                    val options = draft.options.filter { it.text.isNotBlank() }
+
                     scope.launch {
                         currentSession.sendPoll(
                             providerDialogId = providerDialogId,
-                            question = question,
-                            options = options,
-                            isAnonymous = anonymous,
-                            allowsMultipleAnswers = multiple
+                            question = draft.question,
+                            options = options.map { it.text },
+                            isAnonymous = draft.isAnonymous,
+                            allowsMultipleAnswers = draft.allowsMultipleAnswers,
+                            allowsRevoting = draft.allowsRevoting,
+                            questionCustomEmojis = draft.questionCustomEmojis,
+                            optionCustomEmojis = options.map { it.customEmojis },
+                            optionMediaPaths = options.map { it.mediaPath },
+                            isQuiz = draft.isQuiz,
+                            correctOptionIndex = draft.correctOptionIndex,
+                            explanation = draft.explanation
                         ).onSuccess {
                             scrollRequest = ScrollRequest.Latest
                         }.onFailure { failure ->
@@ -1187,6 +1245,8 @@ fun DialogScreen(
             attachments = pendingAttachments,
             caption = input,
             isSending = isSending,
+            isMobile = isMobileLayout,
+            session = session,
             onCaptionChange = { value ->
                 inputCustomEmojis = adjustCustomEmojiSpans(
                     oldText = input,
@@ -1196,6 +1256,20 @@ fun DialogScreen(
 
                 input = value
             },
+            onInsertEmoji = { fallback, emojiId ->
+                val start = input.length
+                input += fallback
+
+                if (emojiId != null) {
+                    inputCustomEmojis = inputCustomEmojis + CustomEmojiSpan(
+                        start = start,
+                        end = start + fallback.length,
+                        emojiId = emojiId
+                    )
+                }
+            },
+            onAddImages = { filePicker.pickImages() },
+            onAddFiles = { filePicker.pickFiles() },
             onRemove = { index ->
                 pendingAttachments = pendingAttachments.filterIndexed {
                         itemIndex,
@@ -1662,9 +1736,9 @@ fun DialogScreen(
                             ) {
                                 itemsIndexed(
                                     items = visibleMessages,
-                                    key = { _, it -> it.messageId }
+                                    key = { _, it -> it.rowId }
                                 ) { index, message ->
-                                    if (message.messageId == unreadAnchorMessageId) {
+                                    if (unreadAnchorMessageId?.let { it in message.allMessageIds } == true) {
                                         UnreadMessagesHeader()
                                     }
 
@@ -1685,11 +1759,13 @@ fun DialogScreen(
                                     val nextDate = nextMessage?.let {
                                         messageDate(it.timestamp)
                                     }
-                                    val isNewestMessage =
-                                        message.messageId == visibleMessages.lastOrNull()?.messageId
+                                    val shouldAnimate =
+                                        message.messageId in locallySentMessageIds &&
+                                            message.messageId == visibleMessages.lastOrNull()?.messageId &&
+                                            message.messageId !in animatedMessageIds
                                     val mediaItems = message.allMedia
                                     val media = mediaItems.firstOrNull()
-                                    val reply = replyFor(message, messages, loadedReplies)
+                                    val reply = replyFor(message, messagesById, loadedReplies)
                                     val replyMedia = reply?.media
                                         ?.takeIf { it.kind == MessageMediaKind.Photo }
                                     val replyThumbnail: (@Composable () -> Unit)? =
@@ -1888,29 +1964,18 @@ fun DialogScreen(
                                     }
 
                                     Column(
-                                        // Deleted rows fade out and the rest move
-                                        // into place instead of jumping.
-                                        modifier = Modifier.animateItem(),
                                         verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         if (previousDate != date) {
                                             MessageDatePill(date)
                                         }
 
-                                        // Only the newest message plays the
-                                        // entrance; older rows would otherwise
-                                        // slide again while scrolling history.
-                                        val appearanceState = remember(message.messageId) {
-                                            MutableTransitionState(!isNewestMessage)
-                                                .apply { targetState = true }
-                                        }
-
-                                        AnimatedVisibility(
-                                            visibleState = appearanceState,
-                                            enter = slideInVertically(
-                                                initialOffsetY = { height -> height }
-                                            ) + fadeIn()
-                                        ) {
+                                        // The entrance is composed only for a
+                                        // message this device just sent. Every
+                                        // other row renders without transition
+                                        // state, so scrolling and paging cannot
+                                        // replay an old message's animation.
+                                        val bubbleContent: @Composable () -> Unit = {
                                         MessageBubble(
                                             dialogKind = dialog?.kind ?: DialogKind.Direct,
                                             message = message,
@@ -1924,8 +1989,12 @@ fun DialogScreen(
                                             reply = reply,
                                             replyThumbnail = replyThumbnail,
                                             isSelectionMode = selectedMessageIds.isNotEmpty(),
-                                            isSelected = message.messageId in selectedMessageIds,
-                                            isPinned = dialog?.pinnedMessageId == message.messageId,
+                                            isSelected = message.allMessageIds.any { id ->
+                                                id in selectedMessageIds
+                                            },
+                                            isPinned = dialog?.pinnedMessageId?.let { id ->
+                                                id in message.allMessageIds
+                                            } == true,
                                             onOpenStickerSet = { setId ->
                                                 openedStickerSetId = setId
                                             },
@@ -1941,7 +2010,7 @@ fun DialogScreen(
                                             onToggleSelection = {
                                                 val ids = message.allMessageIds.toSet()
                                                 selectedMessageIds =
-                                                    if (message.messageId in selectedMessageIds) {
+                                                    if (ids.any { id -> id in selectedMessageIds }) {
                                                         selectedMessageIds - ids
                                                     } else {
                                                         selectedMessageIds + ids
@@ -1957,7 +2026,9 @@ fun DialogScreen(
                                             onPin = {
                                                 pinMessage(
                                                     message = message,
-                                                    isPinned = dialog?.pinnedMessageId != message.messageId
+                                                    isPinned = dialog?.pinnedMessageId?.let { id ->
+                                                        id !in message.allMessageIds
+                                                    } != false
                                                 )
                                             },
                                             onSelect = {
@@ -2060,6 +2131,29 @@ fun DialogScreen(
                                                 }
                                             }
                                         )
+                                        }
+
+                                        if (shouldAnimate) {
+                                            val appearanceState = remember(message.messageId) {
+                                                MutableTransitionState(false)
+                                                    .apply { targetState = true }
+                                            }
+
+                                            LaunchedEffect(message.messageId) {
+                                                animatedMessageIds =
+                                                    animatedMessageIds + message.messageId
+                                            }
+
+                                            AnimatedVisibility(
+                                                visibleState = appearanceState,
+                                                enter = slideInVertically(
+                                                    initialOffsetY = { height -> height }
+                                                ) + fadeIn()
+                                            ) {
+                                                bubbleContent()
+                                            }
+                                        } else {
+                                            bubbleContent()
                                         }
                                     }
                                 }
@@ -2169,6 +2263,37 @@ fun DialogScreen(
                                         .onFailure {
                                             error = it.message ?: "Failed to send the sticker"
                                         }
+                                }
+                            },
+                            otherSessions = allSessions.values.filter { other ->
+                                other.accountId != session.accountId
+                            },
+                            onCrossProviderStickerSelected = { source, sticker ->
+                                showEmojiPicker = false
+                                showHoverPicker = false
+
+                                scope.launch {
+                                    val bytes = source.loadMediaBytes(
+                                        fileId = sticker.stickerFileId ?: sticker.fileId,
+                                        uniqueId = sticker.stickerUniqueId
+                                            ?: sticker.fileUniqueId
+                                    )
+
+                                    if (bytes == null) {
+                                        error = "Could not load the sticker"
+                                    } else {
+                                        session.sendStickerBytes(
+                                            providerDialogId = providerDialogId,
+                                            bytes = bytes,
+                                            format = sticker.stickerFormat,
+                                            width = sticker.width,
+                                            height = sticker.height
+                                        ).onSuccess {
+                                            scrollRequest = ScrollRequest.Latest
+                                        }.onFailure {
+                                            error = it.message ?: "Failed to send the sticker"
+                                        }
+                                    }
                                 }
                             },
                             onAnimationSelected = { animation ->
@@ -2305,6 +2430,18 @@ fun DialogScreen(
                                 .weight(1f)
                                 .heightIn(min = 35.dp)
                                 .onPreviewKeyEvent { event ->
+                                    val isPaste = event.type == KeyEventType.KeyDown &&
+                                        event.isCtrlPressed && event.key == Key.V
+
+                                    if (isPaste && editingMessage == null) {
+                                        val images = readClipboardImages()
+
+                                        if (images.isNotEmpty()) {
+                                            addAttachments(images, asPhoto = true)
+                                            return@onPreviewKeyEvent true
+                                        }
+                                    }
+
                                     if(
                                         event.type == KeyEventType.KeyDown &&
                                         (event.key == Key.Enter || event.key == Key.NumPadEnter) &&
@@ -2499,43 +2636,31 @@ fun DialogScreen(
 }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AttachmentReviewDialog(
     attachments: List<PendingAttachment>,
     caption: String,
     isSending: Boolean,
+    isMobile: Boolean,
+    session: AccountSession?,
     onCaptionChange: (String) -> Unit,
+    onInsertEmoji: (fallback: String, emojiId: Long?) -> Unit,
+    onAddImages: () -> Unit,
+    onAddFiles: () -> Unit,
     onRemove: (Int) -> Unit,
     onDiscard: () -> Unit,
     onSend: () -> Unit
 ) {
-    Dialog(
-        onDismissRequest = {},
-        properties = DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Box(
+    var showEmojiPicker by remember { mutableStateOf(false) }
+
+    val content: @Composable () -> Unit = {
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.62f))
-                // Taps outside the card are swallowed, not treated as dismiss.
-                .clickable {},
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
                     Text(
                         text = "Send ${attachments.size} " +
                             if (attachments.size == 1) "attachment" else "attachments",
@@ -2584,44 +2709,138 @@ private fun AttachmentReviewDialog(
                         }
                     }
 
-                    OutlinedTextField(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        value = caption,
-                        onValueChange = onCaptionChange,
-                        label = { Text("Caption (optional)") },
-                        minLines = 1,
-                        maxLines = 4
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        OutlinedTextField(
+                            modifier = Modifier.weight(1f),
+                            value = caption,
+                            onValueChange = onCaptionChange,
+                            label = { Text("Caption (optional)") },
+                            minLines = 1,
+                            maxLines = 4
+                        )
+
+                        IconButton(
+                            enabled = session != null,
+                            onClick = { showEmojiPicker = true }
+                        ) {
+                            Icon(
+                                imageVector = mood_icon,
+                                contentDescription = "Insert emoji"
+                            )
+                        }
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(
-                            enabled = !isSending,
-                            onClick = onDiscard
-                        ) {
-                            Text("Discard")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                enabled = !isSending &&
+                                    attachments.size < MaxAlbumAttachments,
+                                onClick = onAddImages
+                            ) {
+                                Text("Add photos")
+                            }
+
+                            TextButton(
+                                enabled = !isSending &&
+                                    attachments.size < MaxAlbumAttachments,
+                                onClick = onAddFiles
+                            ) {
+                                Text("Add files")
+                            }
                         }
 
-                        Button(
-                            enabled = !isSending,
-                            onClick = onSend
-                        ) {
-                            if (isSending) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("Send")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                enabled = !isSending,
+                                onClick = onDiscard
+                            ) {
+                                Text("Discard")
+                            }
+
+                            Button(
+                                enabled = !isSending,
+                                onClick = onSend
+                            ) {
+                                if (isSending) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text("Send")
+                                }
                             }
                         }
                     }
+        }
+    }
+
+    if (isMobile) {
+        val sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { value -> value != SheetValue.Hidden }
+        )
+
+        // The review sheet blocks back/drag dismissal: the only ways out are
+        // Send and Discard, matching the desktop modal.
+        ModalBottomSheet(
+            onDismissRequest = {},
+            sheetState = sheetState
+        ) {
+            content()
+        }
+    } else {
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.62f))
+                    // Taps outside the card are swallowed, not treated as dismiss.
+                    .clickable {},
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    content()
                 }
             }
         }
+    }
+
+    if (showEmojiPicker && session != null) {
+        EmojiPickerDialog(
+            isMobile = isMobile,
+            session = session,
+            onDismiss = { showEmojiPicker = false },
+            onEmojiSelected = { emoji ->
+                onInsertEmoji(emoji, null)
+                showEmojiPicker = false
+            },
+            onCustomEmojiSelected = { emojiId, fallback ->
+                onInsertEmoji(fallback, emojiId)
+                showEmojiPicker = false
+            }
+        )
     }
 }
 
@@ -2846,11 +3065,11 @@ private sealed interface ScrollRequest {
 
 private fun replyFor(
     message: ChatMessage,
-    allMessages: List<ChatMessage>,
+    messagesById: Map<Long, ChatMessage>,
     loadedReplies: Map<Long, ChatMessage> = emptyMap()
 ): MessageReply? {
     val reply = message.replyTo ?: return null
-    val original = allMessages.firstOrNull { it.messageId == reply.messageId }
+    val original = messagesById[reply.messageId]
         ?: loadedReplies[reply.messageId]
 
     return if (original != null) {
@@ -2972,9 +3191,11 @@ private fun MessageImagePreview(
     // the bubble after it decodes. The dimensions that come with the message
     // are stable, which keeps the list from shifting under the user.
     val aspectRatio = if (media.width > 0 && media.height > 0) {
-        media.width.toFloat() / media.height
+        (media.width.toFloat() / media.height).coerceIn(0.5f, 2f)
     } else {
-        bitmap?.let { it.width.toFloat() / it.height } ?: (4f / 3f)
+        // A decoded preview can be cropped, so its ratio is not a stable
+        // layout input. Keep one fixed fallback for this message forever.
+        4f / 3f
     }
 
     Box(
@@ -3091,7 +3312,7 @@ private fun MessagePollCard(
     val showResults = poll.canSeeResults && (hasVotes || poll.isClosed)
     val canVote = !poll.isClosed && session != null
     val hasChosenOption = poll.options.any { option -> option.isChosen }
-    val canRetractVote = canVote && hasChosenOption && !poll.isQuiz
+    val canRetractVote = canVote && hasChosenOption && !poll.isQuiz && poll.allowsRevoting
 
     Column(
         modifier = Modifier
@@ -3107,12 +3328,19 @@ private fun MessagePollCard(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(
-            text = poll.question.ifBlank { "Poll" },
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = contentColor
-        )
+        CompositionLocalProvider(
+            LocalTextStyle provides MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.SemiBold
+            ),
+            LocalContentColor provides contentColor
+        ) {
+            CustomEmojiMessageText(
+                text = poll.question.ifBlank { "Poll" },
+                emojis = poll.customEmojis,
+                data = customEmojiData,
+                adaptiveEmojis = customEmojiAdaptive
+            )
+        }
 
         Text(
             text = pollTypeLabel(poll),
@@ -3357,6 +3585,7 @@ private fun pollTypeLabel(poll: MessagePollInfo): String {
     }
 
     if (poll.allowsMultipleAnswers) parts += "Multiple answers"
+    if (poll.allowsRevoting) parts += "Revoting"
     if (poll.isClosed) parts += "Final results"
 
     return parts.joinToString(" · ")

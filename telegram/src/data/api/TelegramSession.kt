@@ -25,6 +25,7 @@ import com.mrboomdev.scrollix.data.model.MessageLinkPreview
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessageVideoQuality
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
@@ -59,7 +60,9 @@ import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.MessageHistoryController
+import com.mrboomdev.scrollix.data.provider.MessagePage
 import com.mrboomdev.scrollix.data.provider.MessagePageLoader
+import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
 import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
@@ -95,6 +98,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 private const val TypingStatusTimeoutMillis = 5_000L
+private const val MaxPendingLiveMessages = 100
 
 /** Usernames that TDLib can resolve to a user profile. */
 private val MentionUsernameRegex = Regex("""(?<![\w@])@([A-Za-z][A-Za-z0-9_]{2,31})""")
@@ -116,6 +120,12 @@ class TelegramSession(
      * so paging one chat cannot disturb another chat's loaded range.
      */
     private val histories = MutableStateFlow<Map<String, MessageHistoryController>>(emptyMap())
+
+    /**
+     * Live messages that arrived before a dialog had a controller. They are
+     * replayed as soon as the controller is created instead of being dropped.
+     */
+    private val pendingLiveMessages = mutableMapOf<String, MutableList<Message>>()
 
     private val emptyHistory = MutableStateFlow(
         MessageHistory(
@@ -211,6 +221,17 @@ class TelegramSession(
         return history.loadUntilLoaded(messageId)
     }
 
+    override suspend fun loadMessagesAround(
+        providerDialogId: String,
+        messageId: Long,
+        radius: Int
+    ): Result<Boolean> {
+        val history = historyFor(providerDialogId)
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return history.loadAround(messageId, radius)
+    }
+
     private fun historyFor(providerDialogId: String): MessageHistoryController? {
         val chatId = providerDialogId.toLongOrNull() ?: return null
 
@@ -221,14 +242,14 @@ class TelegramSession(
                 override suspend fun load(
                     fromMessageId: Long,
                     limit: Int
-                ): Result<List<ChatMessage>> {
+                ): Result<MessagePage> {
                     return try {
                         Result.success(
                             fetchChatHistory(
                                 chatId = chatId,
                                 fromMessageId = fromMessageId,
                                 limit = limit
-                            ).map(::mapMessage)
+                            )
                         )
                     } catch (exception: CancellationException) {
                         throw exception
@@ -239,24 +260,35 @@ class TelegramSession(
             }
         )
 
+        // Only the controller that actually won the race may seed and replay;
+        // a second historyFor() call creates a throwaway controller otherwise.
         histories.update { existing ->
-            existing + (providerDialogId to (existing[providerDialogId] ?: created))
+            if (existing.containsKey(providerDialogId)) existing
+            else existing + (providerDialogId to created)
         }
+
+        val winner = histories.value[providerDialogId] ?: return null
+        if (winner !== created) return winner
 
         // Cached messages fill the window immediately while the real page loads.
         scope.launch {
             val cached = CacheStore.loadMessages(accountId, providerDialogId)
-            if (cached.isNotEmpty()) created.seed(cached)
+            if (cached.isNotEmpty() && !closed) created.seed(cached)
+
+            val pending = pendingLiveMessages.remove(providerDialogId)
+            if (!pending.isNullOrEmpty() && !closed) {
+                created.merge(pending.map(::mapMessage))
+            }
         }
 
-        return histories.value[providerDialogId]
+        return winner
     }
 
     private suspend fun fetchChatHistory(
         chatId: Long,
         fromMessageId: Long,
         limit: Int
-    ): List<Message> {
+    ): MessagePage {
         return when (val result = client.getChatHistory(
             chatId = chatId,
             fromMessageId = fromMessageId,
@@ -264,7 +296,11 @@ class TelegramSession(
             limit = limit.coerceIn(1, 100),
             onlyLocal = false
         )) {
-            is TdlResult.Success -> result.result.messages.filterNotNull()
+            is TdlResult.Success -> MessagePage(
+                messages = result.result.messages.filterNotNull().map(::mapMessage),
+                totalCount = result.result.totalCount
+            )
+
             is TdlResult.Failure -> throw Exception(result.message)
         }
     }
@@ -528,41 +564,98 @@ class TelegramSession(
         question: String,
         options: List<String>,
         isAnonymous: Boolean,
-        allowsMultipleAnswers: Boolean
+        allowsMultipleAnswers: Boolean,
+        allowsRevoting: Boolean,
+        questionCustomEmojis: List<CustomEmojiSpan>,
+        optionCustomEmojis: List<List<CustomEmojiSpan>>,
+        optionMediaPaths: List<String?>,
+        isQuiz: Boolean,
+        correctOptionIndex: Int?,
+        explanation: String
     ): Result<Unit> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
         val cleanQuestion = question.trim()
-        val cleanOptions = options.map(String::trim).filter(String::isNotEmpty)
+        val cleanedOptions = options.mapIndexedNotNull { index, text ->
+            val trimmed = text.trim()
+            if (trimmed.isEmpty()) null else index to trimmed
+        }
 
         if (cleanQuestion.isEmpty()) {
             return Result.failure(IllegalArgumentException("Poll question is empty"))
         }
-        if (cleanOptions.size < 2) {
+        if (cleanedOptions.size < 2) {
             return Result.failure(IllegalArgumentException("A poll needs two options"))
+        }
+
+        // Blank options were dropped above, so the correct answer has to be
+        // re-mapped onto the list that is actually sent.
+        val quizAnswerIndex = if (isQuiz) {
+            cleanedOptions.indexOfFirst { (originalIndex, _) ->
+                originalIndex == correctOptionIndex
+            }
+        } else {
+            -1
+        }
+
+        if (isQuiz && quizAnswerIndex < 0) {
+            return Result.failure(IllegalArgumentException("A quiz needs a correct answer"))
         }
 
         return sendContent(
             chatId = chatId,
             content = InputMessagePoll(
-                question = FormattedText(cleanQuestion, emptyArray()),
-                options = cleanOptions.map { option ->
+                question = FormattedText(
+                    text = cleanQuestion,
+                    entities = customEmojiEntities(question, questionCustomEmojis)
+                ),
+                options = cleanedOptions.map { (originalIndex, text) ->
+                    val mediaPath = optionMediaPaths
+                        .getOrNull(originalIndex)
+                        ?.takeIf(String::isNotBlank)
+
                     InputPollOption(
-                        text = FormattedText(option, emptyArray()),
-                        media = null
+                        text = FormattedText(
+                            text = text,
+                            entities = customEmojiEntities(
+                                options[originalIndex],
+                                optionCustomEmojis.getOrNull(originalIndex).orEmpty()
+                            )
+                        ),
+                        media = mediaPath?.let { path ->
+                            InputPollMediaPhoto(
+                                photo = InputPhoto(
+                                    photo = InputFileLocal(path),
+                                    thumbnail = null,
+                                    video = null,
+                                    addedStickerFileIds = intArrayOf(),
+                                    width = 0,
+                                    height = 0
+                                )
+                            )
+                        }
                     )
                 }.toTypedArray(),
                 description = FormattedText("", emptyArray()),
                 media = null,
                 isAnonymous = isAnonymous,
-                allowsMultipleAnswers = allowsMultipleAnswers,
-                allowsRevoting = true,
+                // Telegram quizzes are single-answer and cannot be re-voted.
+                allowsMultipleAnswers = allowsMultipleAnswers && !isQuiz,
+                allowsRevoting = if (isQuiz) false else allowsRevoting,
                 membersOnly = false,
                 countryCodes = emptyArray(),
                 shuffleOptions = false,
                 hideResultsUntilCloses = false,
-                type = InputPollTypeRegular(allowAddingOptions = false),
+                type = if (isQuiz) {
+                    InputPollTypeQuiz(
+                        correctOptionIds = intArrayOf(quizAnswerIndex),
+                        explanation = FormattedText(explanation.trim(), emptyArray()),
+                        explanationMedia = null
+                    )
+                } else {
+                    InputPollTypeRegular(allowAddingOptions = false)
+                },
                 openPeriod = 0,
                 closeDate = 0,
                 isClosed = false
@@ -957,6 +1050,64 @@ class TelegramSession(
         }
     }
 
+    override suspend fun deleteDialog(
+        providerDialogId: String,
+        revoke: Boolean
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val chat = when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> null
+            }
+
+            val result = when (chat?.type) {
+                // Groups and channels are left instead of wiped: deleting the
+                // history of a shared chat would only clear it for this user.
+                is ChatTypeBasicGroup, is ChatTypeSupergroup -> client.leaveChat(chatId)
+                else -> client.deleteChatHistory(
+                    chatId = chatId,
+                    removeFromChatList = true,
+                    revoke = revoke
+                )
+            }
+
+            when (result) {
+                is TdlResult.Success -> {
+                    _chats.update { entries -> entries - chatId }
+                    histories.update { entries -> entries - providerDialogId }
+                    CacheStore.deleteMessages(accountId, providerDialogId)
+                    emitDialogs()
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun setUserBlocked(userId: Long, blocked: Boolean): Result<Unit> {
+        return try {
+            when (val result = client.setMessageSenderBlockList(
+                senderId = MessageSenderUser(userId),
+                blockList = if (blocked) BlockListMain() else null
+            )) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun setDialogPinned(
         providerDialogId: String,
         isPinned: Boolean,
@@ -1098,7 +1249,8 @@ class TelegramSession(
                         null
                     },
                     commonGroups = loadCommonGroups(resolvedUserId),
-                    tracks = loadProfileTracks(resolvedUserId)
+                    tracks = loadProfileTracks(resolvedUserId),
+                    isBlocked = fullInfo?.blockList != null
                 )
             )
         } catch (exception: CancellationException) {
@@ -1845,9 +1997,18 @@ class TelegramSession(
                 }
 
                 histories.value.forEach { (dialogId, controller) ->
-                    val messages = controller.state.value.messages
+                    val state = controller.state.value
+                    val messages = state.messages
 
-                    if (messages.isNotEmpty() && savedHistories[dialogId] !== messages) {
+                    // Never overwrite a good newest-page cache with an older
+                    // jump block: the next launch would restore a middle
+                    // slice as if it were the end of the chat.
+                    if (
+                        messages.isNotEmpty() &&
+                        !state.hasMoreNewer &&
+                        !state.isLoadingInitial &&
+                        savedHistories[dialogId] !== messages
+                    ) {
                         CacheStore.saveMessages(accountId, dialogId, messages)
                         savedHistories[dialogId] = messages
                     }
@@ -1986,7 +2147,9 @@ class TelegramSession(
                 AuthAction.UseQrCode -> client.requestQrCodeAuthentication(
                     otherUserIds = longArrayOf()
                 )
-                AuthAction.Submit, is AuthAction.OpenUrl -> return
+                AuthAction.Submit,
+                AuthAction.RefreshCaptcha,
+                is AuthAction.OpenUrl -> return
             }
         } catch (exception: CancellationException) {
             throw exception
@@ -3733,6 +3896,7 @@ class TelegramSession(
         return MessagePollInfo(
             id = poll.id,
             question = poll.question.text,
+            customEmojis = customEmojiSpans(poll.question),
             options = poll.options.map { option ->
                 MessagePollOptionInfo(
                     id = option.id,
@@ -3749,6 +3913,7 @@ class TelegramSession(
             isClosed = poll.isClosed,
             isAnonymous = poll.isAnonymous,
             allowsMultipleAnswers = poll.allowsMultipleAnswers,
+            allowsRevoting = poll.allowsRevoting,
             canSeeResults = poll.canSeeResults,
             isQuiz = quiz != null,
             correctOptionIds = quiz?.correctOptionIds?.toList().orEmpty(),
@@ -4000,7 +4165,19 @@ class TelegramSession(
                     size = video.video.size,
                     width = video.width,
                     height = video.height,
-                    minithumbnail = video.minithumbnail?.data
+                    minithumbnail = video.minithumbnail?.data,
+                    videoQualities = content.alternativeVideos
+                        .map { alternative ->
+                            MessageVideoQuality(
+                                width = alternative.width,
+                                height = alternative.height,
+                                codec = alternative.codec,
+                                fileId = alternative.video.id,
+                                fileUniqueId = alternative.video.remote.uniqueId,
+                                size = alternative.video.size
+                            )
+                        }
+                        .sortedBy { quality -> quality.height }
                 )
             }
 
@@ -4119,10 +4296,86 @@ class TelegramSession(
     }
 
     override suspend fun resolveTelegramLink(url: String): Result<String> {
-        val link = url.trim()
+        return resolveTelegramLinkTarget(url).mapCatching { target ->
+            when (target) {
+                is TelegramLinkTarget.Dialog -> target.providerDialogId
+                is TelegramLinkTarget.StickerSet -> throw IllegalArgumentException(
+                    "Sticker set links do not point at a chat"
+                )
+            }
+        }
+    }
 
-        if (!link.contains("t.me/") && !link.contains("telegram.me/")) {
+    override suspend fun resolveTelegramLinkTarget(url: String): Result<TelegramLinkTarget> {
+        val link = url.trim()
+        val lower = link.lowercase()
+
+        if (!lower.startsWith("tg://") &&
+            !lower.contains("t.me/") &&
+            !lower.contains("telegram.me/")
+        ) {
             return Result.failure(IllegalArgumentException("Not a Telegram link"))
+        }
+
+        // Explicit fallbacks for the pack links this app is expected to
+        // handle, in case TDLib cannot classify the link.
+        if (lower.startsWith("tg://addstickers") || lower.startsWith("tg://addemoji")) {
+            val name = link.substringAfter("set=", "")
+                .substringBefore('&')
+                .substringBefore('#')
+
+            if (name.isNotBlank()) {
+                val customEmoji = lower.startsWith("tg://addemoji")
+
+                return Result.success(
+                    TelegramLinkTarget.StickerSet(
+                        name = name,
+                        kind = if (customEmoji) {
+                            StickerPackKind.CustomEmoji
+                        } else {
+                            StickerPackKind.Sticker
+                        },
+                        expectCustomEmoji = customEmoji
+                    )
+                )
+            }
+        }
+
+        return try {
+            // TDLib understands the addstickers/addemoji names, tg:// forms,
+            // invite links and message links, so it classifies the link
+            // instead of the app guessing from path prefixes.
+            when (val classified = client.getInternalLinkType(link)) {
+                is TdlResult.Success -> when (val type = classified.result) {
+                    is InternalLinkTypeStickerSet -> Result.success(
+                        TelegramLinkTarget.StickerSet(
+                            name = type.stickerSetName,
+                            kind = if (type.expectCustomEmoji) {
+                                StickerPackKind.CustomEmoji
+                            } else {
+                                StickerPackKind.Sticker
+                            },
+                            expectCustomEmoji = type.expectCustomEmoji
+                        )
+                    )
+
+                    is InternalLinkTypePublicChat -> publicChatTarget(type.chatUsername)
+                    is InternalLinkTypeChatInvite -> resolveInviteTarget(link)
+                    else -> resolveLegacyTarget(link)
+                }
+
+                is TdlResult.Failure -> resolveLegacyTarget(link)
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    private suspend fun resolveLegacyTarget(link: String): Result<TelegramLinkTarget> {
+        if (!link.contains("t.me/") && !link.contains("telegram.me/")) {
+            return Result.failure(IllegalArgumentException("Unsupported Telegram link"))
         }
 
         val path = link
@@ -4131,48 +4384,84 @@ class TelegramSession(
             .trim('/')
 
         if (path.isBlank()) return Result.failure(IllegalArgumentException("Empty link"))
+        if (path.startsWith("+") || path.startsWith("joinchat/")) return resolveInviteTarget(link)
 
-        return try {
-            if (path.startsWith("+") || path.startsWith("joinchat/")) {
-                val info = when (val checked = client.checkChatInviteLink(link)) {
-                    is TdlResult.Success -> checked.result
-                    is TdlResult.Failure -> return Result.failure(
-                        IllegalStateException("Invalid invite link")
+        if (path.startsWith("addstickers/") || path.startsWith("addemoji/")) {
+            val customEmoji = path.startsWith("addemoji/")
+            val name = path.substringAfter('/').substringBefore('/')
+
+            if (name.isNotBlank()) {
+                return Result.success(
+                    TelegramLinkTarget.StickerSet(
+                        name = name,
+                        kind = if (customEmoji) {
+                            StickerPackKind.CustomEmoji
+                        } else {
+                            StickerPackKind.Sticker
+                        },
+                        expectCustomEmoji = customEmoji
                     )
-                }
+                )
+            }
+        }
 
-                if (info.chatId != 0L) {
-                    return Result.success(info.chatId.toString())
-                }
+        val segments = path.split('/')
+        val username = segments.firstOrNull().orEmpty()
+        val messageId = segments.getOrNull(1)?.toLongOrNull()
 
-                return when (val joined = client.joinChatByInviteLink(link)) {
-                    is TdlResult.Success -> {
-                        when (val result = joined.result) {
-                            is ChatJoinResultSuccess -> Result.success(result.chatId.toString())
-                            else -> Result.failure(
-                                IllegalStateException("Could not join the chat")
-                            )
-                        }
-                    }
+        return publicChatTarget(username, messageId)
+    }
 
-                    is TdlResult.Failure -> Result.failure(
+    private suspend fun publicChatTarget(
+        username: String,
+        messageId: Long? = null
+    ): Result<TelegramLinkTarget> {
+        if (username.isBlank()) {
+            return Result.failure(IllegalArgumentException("Empty link"))
+        }
+
+        return when (val response = client.searchPublicChat(username)) {
+            is TdlResult.Success -> Result.success(
+                TelegramLinkTarget.Dialog(
+                    providerDialogId = response.result.id.toString(),
+                    messageId = messageId
+                )
+            )
+
+            is TdlResult.Failure -> Result.failure(
+                IllegalStateException("@$username was not found")
+            )
+        }
+    }
+
+    private suspend fun resolveInviteTarget(link: String): Result<TelegramLinkTarget> {
+        val info = when (val checked = client.checkChatInviteLink(link)) {
+            is TdlResult.Success -> checked.result
+            is TdlResult.Failure -> return Result.failure(
+                IllegalStateException("Invalid invite link")
+            )
+        }
+
+        if (info.chatId != 0L) {
+            return Result.success(TelegramLinkTarget.Dialog(info.chatId.toString()))
+        }
+
+        return when (val joined = client.joinChatByInviteLink(link)) {
+            is TdlResult.Success -> {
+                when (val result = joined.result) {
+                    is ChatJoinResultSuccess -> Result.success(
+                        TelegramLinkTarget.Dialog(result.chatId.toString())
+                    )
+
+                    else -> Result.failure(
                         IllegalStateException("Could not join the chat")
                     )
                 }
             }
 
-            val username = path.substringBefore('/')
-
-            when (val response = client.searchPublicChat(username)) {
-                is TdlResult.Success -> Result.success(response.result.id.toString())
-                is TdlResult.Failure -> Result.failure(
-                    IllegalStateException("@$username was not found")
-                )
-            }
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: Exception) {
-            Result.failure(exception)
+            is TdlResult.Failure -> Result.failure(
+                IllegalStateException("Could not join the chat")
+            )
         }
     }
 
@@ -4334,50 +4623,7 @@ class TelegramSession(
     override suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo> {
         return try {
             when (val response = client.getStickerSet(setId)) {
-                is TdlResult.Success -> {
-                    val set = response.result
-
-                    // Remember the full sticker objects: a custom emoji picked
-                    // from an installed pack must not depend on a second
-                    // getCustomEmojiStickers round trip to start rendering.
-                    customEmojiCacheMutex.withLock {
-                        set.stickers.forEach { sticker ->
-                            customEmojiCache[sticker.id] = sticker
-                        }
-                    }
-
-                    Result.success(
-                        StickerSetInfo(
-                            id = set.id,
-                            title = set.title,
-                            name = set.name,
-                            isInstalled = set.isInstalled,
-                            stickers = set.stickers.map { sticker ->
-                                MessageMedia(
-                                    kind = MessageMediaKind.Sticker,
-                                    previewFileId = sticker.thumbnail?.file?.id,
-                                    previewUniqueId = sticker.thumbnail?.file?.remote?.uniqueId,
-                                    fileId = sticker.sticker.id,
-                                    fileUniqueId = sticker.sticker.remote.uniqueId,
-                                    stickerFileId = sticker.sticker.id,
-                                    stickerUniqueId = sticker.sticker.remote.uniqueId,
-                                    stickerSetId = sticker.setId,
-                                    stickerId = sticker.id,
-                                    stickerEmoji = sticker.emoji,
-                                    size = sticker.sticker.size,
-                                    width = sticker.width,
-                                    height = sticker.height,
-                                    stickerFormat = when (sticker.format) {
-                                        is StickerFormatTgs -> MessageStickerFormat.Tgs
-                                        is StickerFormatWebm -> MessageStickerFormat.Webm
-                                        else -> MessageStickerFormat.Webp
-                                    }
-                                )
-                            }
-                        )
-                    )
-                }
-
+                is TdlResult.Success -> Result.success(mapStickerSet(response.result))
                 is TdlResult.Failure -> Result.failure(
                     IllegalStateException("Failed to load the sticker pack")
                 )
@@ -4387,6 +4633,99 @@ class TelegramSession(
         } catch (exception: Exception) {
             Result.failure(exception)
         }
+    }
+
+    override suspend fun loadStickerSetByName(
+        name: String,
+        kind: StickerPackKind
+    ): Result<StickerSetInfo> {
+        val clean = name.trim()
+        if (clean.isBlank()) {
+            return Result.failure(IllegalArgumentException("Sticker set name is empty"))
+        }
+
+        return try {
+            val found = when (val first = client.searchStickerSet(clean, false)) {
+                is TdlResult.Success -> first.result
+                is TdlResult.Failure -> when (val retried = client.searchStickerSet(clean, true)) {
+                    is TdlResult.Success -> retried.result
+                    is TdlResult.Failure -> return Result.failure(
+                        IllegalStateException("Sticker pack @$clean was not found")
+                    )
+                }
+            }
+
+            // Some TDLib versions return the set metadata without stickers
+            // from search; load the full set in that case.
+            val full = if (found.stickers.isEmpty() && found.id != 0L) {
+                when (val loaded = client.getStickerSet(found.id)) {
+                    is TdlResult.Success -> loaded.result
+                    is TdlResult.Failure -> found
+                }
+            } else {
+                found
+            }
+
+            Result.success(mapStickerSet(full, kind))
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    private suspend fun mapStickerSet(
+        set: StickerSet,
+        kind: StickerPackKind? = null
+    ): StickerSetInfo {
+        // Remember the full sticker objects: a custom emoji picked from an
+        // installed pack must not depend on a second getCustomEmojiStickers
+        // round trip to start rendering.
+        customEmojiCacheMutex.withLock {
+            set.stickers.forEach { sticker ->
+                customEmojiCache[sticker.id] = sticker
+            }
+        }
+
+        val resolvedKind = kind ?: if (set.stickers.any { sticker ->
+                sticker.fullType is StickerFullTypeCustomEmoji
+            }
+        ) {
+            StickerPackKind.CustomEmoji
+        } else {
+            StickerPackKind.Sticker
+        }
+
+        return StickerSetInfo(
+            id = set.id,
+            title = set.title,
+            name = set.name,
+            isInstalled = set.isInstalled,
+            stickers = set.stickers.map { sticker ->
+                MessageMedia(
+                    kind = MessageMediaKind.Sticker,
+                    previewFileId = sticker.thumbnail?.file?.id,
+                    previewUniqueId = sticker.thumbnail?.file?.remote?.uniqueId,
+                    fileId = sticker.sticker.id,
+                    fileUniqueId = sticker.sticker.remote.uniqueId,
+                    stickerFileId = sticker.sticker.id,
+                    stickerUniqueId = sticker.sticker.remote.uniqueId,
+                    stickerSetId = sticker.setId,
+                    stickerId = sticker.id,
+                    stickerEmoji = sticker.emoji,
+                    needsRepainting = sticker.needsRepainting(),
+                    size = sticker.sticker.size,
+                    width = sticker.width,
+                    height = sticker.height,
+                    stickerFormat = when (sticker.format) {
+                        is StickerFormatTgs -> MessageStickerFormat.Tgs
+                        is StickerFormatWebm -> MessageStickerFormat.Webm
+                        else -> MessageStickerFormat.Webp
+                    }
+                )
+            },
+            kind = resolvedKind
+        )
     }
 
     override suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit> {
@@ -4570,6 +4909,62 @@ class TelegramSession(
                     height = sticker.height
                 ),
                 emoji = ""
+            )
+        )
+    }
+
+    override suspend fun sendStickerBytes(
+        providerDialogId: String,
+        bytes: ByteArray,
+        format: MessageStickerFormat,
+        width: Int,
+        height: Int
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (bytes.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Sticker is empty"))
+        }
+
+        val extension = when (format) {
+            MessageStickerFormat.Tgs -> "tgs"
+            MessageStickerFormat.Webm -> "webm"
+            MessageStickerFormat.Webp -> "webp"
+        }
+
+        val path = "stickers/imported/${bytes.contentHashCode()}-${bytes.size}.$extension"
+        runCatching { storage.writeBytes(path, bytes) }
+            .getOrElse { return Result.failure(it) }
+
+        val absolutePath = storage.absolutePath(path)
+
+        val sticker = sendContent(
+            chatId = chatId,
+            content = InputMessageSticker(
+                sticker = InputSticker(
+                    sticker = InputFileLocal(absolutePath),
+                    thumbnail = null,
+                    width = width.coerceAtLeast(1),
+                    height = height.coerceAtLeast(1)
+                ),
+                emoji = ""
+            )
+        )
+
+        if (sticker.isSuccess) return sticker
+
+        // Not every foreign sticker is a valid Telegram sticker (dimensions,
+        // transparency, format). Sending it as a document keeps it usable.
+        return sendContent(
+            chatId = chatId,
+            content = InputMessageDocument(
+                document = InputDocument(
+                    document = InputFileLocal(absolutePath),
+                    thumbnail = null,
+                    disableContentTypeDetection = false
+                ),
+                caption = null
             )
         )
     }
@@ -4799,13 +5194,35 @@ class TelegramSession(
             }
         }
 
-        val history = histories.value[message.chatId.toString()] ?: return
+        val key = message.chatId.toString()
+        val history = histories.value[key]
+
+        if (history == null) {
+            // A message can arrive before the dialog was ever opened. Buffer
+            // it so creating the controller does not lose it.
+            pendingLiveMessages.getOrPut(key) { mutableListOf() }.apply {
+                add(message)
+                if (size > MaxPendingLiveMessages) removeAt(0)
+            }
+            return
+        }
 
         history.merge(listOf(mapMessage(message)))
     }
 
     private fun replaceMessage(chatId: Long, oldMessageId: Long, message: Message) {
-        histories.value[chatId.toString()]?.replace(oldMessageId, mapMessage(message))
+        val key = chatId.toString()
+        val history = histories.value[key]
+
+        if (history == null) {
+            pendingLiveMessages[key]?.let { pending ->
+                val index = pending.indexOfLast { it.id == oldMessageId }
+                if (index >= 0) pending[index] = message else pending += message
+            }
+            return
+        }
+
+        history.replace(oldMessageId, mapMessage(message))
     }
 
     private fun updateMessageContent(chatId: Long, messageId: Long, content: MessageContent) {
@@ -4824,7 +5241,9 @@ class TelegramSession(
     }
 
     private fun removeMessages(chatId: Long, messageIds: LongArray) {
-        histories.value[chatId.toString()]?.remove(messageIds.toSet())
+        val ids = messageIds.toSet()
+        pendingLiveMessages[chatId.toString()]?.removeAll { message -> message.id in ids }
+        histories.value[chatId.toString()]?.remove(ids)
     }
 
     private fun handleChatReadOutbox(chatId: Long, lastReadOutboxMessageId: Long) {

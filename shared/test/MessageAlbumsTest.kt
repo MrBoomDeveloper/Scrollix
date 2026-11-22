@@ -53,6 +53,30 @@ class MessageAlbumsTest {
         assertEquals(2, grouped.allMedia.size)
     }
 
+    @Test
+    fun `merges album items split across a page boundary`() {
+        val messages = listOf(
+            message(id = 5, albumId = 7, media = photo(50)),
+            message(id = 6, media = photo(60)),
+            message(id = 7, albumId = 7, media = photo(70))
+        )
+
+        val grouped = messages.groupMessageAlbums()
+
+        assertEquals(2, grouped.size)
+        assertEquals(listOf(5L, 7L), grouped[0].allMessageIds)
+        assertEquals(listOf(6L), grouped[1].allMessageIds)
+    }
+
+    @Test
+    fun `row id follows the album even when the base changes`() {
+        val firstLoaded = message(id = 10, albumId = 7, media = photo(10))
+        val earlierLoaded = message(id = 8, albumId = 7, media = photo(20))
+
+        assertEquals(firstLoaded.rowId, earlierLoaded.rowId)
+        assertEquals("account:telegram:album:7", firstLoaded.rowId)
+    }
+
     private fun message(
         id: Long,
         albumId: Long? = null,

@@ -10,6 +10,12 @@ expect fun getPlatform(): Platform
 expect fun openDialer(phoneNumber: String)
 
 /**
+ * Shows an OS-level notification for a new message. It is a no-op on
+ * platforms without a desktop notification service.
+ */
+expect fun showDesktopNotification(title: String, body: String)
+
+/**
  * Fetches [url] into memory, with a client User-Agent and a timeout.
  * Returns null on any failure. Used for the single map tile of the location
  * picker, so this is deliberately not a general purpose HTTP client.

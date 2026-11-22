@@ -44,6 +44,12 @@ interface AccountSession {
     fun messageHistory(providerDialogId: String): StateFlow<MessageHistory>
 
     suspend fun start()
+
+    /**
+     * Submits the values of the current [AuthChallenge] fields. A challenge
+     * with [AuthChallenge.captchaUrl] takes its solved token under
+     * [com.mrboomdev.scrollix.data.model.AuthCaptchaValueId].
+     */
     suspend fun submitAuth(values: Map<String, String>)
     suspend fun performAuthAction(action: AuthAction)
 
@@ -55,6 +61,18 @@ interface AccountSession {
     suspend fun loadMessages(providerDialogId: String, limit: Int = 50): Result<Unit>
     suspend fun loadOlderMessages(providerDialogId: String, limit: Int = 50): Result<Boolean>
     suspend fun loadMessagesUntil(providerDialogId: String, messageId: Long): Result<Boolean>
+
+    /**
+     * Loads a window around [messageId] without paging through the chat from
+     * the newest message. Pinned, replied-to and linked messages use this so
+     * a jump costs one page instead of the whole history. Providers that do
+     * not support windowed loading fall back to backwards paging.
+     */
+    suspend fun loadMessagesAround(
+        providerDialogId: String,
+        messageId: Long,
+        radius: Int = 50
+    ): Result<Boolean> = loadMessagesUntil(providerDialogId, messageId)
     suspend fun loadFile(fileId: Int): Result<ByteArray>
 
     /**
@@ -124,13 +142,27 @@ interface AccountSession {
         durationSeconds: Int
     ): Result<Unit> = sendFile(providerDialogId, path, asPhoto = false)
 
-    /** Creates a regular poll on the server. */
+    /**
+     * Creates a regular poll on the server.
+     *
+     * [questionCustomEmojis] and [optionCustomEmojis] are parallel to the
+     * question and [options]; [optionMediaPaths] is parallel to [options] and
+     * may contain null for options without media.
+     */
     suspend fun sendPoll(
         providerDialogId: String,
         question: String,
         options: List<String>,
         isAnonymous: Boolean = true,
-        allowsMultipleAnswers: Boolean = false
+        allowsMultipleAnswers: Boolean = false,
+        allowsRevoting: Boolean = true,
+        questionCustomEmojis: List<CustomEmojiSpan> = emptyList(),
+        optionCustomEmojis: List<List<CustomEmojiSpan>> = emptyList(),
+        optionMediaPaths: List<String?> = emptyList(),
+        isQuiz: Boolean = false,
+        /** Index of the correct answer inside [options], for quizzes. */
+        correctOptionIndex: Int? = null,
+        explanation: String = ""
     ): Result<Unit> = Result.failure(UnsupportedOperationException("Polls are not available"))
 
     /**
@@ -193,6 +225,21 @@ interface AccountSession {
         providerDialogIds: List<String>,
         folderId: Int? = null
     ): Result<Unit> = Result.success(Unit)
+    /**
+     * Deletes a chat or leaves it, depending on its type. Private chats lose
+     * their history for every participant when [revoke] is true.
+     */
+    suspend fun deleteDialog(
+        providerDialogId: String,
+        revoke: Boolean = true
+    ): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Deleting chats is not supported")
+    )
+
+    /** Blocks or unblocks a user on the server. */
+    suspend fun setUserBlocked(userId: Long, blocked: Boolean): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Blocking users is not supported"))
+
     suspend fun loadUserProfile(
         providerDialogId: String,
         userId: Long? = null
@@ -260,6 +307,25 @@ interface AccountSession {
      */
     suspend fun resolveTelegramLink(url: String): Result<String> =
         Result.failure(UnsupportedOperationException("Deep links are not supported"))
+
+    /**
+     * Resolves any Telegram link, including sticker and emoji pack links.
+     * Providers that only know chat links keep the default implementation,
+     * which wraps [resolveTelegramLink].
+     */
+    suspend fun resolveTelegramLinkTarget(url: String): Result<TelegramLinkTarget> =
+        resolveTelegramLink(url).map { providerDialogId ->
+            TelegramLinkTarget.Dialog(providerDialogId)
+        }
+
+    /** Loads a sticker or custom-emoji set by its public name. */
+    suspend fun loadStickerSetByName(
+        name: String,
+        kind: StickerPackKind = StickerPackKind.Sticker
+    ): Result<StickerSetInfo> = Result.failure(
+        UnsupportedOperationException("Loading sticker sets by name is not supported")
+    )
+
     suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>
     suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit>
     suspend fun loadStickerPacks(kind: StickerPackKind): Result<List<StickerPack>>
@@ -270,6 +336,22 @@ interface AccountSession {
     suspend fun removeSavedAnimation(animation: MessageMedia): Result<Unit>
     suspend fun clearSavedAnimations(): Result<Unit>
     suspend fun sendSticker(providerDialogId: String, sticker: MessageMedia): Result<Unit>
+
+    /**
+     * Sends sticker bytes that came from another provider's sticker pack.
+     * Providers convert the image into their own attachment format, because
+     * sticker ids and pack ids are not portable between messengers.
+     */
+    suspend fun sendStickerBytes(
+        providerDialogId: String,
+        bytes: ByteArray,
+        format: com.mrboomdev.scrollix.data.model.MessageStickerFormat,
+        width: Int,
+        height: Int
+    ): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Cross-provider stickers are not supported")
+    )
+
     suspend fun sendAnimation(providerDialogId: String, animation: MessageMedia): Result<Unit>
     suspend fun editMessage(
         providerDialogId: String,

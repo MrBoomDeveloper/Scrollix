@@ -87,7 +87,7 @@ actual fun readFileBytes(path: String): ByteArray? {
     }.getOrNull()
 }
 
-actual fun saveFileToDevice(fileName: String, bytes: ByteArray): String? {
+actual suspend fun saveFileToDevice(fileName: String, bytes: ByteArray): String? {
     return runCatching {
         val safeName = fileName.ifBlank { "file" }
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
