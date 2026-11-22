@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -18,6 +19,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.MenuItemColors
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
@@ -69,8 +74,17 @@ import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.onSecondaryClick
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
+import com.mrboomdev.scrollix.ui.icons.content_copy_icon
+import com.mrboomdev.scrollix.ui.icons.delete_icon
+import com.mrboomdev.scrollix.ui.icons.edit_icon
+import com.mrboomdev.scrollix.ui.icons.forward_icon
+import com.mrboomdev.scrollix.ui.icons.keep_icon
+import com.mrboomdev.scrollix.ui.icons.keep_off_icon
+import com.mrboomdev.scrollix.ui.icons.reply_icon
+import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
 import com.mrboomdev.scrollix.ui.icons.share_icon
 import com.mrboomdev.scrollix.ui.icons.visibility_icon
+import io.github.alexzhirkevich.qrose.SquareShape
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -82,6 +96,7 @@ enum class MessageBubbleConnection {
     BOTTOM
 }
 
+@OptIn(ExperimentalFlexBoxApi::class)
 @Composable
 fun MessageBubble(
     modifier: Modifier = Modifier,
@@ -494,73 +509,133 @@ fun MessageBubble(
                         HorizontalDivider()
                     }
 
-                    if (onReply != null) {
-                        DropdownMenuItem(
-                            text = { Text("Reply") },
-                            onClick = {
-                                menuExpanded = false
-                                onReply()
-                            }
-                        )
-                    }
+                    FlexBox(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        @Composable
+                        fun action(
+                            text: String, 
+                            icon: ImageVector, 
+                            onClick: () -> Unit
+                        ) {
+                            TextButton(
+                                shape = RectangleShape,
+                                
+                                modifier = Modifier.flex { 
+                                    grow(1f)
+                                },
+                                
+                                onClick = {
+                                    menuExpanded = false
+                                    onClick()
+                                }
+                            ) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        modifier = Modifier.size(24.dp),
+                                        imageVector = icon,
+                                        contentDescription = null
+                                    )
 
-                    if (onForward != null) {
+                                    Text(
+                                        style = MaterialTheme.typography.labelMedium,
+                                        text = text
+                                    )
+                                }
+                            }
+                        }
+                        
+                        if(onReply != null) {
+                            action(
+                                text = "Reply",
+                                icon = reply_icon,
+                                onClick = onReply
+                            )
+                        }
+
+                        if(onForward != null) {
+                            action(
+                                text = "Forward",
+                                icon = forward_icon,
+                                onClick = onForward
+                            )
+                        }
+
+                        if (message.text.isNotBlank()) {
+                            action(
+                                text = "Copy",
+                                icon = content_copy_icon,
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(message.text))
+                                }
+                            )
+                        }
+                    }
+                    
+                    @Composable
+                    fun action(
+                        text: String,
+                        icon: ImageVector,
+                        onClick: () -> Unit
+                    ) {
                         DropdownMenuItem(
-                            text = { Text("Forward") },
+                            colors = MenuDefaults.itemColors(
+                                leadingIconColor = MaterialTheme.colorScheme.primary,
+                                textColor = MaterialTheme.colorScheme.primary
+                            ),
+                            
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null
+                                )
+                            },
+                            
+                            text = {
+                                Text(
+                                    text = text
+                                )
+                            },
+                            
                             onClick = {
                                 menuExpanded = false
-                                onForward()
+                                onClick()
                             }
                         )
                     }
 
                     if (onPin != null) {
-                        DropdownMenuItem(
-                            text = { Text(if (isPinned) "Unpin" else "Pin") },
-                            onClick = {
-                                menuExpanded = false
-                                onPin()
-                            }
+                        action(
+                            text = if (isPinned) "Unpin" else "Pin",
+                            icon = if(isPinned) keep_off_icon else keep_icon,
+                            onClick = onPin
                         )
                     }
 
                     if (onEdit != null) {
-                        DropdownMenuItem(
-                            text = { Text("Edit") },
-                            onClick = {
-                                menuExpanded = false
-                                onEdit()
-                            }
-                        )
-                    }
-
-                    if (message.text.isNotBlank()) {
-                        DropdownMenuItem(
-                            text = { Text("Copy text") },
-                            onClick = {
-                                menuExpanded = false
-                                clipboard.setText(AnnotatedString(message.text))
-                            }
+                        action(
+                            text = "Edit",
+                            icon = edit_icon,
+                            onClick = onEdit
                         )
                     }
 
                     if (onSelect != null) {
-                        DropdownMenuItem(
-                            text = { Text("Select") },
-                            onClick = {
-                                menuExpanded = false
-                                onSelect()
-                            }
+                        action(
+                            text = "Select",
+                            icon = select_check_box_icon,
+                            onClick = onSelect
                         )
                     }
 
                     if (onDelete != null) {
-                        DropdownMenuItem(
-                            text = { Text("Delete") },
-                            onClick = {
-                                menuExpanded = false
-                                onDelete()
-                            }
+                        action(
+                            text = "Delete",
+                            icon = delete_icon,
+                            onClick = onDelete
                         )
                     }
                 }
