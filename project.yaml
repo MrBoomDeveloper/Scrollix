@@ -2,7 +2,9 @@ modules:
   - androidApp
   - build-config
   - desktopApp
+  - provider
   - shared
+  - telegram
 
 plugins:
   - ./build-config

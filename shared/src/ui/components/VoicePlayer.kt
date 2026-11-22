@@ -9,6 +9,7 @@ interface VoicePlayback {
 
     fun seekTo(positionMs: Long)
     fun positionMs(): Long
+    fun setVolume(volume: Float) {}
     fun stop()
 }
 

@@ -67,7 +67,8 @@ fun rememberAppEntryProvider(
                             userId = userId
                         )
                     },
-                    onOpenAccountsScreen = { backStack += Route.Accounts }
+                    onOpenAccountsScreen = { backStack += Route.Accounts },
+                    onOpenHashtag = { hashtag -> backStack += Route.Search(hashtag) }
                 )
             } else {
                 HomeScreen(
@@ -144,7 +145,8 @@ fun rememberAppEntryProvider(
                             userId = userId
                         )
                     },
-                    onOpenAccountsScreen = { backStack += Route.Accounts }
+                    onOpenAccountsScreen = { backStack += Route.Accounts },
+                    onOpenHashtag = { hashtag -> backStack += Route.Search(hashtag) }
                 )
             } else {
                 DialogScreen(
@@ -164,6 +166,7 @@ fun rememberAppEntryProvider(
                             userId = userId
                         )
                     },
+                    onOpenHashtag = { hashtag -> backStack += Route.Search(hashtag) },
                     onBack = {
                         backStack.removeLastOrNull()
                     }
@@ -171,8 +174,9 @@ fun rememberAppEntryProvider(
             }
         }
 
-        entry<Route.Search> {
+        entry<Route.Search> { route ->
             SearchScreen(
+                initialQuery = route.query,
                 onBack = {
                     backStack.removeLastOrNull()
                 },
@@ -232,6 +236,23 @@ fun rememberAppEntryProvider(
                         backStack += target
                     }
                 },
+                onOpenMessage = { messageId ->
+                    val target = Route.Dialog(
+                        accountId = route.accountId,
+                        providerDialogId = route.providerDialogId,
+                        messageId = messageId
+                    )
+
+                    backStack.removeLastOrNull()
+
+                    if (isTwoPane) {
+                        onSelectDialog(target)
+                        backStack.clear()
+                        backStack.add(Route.Home)
+                    } else if (backStack.lastOrNull() != target) {
+                        backStack += target
+                    }
+                },
                 onOpenChannelProfile = { channelId ->
                     backStack += Route.Profile(
                         accountId = route.accountId,
@@ -272,6 +293,7 @@ private fun WideDialogsScreen(
     onOpenUserProfile: (Route.Dialog, Long) -> Unit,
     onOpenAccountsScreen: () -> Unit,
     onOpenSettingsScreen: () -> Unit,
+    onOpenHashtag: (String) -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val listWidth = (maxWidth * 0.38f).coerceIn(300.dp, 400.dp)
@@ -319,6 +341,7 @@ private fun WideDialogsScreen(
                             onOpenUserProfile = { userId ->
                                 onOpenUserProfile(selectedDialog, userId)
                             },
+                            onOpenHashtag = onOpenHashtag,
                             onBack = onCloseDialog
                         )
                     }

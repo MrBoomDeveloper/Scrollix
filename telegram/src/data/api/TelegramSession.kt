@@ -21,6 +21,8 @@ import com.mrboomdev.scrollix.data.model.DialogFolderPosition
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageDraft
+import com.mrboomdev.scrollix.data.model.MessageLinkPreview
+import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.NotificationScope
@@ -36,6 +38,16 @@ import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageRichTextStyle
 import com.mrboomdev.scrollix.data.model.MessageSendState
+import com.mrboomdev.scrollix.data.model.SharedMediaKind
+import dev.g000sha256.tdl.dto.FormattedText
+import dev.g000sha256.tdl.dto.InputFileLocal
+import dev.g000sha256.tdl.dto.InputMessagePoll
+import dev.g000sha256.tdl.dto.InputMessageVideoNote
+import dev.g000sha256.tdl.dto.InputMessageVoiceNote
+import dev.g000sha256.tdl.dto.InputPollOption
+import dev.g000sha256.tdl.dto.InputPollTypeRegular
+import dev.g000sha256.tdl.dto.InputVideoNote
+import dev.g000sha256.tdl.dto.InputVoiceNote
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.PersonalChannel
 import com.mrboomdev.scrollix.data.model.ProfileTrack
@@ -84,7 +96,10 @@ import kotlinx.coroutines.sync.withLock
 
 private const val TypingStatusTimeoutMillis = 5_000L
 
-class TelegramAccountSession(
+/** Usernames that TDLib can resolve to a user profile. */
+private val MentionUsernameRegex = Regex("""(?<![\w@])@([A-Za-z][A-Za-z0-9_]{2,31})""")
+
+class TelegramSession(
     account: AccountRecord,
     private val storage: PlatformStorage,
     parentScope: CoroutineScope
@@ -138,6 +153,14 @@ class TelegramAccountSession(
     override val downloads: StateFlow<List<DownloadedFile>> = _downloads.asStateFlow()
     private val customEmojiCache = mutableMapOf<Long, Sticker>()
     private val customEmojiCacheMutex = Mutex()
+
+    /**
+     * Mention avatars are identical for every message that mentions the same
+     * user, so the public chat lookup runs once per account and session.
+     * A null value remembers a username that does not resolve.
+     */
+    private val mentionAvatarCache = mutableMapOf<String, Avatar?>()
+    private val mentionAvatarMutex = Mutex()
     private var folderEmojiJob: Job? = null
     private val typingJobs = mutableMapOf<Long, Job>()
 
@@ -433,6 +456,187 @@ class TelegramAccountSession(
             when (val result = client.sendMessage(
                 chatId = chatId,
                 inputMessageContent = content
+            )) {
+                is TdlResult.Success -> {
+                    upsertMessage(result.result)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun sendVoiceNote(
+        providerDialogId: String,
+        path: String,
+        durationSeconds: Int
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (path.isBlank()) {
+            return Result.failure(IllegalArgumentException("Voice file path is empty"))
+        }
+
+        return sendContent(
+            chatId = chatId,
+            content = InputMessageVoiceNote(
+                voiceNote = InputVoiceNote(
+                    voiceNote = InputFileLocal(path),
+                    duration = durationSeconds.coerceAtLeast(1),
+                    waveform = byteArrayOf()
+                ),
+                caption = FormattedText("", emptyArray()),
+                selfDestructType = null
+            )
+        )
+    }
+
+    override suspend fun sendVideoNote(
+        providerDialogId: String,
+        path: String,
+        durationSeconds: Int
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (path.isBlank()) {
+            return Result.failure(IllegalArgumentException("Video file path is empty"))
+        }
+
+        return sendContent(
+            chatId = chatId,
+            content = InputMessageVideoNote(
+                videoNote = InputVideoNote(
+                    videoNote = InputFileLocal(path),
+                    thumbnail = null,
+                    duration = durationSeconds.coerceIn(1, 60),
+                    length = 240
+                ),
+                selfDestructType = null
+            )
+        )
+    }
+
+    override suspend fun sendPoll(
+        providerDialogId: String,
+        question: String,
+        options: List<String>,
+        isAnonymous: Boolean,
+        allowsMultipleAnswers: Boolean
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        val cleanQuestion = question.trim()
+        val cleanOptions = options.map(String::trim).filter(String::isNotEmpty)
+
+        if (cleanQuestion.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Poll question is empty"))
+        }
+        if (cleanOptions.size < 2) {
+            return Result.failure(IllegalArgumentException("A poll needs two options"))
+        }
+
+        return sendContent(
+            chatId = chatId,
+            content = InputMessagePoll(
+                question = FormattedText(cleanQuestion, emptyArray()),
+                options = cleanOptions.map { option ->
+                    InputPollOption(
+                        text = FormattedText(option, emptyArray()),
+                        media = null
+                    )
+                }.toTypedArray(),
+                description = FormattedText("", emptyArray()),
+                media = null,
+                isAnonymous = isAnonymous,
+                allowsMultipleAnswers = allowsMultipleAnswers,
+                allowsRevoting = true,
+                membersOnly = false,
+                countryCodes = emptyArray(),
+                shuffleOptions = false,
+                hideResultsUntilCloses = false,
+                type = InputPollTypeRegular(allowAddingOptions = false),
+                openPeriod = 0,
+                closeDate = 0,
+                isClosed = false
+            )
+        )
+    }
+
+    override suspend fun sendLocation(
+        providerDialogId: String,
+        latitude: Double,
+        longitude: Double,
+        livePeriodSeconds: Int
+    ): Result<Long> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) {
+            return Result.failure(IllegalArgumentException("Invalid coordinates"))
+        }
+
+        val location = Location(
+            latitude = latitude,
+            longitude = longitude,
+            horizontalAccuracy = 0.0
+        )
+
+        // TDLib 17 has no live period on static locations: live shares are a
+        // different message content and are stopped by editing the message.
+        val content: InputMessageContent = if (livePeriodSeconds > 0) {
+            InputMessageLiveLocation(
+                location = LiveLocation(
+                    location = location,
+                    livePeriod = livePeriodSeconds,
+                    heading = 0,
+                    proximityAlertRadius = 0
+                )
+            )
+        } else {
+            InputMessageLocation(location = location)
+        }
+
+        return try {
+            when (val result = client.sendMessage(
+                chatId = chatId,
+                inputMessageContent = content
+            )) {
+                is TdlResult.Success -> {
+                    upsertMessage(result.result)
+                    Result.success(result.result.id)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun stopLiveLocation(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            // A null location is TDLib's way of ending a live share.
+            when (val result = client.editMessageLiveLocation(
+                chatId = chatId,
+                messageId = messageId,
+                replyMarkup = null,
+                location = null
             )) {
                 is TdlResult.Success -> {
                     upsertMessage(result.result)
@@ -802,6 +1006,7 @@ class TelegramAccountSession(
 
             Result.success(
                 UserProfileDetails(
+                    userId = user.id,
                     displayName = userDisplayName(user),
                     avatar = userAvatar(user),
                     username = user.usernames?.activeUsernames?.firstOrNull(),
@@ -818,7 +1023,10 @@ class TelegramAccountSession(
                     accentColorsDark = user.upgradedGiftColors
                         ?.darkThemeColors
                         ?.map { color -> color.toLong() }
-                        .orEmpty()
+                        .orEmpty(),
+                    personalChannel = fullInfo?.personalChatId
+                        ?.takeIf { chatId -> chatId != 0L }
+                        ?.let { chatId -> loadPersonalChannel(chatId) }
                 )
             )
         } catch (exception: CancellationException) {
@@ -866,6 +1074,7 @@ class TelegramAccountSession(
 
             Result.success(
                 UserProfileDetails(
+                    userId = resolvedUserId,
                     displayName = userDisplayName(user),
                     avatar = userAvatar(user),
                     username = user.usernames?.activeUsernames?.firstOrNull(),
@@ -2667,6 +2876,25 @@ class TelegramAccountSession(
             .ifBlank { "Telegram account" }
     }
 
+    /** Maps a shared point, live shares included, into the UI model. */
+    private fun mapLocation(content: MessageContent): MessageLocationInfo? {
+        return when (content) {
+            is MessageLocation -> MessageLocationInfo(
+                latitude = content.location.latitude,
+                longitude = content.location.longitude
+            )
+
+            is MessageLiveLocation -> MessageLocationInfo(
+                latitude = content.location.location.latitude,
+                longitude = content.location.location.longitude,
+                isLive = true,
+                expiresInSeconds = content.expiresIn
+            )
+
+            else -> null
+        }
+    }
+
     private fun mapMessage(message: Message): ChatMessage {
         val senderUser = if (message.isOutgoing) {
             null
@@ -2718,6 +2946,8 @@ class TelegramAccountSession(
             poll = mapPoll(message.content),
             customEmojis = messageCustomEmojis(message.content),
             richBlocks = mapRichBlocks(message.content),
+            linkPreview = mapLinkPreview(message.content),
+            location = mapLocation(message.content),
             replyTo = (message.replyTo as? MessageReplyToMessage)?.let { reply ->
                 MessageReply(
                     messageId = reply.messageId,
@@ -2768,6 +2998,21 @@ class TelegramAccountSession(
 
             else -> null to null
         }
+    }
+
+    /** Maps the server-generated link preview of a text message. */
+    private fun mapLinkPreview(content: MessageContent): MessageLinkPreview? {
+        val preview = (content as? MessageText)?.linkPreview ?: return null
+        if (preview.url.isBlank()) return null
+
+        return MessageLinkPreview(
+            url = preview.url,
+            displayUrl = preview.displayUrl,
+            siteName = preview.siteName,
+            title = preview.title,
+            description = preview.description.text,
+            showAboveText = preview.showAboveText
+        )
     }
 
     private fun mapRichBlocks(content: MessageContent): List<MessageRichBlock> {
@@ -3220,6 +3465,7 @@ class TelegramAccountSession(
             is MessageAudio -> content.caption.text
             is MessageAnimation -> content.caption.text
             is MessagePoll -> ""
+            is MessageLocation, is MessageLiveLocation -> ""
             is MessageSupergroupChatCreate -> supergroupChatCreateText(content)
             is MessageRichMessage -> richPlainText(content.message)
             else -> serviceMessageText(
@@ -3244,6 +3490,8 @@ class TelegramAccountSession(
             is MessageAudio,
             is MessageAnimation,
             is MessagePoll,
+            is MessageLocation,
+            is MessageLiveLocation,
             is MessageRichMessage -> false
 
             else -> true
@@ -3870,6 +4118,64 @@ class TelegramAccountSession(
         }
     }
 
+    override suspend fun resolveTelegramLink(url: String): Result<String> {
+        val link = url.trim()
+
+        if (!link.contains("t.me/") && !link.contains("telegram.me/")) {
+            return Result.failure(IllegalArgumentException("Not a Telegram link"))
+        }
+
+        val path = link
+            .substringAfter("t.me/", link.substringAfter("telegram.me/"))
+            .substringBefore("?")
+            .trim('/')
+
+        if (path.isBlank()) return Result.failure(IllegalArgumentException("Empty link"))
+
+        return try {
+            if (path.startsWith("+") || path.startsWith("joinchat/")) {
+                val info = when (val checked = client.checkChatInviteLink(link)) {
+                    is TdlResult.Success -> checked.result
+                    is TdlResult.Failure -> return Result.failure(
+                        IllegalStateException("Invalid invite link")
+                    )
+                }
+
+                if (info.chatId != 0L) {
+                    return Result.success(info.chatId.toString())
+                }
+
+                return when (val joined = client.joinChatByInviteLink(link)) {
+                    is TdlResult.Success -> {
+                        when (val result = joined.result) {
+                            is ChatJoinResultSuccess -> Result.success(result.chatId.toString())
+                            else -> Result.failure(
+                                IllegalStateException("Could not join the chat")
+                            )
+                        }
+                    }
+
+                    is TdlResult.Failure -> Result.failure(
+                        IllegalStateException("Could not join the chat")
+                    )
+                }
+            }
+
+            val username = path.substringBefore('/')
+
+            when (val response = client.searchPublicChat(username)) {
+                is TdlResult.Success -> Result.success(response.result.id.toString())
+                is TdlResult.Failure -> Result.failure(
+                    IllegalStateException("@$username was not found")
+                )
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun resolveUsername(username: String): Result<Long> {
         val name = username.removePrefix("@")
         if (name.isBlank()) return Result.failure(IllegalArgumentException("Invalid username"))
@@ -3886,6 +4192,137 @@ class TelegramAccountSession(
                 is TdlResult.Failure -> Result.failure(
                     IllegalStateException("User @$name was not found")
                 )
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadMentionAvatars(text: String): Map<String, Avatar> {
+        if (!text.contains('@')) return emptyMap()
+
+        val usernames = MentionUsernameRegex.findAll(text)
+            .map { match -> match.groupValues[1] }
+            .distinct()
+            .take(10)
+            .toList()
+
+        if (usernames.isEmpty()) return emptyMap()
+
+        val avatars = linkedMapOf<String, Avatar>()
+        // A snapshot is enough because usernames are deduplicated above; the
+        // mutex only protects the shared map from concurrent mention renders.
+        val cachedMentions = mentionAvatarMutex.withLock { mentionAvatarCache.toMap() }
+
+        for (username in usernames) {
+            if (cachedMentions.containsKey(username)) {
+                cachedMentions[username]?.let { avatar -> avatars[username] = avatar }
+                continue
+            }
+
+            try {
+                val userId = when (val result = client.searchPublicChat(username)) {
+                    is TdlResult.Success -> (result.result.type as? ChatTypePrivate)?.userId
+                    is TdlResult.Failure -> null
+                } ?: continue
+
+                val user = when (val result = client.getUser(userId)) {
+                    is TdlResult.Success -> result.result
+                    is TdlResult.Failure -> continue
+                }
+
+                val avatar = userAvatar(user)
+                mentionAvatarMutex.withLock { mentionAvatarCache[username] = avatar }
+                avatars[username] = avatar
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+                // A mention that can't be resolved simply renders without an avatar.
+                mentionAvatarMutex.withLock { mentionAvatarCache[username] = null }
+            }
+        }
+
+        return avatars
+    }
+
+    override suspend fun loadProfilePhotos(userId: Long): Result<List<MessageMedia>> {
+        return try {
+            val photos = when (val result = client.getUserProfilePhotos(
+                userId = userId,
+                offset = 0,
+                limit = 100
+            )) {
+                is TdlResult.Success -> result.result.photos
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            Result.success(
+                photos.map { photo ->
+                    // ChatPhoto exposes sized variants instead of the small/big
+                    // pair of ProfilePhoto, so both the thumbnail and the
+                    // original are picked from the size list.
+                    val sizes = photo.sizes.sortedBy { size -> size.photo.size }
+                    val preview = sizes.firstOrNull()
+                    val best = sizes.lastOrNull()
+
+                    MessageMedia(
+                        kind = MessageMediaKind.Photo,
+                        previewFileId = preview?.photo?.id,
+                        previewUniqueId = preview?.photo?.remote?.uniqueId,
+                        fileId = best?.photo?.id,
+                        fileUniqueId = best?.photo?.remote?.uniqueId,
+                        width = best?.width ?: 0,
+                        height = best?.height ?: 0,
+                        fileName = "Profile photo",
+                        mimeType = "image/jpeg",
+                        size = best?.photo?.size ?: 0L,
+                        minithumbnail = photo.minithumbnail?.data
+                    )
+                }
+            )
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadSharedMedia(
+        providerDialogId: String,
+        kind: SharedMediaKind,
+        fromMessageId: Long,
+        limit: Int
+    ): Result<List<ChatMessage>> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        val filter = when (kind) {
+            SharedMediaKind.Photo -> SearchMessagesFilterPhoto()
+            SharedMediaKind.Video -> SearchMessagesFilterVideo()
+            SharedMediaKind.Animation -> SearchMessagesFilterAnimation()
+            SharedMediaKind.Voice -> SearchMessagesFilterVoiceNote()
+            SharedMediaKind.Link -> SearchMessagesFilterUrl()
+            SharedMediaKind.File -> SearchMessagesFilterDocument()
+        }
+
+        return try {
+            when (val result = client.searchChatMessages(
+                chatId = chatId,
+                query = "",
+                fromMessageId = fromMessageId,
+                offset = 0,
+                limit = limit.coerceIn(1, 100),
+                filter = filter
+            )) {
+                is TdlResult.Success -> Result.success(
+                    result.result.messages
+                        .map(::mapMessage)
+                        .sortedByDescending { message -> message.messageId }
+                )
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
             }
         } catch (exception: CancellationException) {
             throw exception
@@ -4377,6 +4814,7 @@ class TelegramAccountSession(
                 message.copy(
                     text = messageText(content),
                     media = mapMedia(content),
+                    location = mapLocation(content),
                     isService = isServiceContent(content)
                 )
             } else {
@@ -5212,6 +5650,8 @@ class TelegramAccountSession(
                 content.document.fileName.ifBlank { "Document" }
             }
             is MessagePoll -> content.poll.question.text.ifBlank { "Poll" }
+            is MessageLocation -> "Location"
+            is MessageLiveLocation -> "Live location"
             is MessageSupergroupChatCreate -> supergroupChatCreateText(content)
             is MessageChatSetBackground -> "Chat background changed"
             is MessageChatChangePhoto -> "Chat photo changed"

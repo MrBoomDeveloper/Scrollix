@@ -1,0 +1,11 @@
+product:
+  type: kmp/lib
+  platforms: [android, jvm]
+
+dependencies:
+  - $kotlin.serialization.json
+  - org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0
+
+settings:
+  kotlin:
+    serialization: enabled

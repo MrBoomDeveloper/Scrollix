@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.data.provider
 import com.mrboomdev.scrollix.data.model.AccountProfile
 import com.mrboomdev.scrollix.data.model.AuthAction
 import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
@@ -11,11 +12,13 @@ import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageDraft
 import com.mrboomdev.scrollix.data.model.MessageHistory
+import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
+import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
@@ -107,6 +110,49 @@ interface AccountSession {
         replyToMessageId: Long? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList()
     ): Result<Unit>
+    /** Sends a recorded voice note (server-side Telegram voice message). */
+    suspend fun sendVoiceNote(
+        providerDialogId: String,
+        path: String,
+        durationSeconds: Int
+    ): Result<Unit> = sendFile(providerDialogId, path, asPhoto = false)
+
+    /** Sends a recorded round video note. */
+    suspend fun sendVideoNote(
+        providerDialogId: String,
+        path: String,
+        durationSeconds: Int
+    ): Result<Unit> = sendFile(providerDialogId, path, asPhoto = false)
+
+    /** Creates a regular poll on the server. */
+    suspend fun sendPoll(
+        providerDialogId: String,
+        question: String,
+        options: List<String>,
+        isAnonymous: Boolean = true,
+        allowsMultipleAnswers: Boolean = false
+    ): Result<Unit> = Result.failure(UnsupportedOperationException("Polls are not available"))
+
+    /**
+     * Sends a static location, or a live location when [livePeriodSeconds] is
+     * greater than zero. Live shares return the id of the sent message so the
+     * caller can stop sharing it later.
+     */
+    suspend fun sendLocation(
+        providerDialogId: String,
+        latitude: Double,
+        longitude: Double,
+        livePeriodSeconds: Int = 0
+    ): Result<Long> = Result.failure(
+        UnsupportedOperationException("Location sharing is not available")
+    )
+
+    /** Stops an active live location by editing its message in place. */
+    suspend fun stopLiveLocation(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<Unit> = Result.success(Unit)
+
     suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray)
 
     /** Restores the server-side draft of a chat, if it has one. */
@@ -189,6 +235,31 @@ interface AccountSession {
     /** Maps custom emoji ids to the sticker/emoji pack that contains them. */
     suspend fun loadCustomEmojiSetIds(emojiIds: List<Long>): Map<Long, Long> = emptyMap()
     suspend fun resolveUsername(username: String): Result<Long>
+
+    /**
+     * Resolves the avatars of user mentions in [text], keyed by the username
+     * without the leading `@`. Mentions that can't be resolved are absent.
+     */
+    suspend fun loadMentionAvatars(text: String): Map<String, Avatar> = emptyMap()
+
+    /** All profile photos of a user, newest first. */
+    suspend fun loadProfilePhotos(userId: Long): Result<List<MessageMedia>> =
+        Result.success(emptyList())
+
+    /** One page of a media kind sent in a dialog, newest first. */
+    suspend fun loadSharedMedia(
+        providerDialogId: String,
+        kind: SharedMediaKind,
+        fromMessageId: Long = 0,
+        limit: Int = 30
+    ): Result<List<ChatMessage>> = Result.success(emptyList())
+
+    /**
+     * Resolves a t.me/telegram.me link to the provider dialog id so the link
+     * can be opened inside the app instead of a browser.
+     */
+    suspend fun resolveTelegramLink(url: String): Result<String> =
+        Result.failure(UnsupportedOperationException("Deep links are not supported"))
     suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>
     suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit>
     suspend fun loadStickerPacks(kind: StickerPackKind): Result<List<StickerPack>>

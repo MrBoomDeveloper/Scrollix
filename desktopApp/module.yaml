@@ -2,6 +2,7 @@ product: jvm/app
 
 dependencies:
   - //shared
+  - //telegram
   - $compose.desktop.currentOs
   - $compose.preview
   - $libs.kotlinx.coroutines.swing

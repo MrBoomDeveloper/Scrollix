@@ -181,11 +181,11 @@ private fun EmojiTab(
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session, settings.emojiPackOrder) {
+    LaunchedEffect(session, settings.emojiPackOrders[session.accountId]) {
         val loadedPacks = orderedStickerPacks(
             session.loadStickerPacks(StickerPackKind.CustomEmoji)
                 .getOrDefault(emptyList()),
-            settings.emojiPackOrder
+            settings.emojiPackOrders[session.accountId].orEmpty()
         )
 
         packs = loadedPacks
@@ -349,7 +349,7 @@ private fun StickerTab(
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session, settings.stickerPackOrder) {
+    LaunchedEffect(session, settings.stickerPackOrders[session.accountId]) {
         isLoading = true
         recents = session.loadRecentStickers(StickerPackKind.Sticker)
             .getOrDefault(emptyList())
@@ -357,7 +357,7 @@ private fun StickerTab(
         val loadedPacks = orderedStickerPacks(
             session.loadStickerPacks(StickerPackKind.Sticker)
                 .getOrDefault(emptyList()),
-            settings.stickerPackOrder
+            settings.stickerPackOrders[session.accountId].orEmpty()
         )
 
         packs = loadedPacks

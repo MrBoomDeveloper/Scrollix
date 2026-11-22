@@ -1,0 +1,12 @@
+product:
+  type: kmp/lib
+  platforms: [android, jvm]
+
+plugins:
+  build-config: enabled
+
+dependencies:
+  - //provider
+  - //shared
+  - $libs.tdlib
+  - org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0

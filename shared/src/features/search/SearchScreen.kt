@@ -80,6 +80,7 @@ private data class SearchSelection(
 
 @Composable
 fun SearchScreen(
+    initialQuery: String = "",
     onBack: () -> Unit,
     onOpenDialog: (accountId: String, providerDialogId: String, messageId: Long?) -> Unit,
     onOpenProfile: (accountId: String, providerDialogId: String) -> Unit,
@@ -89,8 +90,12 @@ fun SearchScreen(
     val entries by ApiManager.dialogs.collectAsState()
     val downloads by ApiManager.downloads.collectAsState()
 
-    var query by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableStateOf(SearchTab.Chats) }
+    var query by remember(initialQuery) { mutableStateOf(initialQuery) }
+    var selectedTab by remember(initialQuery) {
+        mutableStateOf(
+            if (initialQuery.trimStart().startsWith("#")) SearchTab.Posts else SearchTab.Chats
+        )
+    }
     var selected by remember { mutableStateOf<SearchSelection?>(null) }
     var posts by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var isSearchingPosts by remember { mutableStateOf(false) }
@@ -225,6 +230,11 @@ fun SearchScreen(
                                     target.providerDialogId,
                                     userId
                                 )
+                            },
+                            onOpenHashtag = { hashtag ->
+                                query = hashtag
+                                selectedTab = SearchTab.Posts
+                                selected = null
                             },
                             onBack = { selected = null }
                         )
@@ -619,7 +629,9 @@ private fun EmptySearchState(text: String) {
 
 private fun ChatMessage.postSnippet(): String {
     if (text.isNotBlank()) return text
-    if (poll != null) return poll.question
+
+    val pollValue = poll
+    if (pollValue != null) return pollValue.question
 
     val media = media ?: return "Message"
 

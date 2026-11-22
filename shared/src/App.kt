@@ -35,6 +35,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,6 +71,28 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 
+/** Keeps the wide-layout chat pane selection across navigation and recreation. */
+private val SelectedDialogSaver = listSaver<Route.Dialog?, Any>(
+    save = { dialog ->
+        if (dialog == null) {
+            emptyList()
+        } else {
+            listOf(dialog.accountId, dialog.providerDialogId, dialog.messageId ?: -1L)
+        }
+    },
+    restore = { saved ->
+        if (saved.isEmpty()) {
+            null
+        } else {
+            Route.Dialog(
+                accountId = saved[0] as String,
+                providerDialogId = saved[1] as String,
+                messageId = (saved[2] as Long).takeIf { it >= 0 }
+            )
+        }
+    }
+)
+
 private data class AppNavTab(
     val isActive: Boolean,
     val icon: ImageVector,
@@ -98,10 +122,38 @@ fun App() {
         ApiManager.init()
     }
     
-    val selectedDialog = remember { mutableStateOf<Route.Dialog?>(null) }
+    // Saving this keeps the open chat when Settings or Search cover the home
+    // pane, and across activity recreation.
+    val selectedDialog = rememberSaveable(stateSaver = SelectedDialogSaver) {
+        mutableStateOf<Route.Dialog?>(null)
+    }
     var showQrScanner by remember { mutableStateOf(false) }
     val accountState by ApiManager.accountState.collectAsState()
+    val pendingDeepLink by DeepLinkHandler.pending.collectAsState()
     val currentRoute = backStack.lastOrNull()
+
+    LaunchedEffect(pendingDeepLink, accountState.accounts) {
+        val link = pendingDeepLink ?: return@LaunchedEffect
+
+        val account = accountState.accounts.firstOrNull() ?: return@LaunchedEffect
+        val session = ApiManager.session(account.id) ?: return@LaunchedEffect
+        val resolved = session.resolveTelegramLink(link).getOrNull() ?: return@LaunchedEffect
+
+        DeepLinkHandler.consume()
+
+        val messageId = link
+            .substringBefore('?')
+            .trimEnd('/')
+            .substringAfterLast('/')
+            .toLongOrNull()
+
+        selectedDialog.value = null
+        backStack += Route.Dialog(
+            accountId = account.id,
+            providerDialogId = resolved,
+            messageId = messageId
+        )
+    }
     
     val showNavigation = remember(currentRoute, layoutInfo.isTwoPane) {
         if(!layoutInfo.isTwoPane && currentRoute is Route.Dialog) {
@@ -142,8 +194,8 @@ fun App() {
                 icon = search_icon,
                 title = "Search",
                 onClick = {
-                    if (backStack.lastOrNull() != Route.Search) {
-                        backStack.add(Route.Search)
+                    if (backStack.lastOrNull() != Route.Search()) {
+                        backStack.add(Route.Search())
                     }
                 }
             ),
@@ -388,10 +440,8 @@ fun App() {
                 MediaViewerOverlay()
 
                 if (showQrScanner) {
-                    val activeSession = remember(accountState.activeAccountId) {
-                        accountState.activeAccountId?.let { accountId ->
-                            ApiManager.session(accountId)
-                        } ?: accountState.accounts.firstOrNull()?.let { account ->
+                    val activeSession = remember(accountState.accounts) {
+                        accountState.accounts.firstOrNull()?.let { account ->
                             ApiManager.session(account.id)
                         }
                     }

@@ -27,12 +27,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 
 private val EmojiSize = 20.sp
+private val MentionAvatarSize = 18.sp
+private val MentionAvatarSizeDp = 18.dp
 private const val TrailingContentId = "message_footer"
+private const val MentionAvatarIdPrefix = "mention-avatar:"
 
 /** Zero width space, required because [appendInlineContent] rejects empty alternate text. */
 private const val TrailingContentAlternateText = "\u200B"
@@ -51,7 +55,9 @@ internal fun CustomEmojiMessageText(
     overflow: TextOverflow = TextOverflow.Clip,
     trailingContent: (@Composable () -> Unit)? = null,
     onMentionClick: ((String) -> Unit)? = null,
-    onPhoneClick: ((String) -> Unit)? = null
+    onPhoneClick: ((String) -> Unit)? = null,
+    onHashtagClick: ((String) -> Unit)? = null,
+    mentionAvatars: Map<String, Avatar> = emptyMap()
 ) {
     val spans = emojis
         .filter { span ->
@@ -66,7 +72,9 @@ internal fun CustomEmojiMessageText(
         spans.isEmpty() &&
         trailingContent == null &&
         onMentionClick == null &&
-        onPhoneClick == null
+        onPhoneClick == null &&
+        onHashtagClick == null &&
+        mentionAvatars.isEmpty()
     ) {
         Text(
             modifier = modifier,
@@ -88,14 +96,26 @@ internal fun CustomEmojiMessageText(
         if (spans.isEmpty()) {
             // Most messages have no custom emoji, so this is the path that
             // decides whether mentions, links and phone numbers are tappable.
-            appendTextWithLinks(text, onMentionClick, onPhoneClick)
+            appendTextWithLinks(
+                text,
+                onMentionClick,
+                onPhoneClick,
+                onHashtagClick,
+                mentionAvatars
+            )
         } else {
             var index = 0
 
             for ((start, end, emojiId) in spans) {
                 if (start < index) continue
 
-                appendTextWithLinks(text.substring(index, start), onMentionClick, onPhoneClick)
+                appendTextWithLinks(
+                    text.substring(index, start),
+                    onMentionClick,
+                    onPhoneClick,
+                    onHashtagClick,
+                    mentionAvatars
+                )
                 appendInlineContent(
                     alternateText = text.substring(start, end),
                     id = emojiId.toString()
@@ -103,7 +123,13 @@ internal fun CustomEmojiMessageText(
                 index = end
             }
 
-            appendTextWithLinks(text.substring(index), onMentionClick, onPhoneClick)
+            appendTextWithLinks(
+                text.substring(index),
+                onMentionClick,
+                onPhoneClick,
+                onHashtagClick,
+                mentionAvatars
+            )
         }
 
         if (trailingContent != null) {
@@ -121,6 +147,18 @@ internal fun CustomEmojiMessageText(
             needsRepainting = span.emojiId in adaptiveEmojis
         )
     }.toMutableMap()
+
+    mentionAvatars.forEach { (username, avatar) ->
+        inlineContent["$MentionAvatarIdPrefix$username"] = InlineTextContent(
+            Placeholder(
+                width = MentionAvatarSize,
+                height = MentionAvatarSize,
+                placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+            )
+        ) {
+            AvatarImage(avatar = avatar, size = MentionAvatarSizeDp)
+        }
+    }
 
     if (trailingContent != null) {
         inlineContent[TrailingContentId] = inlineTrailingContent(

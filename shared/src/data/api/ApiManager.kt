@@ -74,8 +74,6 @@ object ApiManager {
             appScope = newScope()
         }
 
-        ProviderRegistry.register(TelegramProvider)
-
         val storage = runCatching { createPlatformStorage() }.getOrElse { exception ->
             println("Failed to create app storage: ${exception.message}")
             return

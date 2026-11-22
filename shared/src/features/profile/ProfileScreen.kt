@@ -82,7 +82,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.scene.DialogSceneStrategy.Companion.dialog
 import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.api.TelegramProvider.displayName
+import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.openDialer
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMemberInfo
 import com.mrboomdev.scrollix.data.model.CommonGroup
@@ -96,6 +97,8 @@ import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
 import com.mrboomdev.scrollix.isWideLayout
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
+import com.mrboomdev.scrollix.ui.components.ProfileAvatarGalleryDialog
+import com.mrboomdev.scrollix.ui.components.ProfileSharedMediaSection
 import com.mrboomdev.scrollix.ui.components.createVoicePlayer
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
@@ -105,6 +108,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
 import com.mrboomdev.scrollix.ui.icons.cake_icon
+import com.mrboomdev.scrollix.ui.icons.TelegramLogoIcon
 import com.mrboomdev.scrollix.ui.icons.call_icon
 import com.mrboomdev.scrollix.ui.icons.campaign_icon
 import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
@@ -243,6 +247,7 @@ private fun CommonGroupsSection(
 @Composable
 private fun ProfileScreenActions(
     dialog: Dialog?,
+    phoneNumber: String?,
     isChannel: Boolean,
     isSubscribed: Boolean,
     isUpdatingSubscription: Boolean,
@@ -282,13 +287,13 @@ private fun ProfileScreenActions(
             }
         }
 
-        if(dialog?.kind == DialogKind.Direct) {
+        if (dialog?.kind == DialogKind.Direct &&
+            getPlatform().name.startsWith("Android")
+        ) {
             OutlinedButton(
                 modifier = actionModifier,
                 contentPadding = PaddingValues(0.dp),
-                onClick = {
-
-                }
+                onClick = { phoneNumber?.let(::openDialer) }
             ) {
                 Icon(
                     modifier = Modifier.size(ButtonDefaults.IconSize),
@@ -380,7 +385,13 @@ private fun ProfileLinkText(
                                 textDecoration = TextDecoration.Underline
                             )
                         ),
-                        linkInteractionListener = { uriHandler.openUri(target) }
+                        linkInteractionListener = {
+                            if (com.mrboomdev.scrollix.DeepLinkHandler.isTelegramLink(target)) {
+                                com.mrboomdev.scrollix.DeepLinkHandler.publish(target)
+                            } else {
+                                uriHandler.openUri(target)
+                            }
+                        }
                     )
                 ) {
                     append(url)
@@ -528,6 +539,7 @@ fun ProfileScreen(
     ownAccount: Boolean = false,
     onOpenChannelProfile: (String) -> Unit = {},
     onMessage: (String) -> Unit = {},
+    onOpenMessage: (Long) -> Unit = {},
     onBack: () -> Unit
 ) {
     val isWide = isWideLayout()
@@ -551,6 +563,9 @@ fun ProfileScreen(
         mutableStateOf<String?>(null)
     }
     var isMuted by remember(accountId, providerDialogId) { mutableStateOf<Boolean?>(null) }
+    var showAvatarGallery by remember(accountId, providerDialogId) {
+        mutableStateOf(false)
+    }
 
     LaunchedEffect(accountId, providerDialogId, session, ownAccount) {
         if (!ownAccount && providerDialogId.isNotBlank()) {
@@ -755,7 +770,13 @@ fun ProfileScreen(
                                 )
                             } else {
                                 Modifier
-                            },
+                            }.then(
+                                if (profile?.userId != null) {
+                                    Modifier.clickable { showAvatarGallery = true }
+                                } else {
+                                    Modifier
+                                }
+                            ),
                             avatar = avatar,
                             size = 96.dp
                         )
@@ -764,6 +785,7 @@ fun ProfileScreen(
                     AnimatedVisibility(isWide && !ownAccount) {
                         ProfileScreenActions(
                             dialog = dialog,
+                            phoneNumber = profile?.phoneNumber,
                             isChannel = isChannel,
                             isSubscribed = isSubscribed,
                             isUpdatingSubscription = isUpdatingSubscription,
@@ -792,6 +814,10 @@ fun ProfileScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (session?.providerId == "telegram") {
+                        TelegramLogoIcon(size = 18.dp)
+                    }
+
                     SharedProfileElement(key = "$sharedProfileKey:name") {
                         Text(
                             text = displayName,
@@ -825,6 +851,7 @@ fun ProfileScreen(
             AnimatedVisibility(!isWide && !ownAccount) {
                 ProfileScreenActions(
                     dialog = dialog,
+                    phoneNumber = profile?.phoneNumber,
                     isChannel = isChannel,
                     isSubscribed = isSubscribed,
                     isUpdatingSubscription = isUpdatingSubscription,
@@ -906,6 +933,24 @@ fun ProfileScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
+            }
+
+            if (providerDialogId.isNotBlank() && !ownAccount) {
+                ProfileSharedMediaSection(
+                    providerDialogId = providerDialogId,
+                    session = session,
+                    onOpenMessage = onOpenMessage
+                )
+            }
+
+            if (showAvatarGallery) {
+                profile?.userId?.let { profileUserId ->
+                    ProfileAvatarGalleryDialog(
+                        userId = profileUserId,
+                        session = session,
+                        onDismiss = { showAvatarGallery = false }
+                    )
+                }
             }
         }
     }

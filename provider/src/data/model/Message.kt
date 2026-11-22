@@ -98,6 +98,35 @@ data class MessageDraft(
 )
 
 @Serializable
+data class MessageLinkPreview(
+    val url: String,
+    val displayUrl: String = "",
+    val siteName: String = "",
+    val title: String = "",
+    val description: String = "",
+    val showAboveText: Boolean = false
+)
+
+/** A point shared in a chat, optionally as an ongoing live location. */
+@Serializable
+data class MessageLocationInfo(
+    val latitude: Double,
+    val longitude: Double,
+    val isLive: Boolean = false,
+    val expiresInSeconds: Int = 0
+)
+
+/** Kinds of media that a chat can expose through the shared media tabs. */
+enum class SharedMediaKind {
+    Photo,
+    Video,
+    Animation,
+    Voice,
+    Link,
+    File
+}
+
+@Serializable
 data class MessageReply(
     val messageId: Long,
     val senderName: String? = null,
@@ -223,6 +252,8 @@ data class ChatMessage(
     val poll: MessagePollInfo? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
     val richBlocks: List<MessageRichBlock> = emptyList(),
+    val linkPreview: MessageLinkPreview? = null,
+    val location: MessageLocationInfo? = null,
     val replyTo: MessageReply? = null,
     val reactions: List<MessageReactionInfo> = emptyList(),
     val viewCount: Int = 0,

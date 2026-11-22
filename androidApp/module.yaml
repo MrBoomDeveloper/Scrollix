@@ -2,6 +2,7 @@ product: android/app
 
 dependencies:
   - //shared
+  - //telegram
   - $libs.androidx.activity.compose
   - $compose.preview
   - $compose.uiTooling

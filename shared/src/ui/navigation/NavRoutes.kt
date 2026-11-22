@@ -15,7 +15,7 @@ sealed interface Route: NavKey {
     data object Settings : Route
 
     @Serializable
-    data object Search : Route
+    data class Search(val query: String = "") : Route
 
     @Serializable
     data class Login(val accountId: String) : Route

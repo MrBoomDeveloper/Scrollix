@@ -156,7 +156,7 @@ private fun FullscreenImageContent(
 }
 
 @Composable
-private fun FullscreenVideoContent(
+private fun LegacyFullscreenVideoContent(
     media: MessageMedia,
     session: AccountSession?,
     modifier: Modifier,
@@ -260,6 +260,21 @@ private fun FullscreenVideoContent(
             )
         }
     }
+}
+
+@Composable
+private fun FullscreenVideoContent(
+    media: MessageMedia,
+    session: AccountSession?,
+    modifier: Modifier,
+    active: Boolean = true
+) {
+    VideoPlayer(
+        media = media,
+        session = session,
+        modifier = modifier,
+        isActive = active
+    )
 }
 
 /**

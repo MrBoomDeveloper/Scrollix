@@ -51,6 +51,8 @@ data class ProfileTrack(
 )
 
 data class UserProfileDetails(
+    /** Provider user id, when the profile belongs to a single user. */
+    val userId: Long? = null,
     val displayName: String? = null,
     val avatar: Avatar? = null,
     val username: String? = null,

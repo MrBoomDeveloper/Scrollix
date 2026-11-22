@@ -16,8 +16,10 @@ relevant module's `module.yaml`; version aliases live in `libs.versions.toml`.
 | `project.yaml` | Root module and plugin list |
 | `androidApp/` | Android application (`product: android/app`, `minSdk` 30, `compileSdk`/`targetSdk` 37) |
 | `desktopApp/` | Desktop JVM entry point (`desktopApp/src/main.kt`) |
-| `shared/` | Kotlin Multiplatform library with all UI and business logic (Android + JVM) |
-| `build-config/` | Kotlin Toolchain plugin that generates `com.mrboomdev.scrollix.generated.BuildConfig` from `local.properties` |
+| `shared/` | Kotlin Multiplatform library with all UI and app-shell logic (Android + JVM) |
+| `provider/` | Messenger contracts and plain data models (`AccountSession`, `MessengerProvider`, `ChatMessage`, …) |
+| `telegram/` | Telegram integration: `TelegramSession`, `TelegramProvider`, TDLib DTO mapping and `TelegramIntegration` |
+| `build-config/` | Kotlin Toolchain plugin that generates `com.mrboomdev.scrollix.generated.BuildConfig` from `local.properties` (enabled by the `telegram` module) |
 | `scripts/` | Release scripts (`release.sh` and platform helpers) |
 | `build/` | Generated build output |
 | `dist/` | Generated release artifacts |
@@ -37,12 +39,15 @@ relevant module's `module.yaml`; version aliases live in `libs.versions.toml`.
 
 ### Main packages
 
-- `shared/src/data/provider/AccountSession.kt` — UI-facing session contract.
+- `provider/src/data/provider/AccountSession.kt` — UI-facing session contract.
   Screens and composables should depend on this, not on TDLib directly.
-- `shared/src/data/api/` — TDLib integration:
-  `TelegramAccountSession.kt` (session implementation), `TelegramProvider.kt`,
-  and `ApiManager.kt` (account/session lifecycle).
-- `shared/src/data/model/` — plain shared models.
+- `provider/src/data/model/` — plain shared models used by the providers and UI.
+- `telegram/src/data/api/` — TDLib integration:
+  `TelegramSession.kt` (session implementation), `TelegramProvider.kt`,
+  and `TelegramIntegration.kt` (registers the provider with `ProviderRegistry`).
+  App entry points call `TelegramIntegration.init()` before composing `App()`.
+- `shared/src/data/api/ApiManager.kt` — account/session lifecycle for the app shell;
+  it must not reference a concrete messenger provider.
 - `shared/src/data/storage/` — settings, account stores, and platform storage.
 - `shared/src/data/cache/`, `shared/src/data/database/` — local Room/SQLite cache.
 - `shared/src/features/` — screens: `home`, `dialog`, `search`, `settings`,
@@ -160,10 +165,43 @@ Keep these invariants when changing the related code:
   id. Double-tap reactions are only wired on compact/mobile layouts; the
   message bubble shows selection checkboxes while selection mode is active.
 - **Own profile.** The accounts screen opens `Route.OwnProfile`, which renders
-  `AccountSession.loadOwnProfile()` instead of a dialog profile.
+  `AccountSession.loadOwnProfile()` instead of a dialog profile. It returns the
+  same `UserProfileDetails` shape as other profiles, including the personal
+  channel card and `upgradedGiftColors`, so the header gradient works there too.
+- **Video playback.** `VideoPlayer` in `ui/components` owns the controls
+  (play/pause, seek, elapsed/total time, mute, buffering and error state) and
+  delegates decoding to `VideoPlayback`/`VideoRenderSurface`. Android uses
+  `MediaPlayer` with a `TextureView` and the system dialer intent; desktop
+  streams frames from `FFmpegFrameGrabber` and plays audio through
+  `createVoicePlayer()`. Do not pre-decode whole video files into memory.
+- **Accounts.** The "Active" account is not a chat-list filter. It is the
+  default account used by settings pickers (packs/reactions) and the QR
+  scanner; the chat list intentionally aggregates every account.
+- **Accounts and calls.** Adding an account opens a provider chooser; Telegram
+  is the only registered provider today. Telegram accounts and Telegram
+  profiles show the brand mark. The profile call button is Android-only and
+  uses `openDialer` (ACTION_DIAL), never an immediate call intent.
 - **Service media.** `MessageChatChangePhoto` and `MessageChatSetBackground`
   map to photo media, so chat bubbles and dialog last-message previews show the
   new avatar or wallpaper instead of only a text notice.
+- **Location sharing.** `AccountSession.sendLocation` sends a static point or,
+  when `livePeriodSeconds > 0`, `InputMessageLiveLocation` (never a fake live
+  period on `InputMessageLocation`). Active shares are stopped with
+  `stopLiveLocation` → `editMessageLiveLocation(location = null)`. The picker
+  uses one OpenStreetMap tile through `fetchUrlBytes` with a client User-Agent;
+  do not bulk-download tiles or pre-decode media for the location card.
+- **Mention avatars.** `TelegramSession.loadMentionAvatars` resolves usernames
+  once per session and `CustomEmojiMessageText` renders them as inline content
+  before the handle. The mention itself stays the only tap target, and the
+  avatar must not swallow bubble gestures.
+- **Profile photos.** Clicking a user avatar in the profile opens
+  `ProfileAvatarGalleryDialog`, which lists `getUserProfilePhotos` and can save
+  a photo with `saveFileToDevice`.
+- **Shared media.** Profile screens list photos, videos, GIFs, voice notes,
+  links and files with `loadSharedMedia`, paged by `fromMessageId`; every row
+  jumps to its message through `Route.Dialog(messageId = …)`.
+- **Message animations.** Newest messages slide in from the bottom, and
+  `Modifier.animateItem()` handles deletion/placement in the history list.
 - **Profile colors.** `UserProfileDetails.accentColorsLight/Dark` come from
   `User.upgradedGiftColors` when the user has a collectible gift. The profile
   header and avatar ring use them as a translucent gradient; leave the default
@@ -175,7 +213,10 @@ Keep these invariants when changing the related code:
   the profile header.
 - **Folder and pack order.** `AppSettings.folderOrder` stores chip keys
   (`all`, `folder:<account>:<folder>`, `tab:<index>`), and
-  `stickerPackOrder`/`emojiPackOrder` store pack ids. The shared
+  `stickerPackOrder`/`emojiPackOrder` store pack ids.
+- **Selected dialog.** The wide-layout chat pane selection is `rememberSaveable`
+  in `App`, so opening Settings, Search or recreating the activity keeps the
+  open chat. The shared
   `ReorderDialog` changes the order with long-press dragging; the pickers apply
   pack order through `orderedStickerPacks`, unlisted packs keep server order.
 - **Pinned chat order.** Telegram has no reorder call, so
@@ -186,6 +227,25 @@ Keep these invariants when changing the related code:
   occur in that message: sticker media `stickerSetId` plus the set ids returned
   by `loadCustomEmojiSetIds` for custom emoji spans. Selecting a pack opens
   `StickerSetDialog` through `onOpenStickerSet`.
+- **Link previews.** `MessageText.linkPreview` is mapped onto
+  `ChatMessage.linkPreview` (`MessageLinkPreview`). `MessageBubble` renders the
+  preview card above or below the text according to TDLib
+  `showAboveText`. Opening a preview URL runs through `DeepLinkHandler`, so
+  t.me previews stay in the app; other URLs go to the system browser.
+- **Hashtags.** Message text, rich text and custom-emoji text share
+  `appendTextWithLinks`, which makes `#hashtag` clickable in addition to
+  mentions, URLs and phone numbers. Tapping a hashtag opens
+  `Route.Search(query)` with the Posts/Messages tab preselected, so
+  `searchGlobalMessages` returns matches across every account instead of only
+  filtering the current chat.
+- **Telegram deep links.** `DeepLinkHandler` bridges platform intents to
+  Compose. Android declares VIEW filters for `t.me`, `telegram.me` and the
+  `tg` scheme in `AndroidManifest.xml`, and `MainActivity` publishes both the
+  launch intent and `onNewIntent`. `App` resolves the pending link with
+  `AccountSession.resolveTelegramLink` (public usernames, invite links and
+  joined chats) and navigates to `Route.Dialog`, including the message id for
+  `t.me/<name>/<id>` links. Keep link handling in this path instead of calling
+  `LocalUriHandler` for Telegram URLs.
 
 ## Releases
 

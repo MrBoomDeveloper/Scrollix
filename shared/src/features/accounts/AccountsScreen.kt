@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -45,6 +46,7 @@ import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
+import com.mrboomdev.scrollix.ui.icons.TelegramLogoIcon
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import kotlinx.coroutines.launch
@@ -62,16 +64,16 @@ fun AccountsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var isAdding by remember { mutableStateOf(false) }
     var removingIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var activatingId by remember { mutableStateOf<String?>(null) }
+    var providerPickerOpen by remember { mutableStateOf(false) }
 
-    fun addAccount() {
+    fun addAccount(providerId: String) {
         if (isAdding) return
         isAdding = true
 
         scope.launch {
             try {
                 runCatching {
-                    ApiManager.addAccount("telegram")
+                    ApiManager.addAccount(providerId)
                 }.onSuccess { accountId ->
                     error = null
                     onOpenLogin(accountId)
@@ -98,24 +100,6 @@ fun AccountsScreen(
                 }
             } finally {
                 removingIds = removingIds - accountId
-            }
-        }
-    }
-
-    fun setActiveAccount(accountId: String) {
-        if (activatingId != null) return
-
-        activatingId = accountId
-
-        scope.launch {
-            try {
-                runCatching {
-                    ApiManager.setActiveAccount(accountId)
-                }.onFailure { exception ->
-                    error = exception.message ?: "Failed to switch account"
-                }
-            } finally {
-                activatingId = null
             }
         }
     }
@@ -150,7 +134,7 @@ fun AccountsScreen(
             )
 
             IconButton(
-                onClick = ::addAccount,
+                onClick = { providerPickerOpen = true },
                 enabled = !isAdding
             ) {
                 if (isAdding) {
@@ -179,6 +163,44 @@ fun AccountsScreen(
             )
         }
 
+        if (providerPickerOpen) {
+            AlertDialog(
+                onDismissRequest = { providerPickerOpen = false },
+                title = { Text("Add account") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ProviderRegistry.all().forEach { provider ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color.Transparent,
+                                onClick = {
+                                    providerPickerOpen = false
+                                    addAccount(provider.id)
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (provider.id == "telegram") {
+                                        TelegramLogoIcon(size = 20.dp)
+                                    }
+
+                                    Text(provider.displayName)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { providerPickerOpen = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -195,12 +217,11 @@ fun AccountsScreen(
                     isActive = account.id == accountState.activeAccountId,
                     authState = sessionStates[account.id],
                     isRemoving = account.id in removingIds,
-                    isActivating = account.id == activatingId,
+                    isActivating = false,
                     isDialogsLoading = account.id in dialogsLoading,
                     onOpenLogin = onOpenLogin,
                     onOpenOwnProfile = { onOpenOwnProfile(account.id) },
-                    onRemove = { removeAccount(account.id) },
-                    onSetActive = { setActiveAccount(account.id) }
+                    onRemove = { removeAccount(account.id) }
                 )
             }
 
@@ -240,8 +261,7 @@ private fun AccountRow(
     isDialogsLoading: Boolean,
     onOpenLogin: (String) -> Unit,
     onOpenOwnProfile: () -> Unit,
-    onRemove: () -> Unit,
-    onSetActive: () -> Unit
+    onRemove: () -> Unit
 ) {
     val providerName = ProviderRegistry.get(account.providerId)?.displayName
         ?: account.providerId
@@ -276,7 +296,7 @@ private fun AccountRow(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         onClick = {
             if (authState is AuthState.Ready) {
-                onSetActive()
+                onOpenOwnProfile()
             } else {
                 onOpenLogin(account.id)
             }
@@ -310,13 +330,10 @@ private fun AccountRow(
                         )
                     }
 
-                    if (isActive) {
-                        Text(
-                            text = "Active",
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.labelSmall
-                        )
+                    if (account.providerId == "telegram") {
+                        TelegramLogoIcon(size = 14.dp)
                     }
+
                 }
 
                 Text(

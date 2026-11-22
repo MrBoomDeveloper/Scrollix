@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -75,6 +76,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -107,6 +109,19 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.example.test.microphone_icon
+import com.mrboomdev.scrollix.ui.components.MediaRecordingKind
+import com.mrboomdev.scrollix.ui.components.RecordedMedia
+import com.mrboomdev.scrollix.ui.components.PollCreateDialog
+import com.mrboomdev.scrollix.ui.components.LocationPickerDialog
+import com.mrboomdev.scrollix.ui.components.RecordedMediaDialog
+import com.mrboomdev.scrollix.ui.components.rememberMediaRecorder
+import com.mrboomdev.scrollix.ui.icons.videocam_icon
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
@@ -285,6 +300,7 @@ fun DialogScreen(
     initialMessageId: Long? = null,
     onOpenProfile: () -> Unit = {},
     onOpenUserProfile: (Long) -> Unit = {},
+    onOpenHashtag: (String) -> Unit = {},
     onBack: () -> Unit
 ) {
     val isTwoPaneWindow = isTwoPaneLayout()
@@ -409,6 +425,44 @@ fun DialogScreen(
         mutableStateOf<List<PendingAttachment>>(emptyList())
     }
     var showAttachmentMenu by remember(providerDialogId) { mutableStateOf(false) }
+    var showPollDialog by remember(providerDialogId) { mutableStateOf(false) }
+    var showLocationDialog by remember(providerDialogId) { mutableStateOf(false) }
+    val mediaRecorder = rememberMediaRecorder()
+    var videoMessageMode by remember(providerDialogId) { mutableStateOf(false) }
+    var isRecording by remember(providerDialogId) { mutableStateOf(false) }
+    var recordingKind by remember(providerDialogId) {
+        mutableStateOf(MediaRecordingKind.Voice)
+    }
+    var recordingStartedAt by remember(providerDialogId) { mutableLongStateOf(0L) }
+    var recordingElapsedMs by remember(providerDialogId) { mutableLongStateOf(0L) }
+    var recordedMedia by remember(providerDialogId) { mutableStateOf<RecordedMedia?>(null) }
+    var isSendingRecording by remember(providerDialogId) { mutableStateOf(false) }
+    var recordingError by remember(providerDialogId) { mutableStateOf<String?>(null) }
+
+    fun stopRecording() {
+        if (!isRecording) return
+
+        isRecording = false
+        recordedMedia = mediaRecorder.stop()
+        recordingElapsedMs = 0L
+    }
+
+    LaunchedEffect(isRecording, recordingKind, recordingStartedAt) {
+        if (!isRecording) return@LaunchedEffect
+
+        while (isRecording) {
+            recordingElapsedMs = System.currentTimeMillis() - recordingStartedAt
+
+            if (recordingKind == MediaRecordingKind.VideoNote &&
+                recordingElapsedMs >= 60_000L
+            ) {
+                stopRecording()
+                break
+            }
+
+            delay(100L)
+        }
+    }
 
     // Drafts reset to an empty string programmatically, which never reaches
     // onValueChange, so their custom emoji spans are dropped here.
@@ -1027,6 +1081,105 @@ fun DialogScreen(
         )
     }
 
+    if (showPollDialog) {
+        PollCreateDialog(
+            onDismiss = { showPollDialog = false },
+            onCreate = { question, options, anonymous, multiple ->
+                val currentSession = session
+                showPollDialog = false
+
+                if (currentSession != null) {
+                    scope.launch {
+                        currentSession.sendPoll(
+                            providerDialogId = providerDialogId,
+                            question = question,
+                            options = options,
+                            isAnonymous = anonymous,
+                            allowsMultipleAnswers = multiple
+                        ).onSuccess {
+                            scrollRequest = ScrollRequest.Latest
+                        }.onFailure { failure ->
+                            error = failure.message ?: "Failed to create the poll"
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    if (showLocationDialog) {
+        LocationPickerDialog(
+            onDismiss = { showLocationDialog = false },
+            onSend = { latitude, longitude, livePeriodSeconds ->
+                val currentSession = session
+                showLocationDialog = false
+
+                if (currentSession != null) {
+                    scope.launch {
+                        currentSession.sendLocation(
+                            providerDialogId = providerDialogId,
+                            latitude = latitude,
+                            longitude = longitude,
+                            livePeriodSeconds = livePeriodSeconds
+                        ).onSuccess {
+                            scrollRequest = ScrollRequest.Latest
+                        }.onFailure { failure ->
+                            error = failure.message ?: "Failed to share the location"
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    recordedMedia?.let { recording ->
+        RecordedMediaDialog(
+            recording = recording,
+            isSending = isSendingRecording,
+            error = recordingError,
+            onDiscard = {
+                mediaRecorder.release(recording)
+                recordedMedia = null
+                recordingError = null
+            },
+            onSend = {
+                val currentSession = session ?: return@RecordedMediaDialog
+                isSendingRecording = true
+                recordingError = null
+
+                scope.launch {
+                    val durationSeconds = (recording.durationMs / 1000L)
+                        .toInt()
+                        .coerceAtLeast(1)
+
+                    val result = when (recording.kind) {
+                        MediaRecordingKind.Voice -> currentSession.sendVoiceNote(
+                            providerDialogId = providerDialogId,
+                            path = recording.path,
+                            durationSeconds = durationSeconds
+                        )
+
+                        MediaRecordingKind.VideoNote -> currentSession.sendVideoNote(
+                            providerDialogId = providerDialogId,
+                            path = recording.path,
+                            durationSeconds = durationSeconds
+                        )
+                    }
+
+                    isSendingRecording = false
+
+                    result.onSuccess {
+                        mediaRecorder.release(recording)
+                        recordedMedia = null
+                        scrollRequest = ScrollRequest.Latest
+                    }.onFailure { failure ->
+                        recordingError = failure.message ?: "Failed to send the recording"
+                    }
+                }
+            }
+        )
+    }
+
     // Attachments are reviewed in a blocking modal: the chat stays dimmed and
     // the composer can't be used until the message is sent or discarded.
     if (pendingAttachments.isNotEmpty()) {
@@ -1227,6 +1380,61 @@ fun DialogScreen(
         HorizontalDivider(
             color = MaterialTheme.colorScheme.surfaceContainer
         )
+
+        val activeLiveLocation = displayMessages.lastOrNull { message ->
+            message.isOutgoing && message.location?.isLive == true
+        }
+
+        activeLiveLocation?.let { liveMessage ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .clickable {
+                        searchOpen = false
+                        searchQuery.clearText()
+                        scrollRequest = ScrollRequest.Message(liveMessage.messageId)
+                    }
+                    .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sharing live location",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Text(
+                        text = "Tap to open the message",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+
+                TextButton(
+                    onClick = {
+                        val currentSession = session
+
+                        if (currentSession != null) {
+                            scope.launch {
+                                currentSession.stopLiveLocation(
+                                    providerDialogId = providerDialogId,
+                                    messageId = liveMessage.messageId
+                                ).onFailure { failure ->
+                                    error = failure.message
+                                        ?: "Failed to stop sharing the location"
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text("Stop")
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+        }
 
         dialog?.pinnedMessageId?.let { pinnedId ->
             val pinnedMessage = messages.firstOrNull { it.messageId == pinnedId }
@@ -1477,6 +1685,8 @@ fun DialogScreen(
                                     val nextDate = nextMessage?.let {
                                         messageDate(it.timestamp)
                                     }
+                                    val isNewestMessage =
+                                        message.messageId == visibleMessages.lastOrNull()?.messageId
                                     val mediaItems = message.allMedia
                                     val media = mediaItems.firstOrNull()
                                     val reply = replyFor(message, messages, loadedReplies)
@@ -1677,11 +1887,30 @@ fun DialogScreen(
                                         else -> null
                                     }
 
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Column(
+                                        // Deleted rows fade out and the rest move
+                                        // into place instead of jumping.
+                                        modifier = Modifier.animateItem(),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
                                         if (previousDate != date) {
                                             MessageDatePill(date)
                                         }
 
+                                        // Only the newest message plays the
+                                        // entrance; older rows would otherwise
+                                        // slide again while scrolling history.
+                                        val appearanceState = remember(message.messageId) {
+                                            MutableTransitionState(!isNewestMessage)
+                                                .apply { targetState = true }
+                                        }
+
+                                        AnimatedVisibility(
+                                            visibleState = appearanceState,
+                                            enter = slideInVertically(
+                                                initialOffsetY = { height -> height }
+                                            ) + fadeIn()
+                                        ) {
                                         MessageBubble(
                                             dialogKind = dialog?.kind ?: DialogKind.Direct,
                                             message = message,
@@ -1792,6 +2021,7 @@ fun DialogScreen(
                                                 }
                                             },
 
+                                            onHashtagClick = onOpenHashtag,
                                             onMentionClick = { username ->
                                                 scope.launch {
                                                     session?.resolveUsername(username)
@@ -1830,6 +2060,7 @@ fun DialogScreen(
                                                 }
                                             }
                                         )
+                                        }
                                     }
                                 }
                             }
@@ -2050,6 +2281,22 @@ fun DialogScreen(
                                         filePicker.pickFiles()
                                     }
                                 )
+
+                                DropdownMenuItem(
+                                    text = { Text("Poll") },
+                                    onClick = {
+                                        showAttachmentMenu = false
+                                        showPollDialog = true
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = { Text("Location") },
+                                    onClick = {
+                                        showAttachmentMenu = false
+                                        showLocationDialog = true
+                                    }
+                                )
                             }
                         }
 
@@ -2149,16 +2396,73 @@ fun DialogScreen(
                         }
 
                         AnimatedVisibility(input.isEmpty() && pendingAttachments.isEmpty()) {
-                            IconButton(
-                                onClick = {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .pointerInput(videoMessageMode, isRecording, mediaRecorder) {
+                                        awaitEachGesture {
+                                            awaitFirstDown(requireUnconsumed = false)
 
-                                }
+                                            val releasedEarly = withTimeoutOrNull(350L) {
+                                                waitForUpOrCancellation()
+                                            }
+
+                                            if (releasedEarly != null) {
+                                                if (mediaRecorder.supportsVideo) {
+                                                    videoMessageMode = !videoMessageMode
+                                                }
+                                                return@awaitEachGesture
+                                            }
+
+                                            val kind = if (videoMessageMode) {
+                                                MediaRecordingKind.VideoNote
+                                            } else {
+                                                MediaRecordingKind.Voice
+                                            }
+
+                                            recordingError = null
+                                            recordingKind = kind
+
+                                            if (!mediaRecorder.start(kind)) {
+                                                recordingError =
+                                                    "Microphone or camera permission is required"
+                                                return@awaitEachGesture
+                                            }
+
+                                            recordingStartedAt = System.currentTimeMillis()
+                                            recordingElapsedMs = 0L
+                                            isRecording = true
+
+                                            waitForUpOrCancellation()
+
+                                            if (isRecording) {
+                                                stopRecording()
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    imageVector = microphone_icon,
-                                    contentDescription = null
-                                )
+                                if (isRecording) {
+                                    Text(
+                                        text = "${recordingElapsedMs / 1000}s",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                } else {
+                                    Icon(
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        imageVector = if (videoMessageMode) {
+                                            videocam_icon
+                                        } else {
+                                            microphone_icon
+                                        },
+                                        contentDescription = if (videoMessageMode) {
+                                            "Hold to record a video message"
+                                        } else {
+                                            "Hold to record a voice message"
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

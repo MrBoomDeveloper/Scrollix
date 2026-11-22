@@ -2,10 +2,8 @@ product:
   type: kmp/lib
   platforms: [android, jvm]
 
-plugins:
-  build-config: enabled
-
 dependencies:
+  - //provider
   - $kotlin.serialization.json
   - $kotlin.reflect
   - $compose.runtime
@@ -20,7 +18,6 @@ dependencies:
   - $libs.jetbrains.navigation3.ui
   - $libs.jetbrains.lifecycle.viewmodelNavigation3
   - $libs.jetbrains.material3.adaptiveNavigation3
-  - $libs.tdlib
   - $libs.qrose
   - $libs.haze
   - $libs.haze.blur

@@ -32,10 +32,10 @@ data class AppSettings(
     val defaultHomeTab: String = "all",
     /** User order of folder chips; keys are "all", "folder:<account:id>" or "tab:<index>". */
     val folderOrder: List<String> = emptyList(),
-    /** User order of installed sticker packs (ids). */
-    val stickerPackOrder: List<Long> = emptyList(),
-    /** User order of installed custom-emoji packs (ids). */
-    val emojiPackOrder: List<Long> = emptyList(),
+    /** Per-account order of installed sticker packs (ids). */
+    val stickerPackOrders: Map<String, List<Long>> = emptyMap(),
+    /** Per-account order of installed custom-emoji packs (ids). */
+    val emojiPackOrders: Map<String, List<Long>> = emptyMap(),
     val showAllChatsTab: Boolean = false,
     val singleRowFilters: Boolean = false,
     val showRecentStickersAndEmojis: Boolean = true,

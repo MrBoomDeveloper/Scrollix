@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
@@ -60,6 +61,7 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageLinkPreview
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.data.model.StickerPack
@@ -129,6 +131,7 @@ fun MessageBubble(
     onSelect: (() -> Unit)? = null,
     onCancelSend: (() -> Unit)? = null,
     onMentionClick: ((String) -> Unit)? = null,
+    onHashtagClick: ((String) -> Unit)? = null,
     onReplyClick: ((Long) -> Unit)? = null
 ) {
     val layoutInfo = currentAdaptiveLayoutInfo()
@@ -138,6 +141,20 @@ fun MessageBubble(
     var readTimestamp by remember(message.messageId) { mutableStateOf<Long?>(null) }
     var usedEmojiPacks by remember(message.messageId) {
         mutableStateOf<List<StickerPack>>(emptyList())
+    }
+
+    // Mention avatars are resolved live through the session: cached message
+    // avatars are bytes from the cache and would go stale.
+    var mentionAvatars by remember(message.messageId) {
+        mutableStateOf<Map<String, Avatar>>(emptyMap())
+    }
+
+    LaunchedEffect(session, message.messageId, message.text) {
+        mentionAvatars = if (session == null || '@' !in message.text) {
+            emptyMap()
+        } else {
+            session.loadMentionAvatars(message.text)
+        }
     }
 
     // The menu lists packs that actually occur in this message: sticker media
@@ -488,6 +505,21 @@ fun MessageBubble(
                                 }
                             }
 
+                            message.location?.let { location ->
+                                LocationMessageCard(
+                                    modifier = Modifier.padding(bottom = 4.dp),
+                                    location = location,
+                                    isOutgoing = message.isOutgoing
+                                )
+                            }
+
+                            message.linkPreview?.takeIf { it.showAboveText }?.let { preview ->
+                                LinkPreviewCard(
+                                    preview = preview,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+
                             if (message.richBlocks.isNotEmpty()) {
                                 SelectionContainer {
                                     RichMessageContent(
@@ -496,6 +528,7 @@ fun MessageBubble(
                                         isOutgoing = message.isOutgoing,
                                         onMentionClick = onMentionClick,
                                         onPhoneClick = onPhoneClick,
+                                        onHashtagClick = onHashtagClick,
                                         media = richMedia
                                     )
                                 }
@@ -510,6 +543,8 @@ fun MessageBubble(
                                         adaptiveEmojis = customEmojiAdaptive,
                                         onMentionClick = onMentionClick,
                                         onPhoneClick = onPhoneClick,
+                                        onHashtagClick = onHashtagClick,
+                                        mentionAvatars = mentionAvatars,
                                         trailingContent = if (isFooterInline) {
                                             {
                                                 MessageStatusRow(
@@ -523,6 +558,13 @@ fun MessageBubble(
                                         }
                                     )
                                 }
+                            }
+
+                            message.linkPreview?.takeIf { !it.showAboveText }?.let { preview ->
+                                LinkPreviewCard(
+                                    preview = preview,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
                             }
 
                             if (!isMediaOnly && !isFooterInline) {
@@ -1515,27 +1557,31 @@ private fun MessageStatusRow(
 }
 
 private val LinkRegex = Regex(
-    """(https?://[^\s]+|www\.[^\s]+)|(?<![\w@])@[A-Za-z][A-Za-z0-9_]{2,31}|(?<![\w+])\+?\d[\d\s().-]{7,}\d(?!\w)""",
+    """(https?://[^\s]+|www\.[^\s]+)|(?<![\w@])@[A-Za-z][A-Za-z0-9_]{2,31}|(?<![\w#])#[\p{L}\p{N}_]{1,64}|(?<![\w+])\+?\d[\d\s().-]{7,}\d(?!\w)""",
     RegexOption.IGNORE_CASE
 )
 
 internal fun AnnotatedString.Builder.appendTextWithLinks(
     text: String,
     onMentionClick: ((String) -> Unit)? = null,
-    onPhoneClick: ((String) -> Unit)? = null
+    onPhoneClick: ((String) -> Unit)? = null,
+    onHashtagClick: ((String) -> Unit)? = null,
+    mentionAvatars: Map<String, Avatar> = emptyMap()
 ) {
     var index = 0
 
     LinkRegex.findAll(text).forEach { match ->
         val linkText = match.value
         val isMention = linkText.startsWith("@")
+        val isHashtag = linkText.startsWith("#")
         val isUrl = linkText.startsWith("http", ignoreCase = true) ||
             linkText.startsWith("www.", ignoreCase = true)
-        val isPhone = !isMention && !isUrl
+        val isPhone = !isMention && !isHashtag && !isUrl
 
         // Mentions and phone numbers are only rendered as links when someone
         // can react to them.
         if (isMention && onMentionClick == null) return@forEach
+        if (isHashtag && onHashtagClick == null) return@forEach
         if (isPhone && onPhoneClick == null) return@forEach
 
         if (match.range.first > index) {
@@ -1550,11 +1596,33 @@ internal fun AnnotatedString.Builder.appendTextWithLinks(
             isMention -> {
                 val username = linkText.removePrefix("@")
 
+                if (mentionAvatars.containsKey(username)) {
+                    // The avatar is inline content, so the mention itself stays
+                    // the only tap target. The alternate text is invisible and
+                    // kept zero-width to avoid duplicating the handle on copy.
+                    appendInlineContent(
+                        alternateText = "\u200B",
+                        id = "mention-avatar:$username"
+                    )
+                }
+
                 withLink(
                     LinkAnnotation.Clickable(
                         tag = "mention:$username",
                         styles = styles,
                         linkInteractionListener = { onMentionClick?.invoke(username) }
+                    )
+                ) {
+                    append(linkText)
+                }
+            }
+
+            isHashtag -> {
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "hashtag:${linkText.removePrefix("#")}",
+                        styles = styles,
+                        linkInteractionListener = { onHashtagClick?.invoke(linkText) }
                     )
                 ) {
                     append(linkText)
@@ -1568,13 +1636,27 @@ internal fun AnnotatedString.Builder.appendTextWithLinks(
                     "https://$linkText"
                 }
 
-                withLink(
-                    LinkAnnotation.Url(
-                        url = url,
-                        styles = styles
-                    )
-                ) {
-                    append(linkText)
+                if (com.mrboomdev.scrollix.DeepLinkHandler.isTelegramLink(url)) {
+                    withLink(
+                        LinkAnnotation.Clickable(
+                            tag = "deep-link:$url",
+                            styles = styles,
+                            linkInteractionListener = {
+                                com.mrboomdev.scrollix.DeepLinkHandler.publish(url)
+                            }
+                        )
+                    ) {
+                        append(linkText)
+                    }
+                } else {
+                    withLink(
+                        LinkAnnotation.Url(
+                            url = url,
+                            styles = styles
+                        )
+                    ) {
+                        append(linkText)
+                    }
                 }
             }
 
@@ -1609,4 +1691,63 @@ private fun formatCount(count: Int): String {
         .chunked(3)
         .joinToString(" ")
         .reversed()
+}
+
+/** Link preview card shown inside the message bubble. */
+@Composable
+private fun LinkPreviewCard(
+    preview: MessageLinkPreview,
+    modifier: Modifier = Modifier
+) {
+    val uriHandler = LocalUriHandler.current
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable {
+                if (com.mrboomdev.scrollix.DeepLinkHandler.isTelegramLink(preview.url)) {
+                    com.mrboomdev.scrollix.DeepLinkHandler.publish(preview.url)
+                } else {
+                    runCatching { uriHandler.openUri(preview.url) }
+                }
+            },
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            val source = preview.siteName.ifBlank { preview.displayUrl }
+
+            if (source.isNotBlank()) {
+                Text(
+                    text = source,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (preview.title.isNotBlank()) {
+                Text(
+                    modifier = Modifier.padding(top = 2.dp),
+                    text = preview.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (preview.description.isNotBlank()) {
+                Text(
+                    modifier = Modifier.padding(top = 2.dp),
+                    text = preview.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
 }

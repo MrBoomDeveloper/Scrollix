@@ -7,7 +7,9 @@ import java.nio.ShortBuffer
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
+import javax.sound.sampled.FloatControl
 import javax.sound.sampled.SourceDataLine
+import kotlin.math.log10
 
 actual fun createVoicePlayer(): VoicePlayback = JvmVoicePlayer()
 
@@ -16,6 +18,10 @@ private class JvmVoicePlayer : VoicePlayback {
     private var bytes: ByteArray? = null
     private var completion: (() -> Unit)? = null
     private var activeSession: Any? = null
+    private var line: SourceDataLine? = null
+
+    @Volatile
+    private var volume = 1f
 
     @Volatile
     private var currentPositionMs = 0L
@@ -50,6 +56,8 @@ private class JvmVoicePlayer : VoicePlayback {
             val line = AudioSystem.getLine(info) as SourceDataLine
             line.open(format)
             line.start()
+            this.line = line
+            applyVolume(line)
 
             this.bytes = bytes
             completion = onFinished
@@ -86,6 +94,7 @@ private class JvmVoicePlayer : VoicePlayback {
                     runCatching { line.drain() }
                 } catch (_: Exception) {
                 } finally {
+                    if (this.line === line) this.line = null
                     runCatching { line.stop() }
                     runCatching { line.close() }
                     runCatching { grabber.close() }
@@ -119,6 +128,26 @@ private class JvmVoicePlayer : VoicePlayback {
     }
 
     override fun positionMs(): Long = currentPositionMs
+
+    override fun setVolume(volume: Float) {
+        this.volume = volume.coerceIn(0f, 1f)
+        line?.let(::applyVolume)
+    }
+
+    private fun applyVolume(line: SourceDataLine) {
+        runCatching {
+            val control = line.getControl(FloatControl.Type.MASTER_GAIN) as FloatControl
+            val gain = if (volume <= 0f) {
+                control.minimum
+            } else {
+                (20.0 * log10(volume.toDouble()))
+                    .toFloat()
+                    .coerceIn(control.minimum, control.maximum)
+            }
+
+            control.value = gain
+        }
+    }
 
     override fun stop() {
         activeSession = null

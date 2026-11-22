@@ -21,7 +21,7 @@ data object TelegramProvider : MessengerProvider {
         storage: PlatformStorage,
         scope: CoroutineScope
     ): AccountSession {
-        return TelegramAccountSession(
+        return TelegramSession(
             account = account,
             storage = storage,
             parentScope = scope

@@ -44,6 +44,7 @@ internal fun RichMessageContent(
     modifier: Modifier = Modifier,
     onMentionClick: ((String) -> Unit)? = null,
     onPhoneClick: ((String) -> Unit)? = null,
+    onHashtagClick: ((String) -> Unit)? = null,
     media: (@Composable (MessageMedia) -> Unit)? = null
 ) {
     Column(
@@ -56,7 +57,8 @@ internal fun RichMessageContent(
                     block = block,
                     isOutgoing = isOutgoing,
                     onMentionClick = onMentionClick,
-                    onPhoneClick = onPhoneClick
+                    onPhoneClick = onPhoneClick,
+                    onHashtagClick = onHashtagClick
                 )
 
                 is MessageRichBlock.Media -> Column(
@@ -89,7 +91,8 @@ private fun RichBlockText(
     block: MessageRichBlock.Text,
     isOutgoing: Boolean,
     onMentionClick: ((String) -> Unit)?,
-    onPhoneClick: ((String) -> Unit)?
+    onPhoneClick: ((String) -> Unit)?,
+    onHashtagClick: ((String) -> Unit)?
 ) {
     val accent = accentColor(isOutgoing)
     val contentColor = if (isOutgoing) {
@@ -98,8 +101,8 @@ private fun RichBlockText(
         MaterialTheme.colorScheme.onSurface
     }
 
-    val annotated = remember(block, accent, onMentionClick, onPhoneClick) {
-        buildRichBlockText(block, accent, onMentionClick, onPhoneClick)
+    val annotated = remember(block, accent, onMentionClick, onPhoneClick, onHashtagClick) {
+        buildRichBlockText(block, accent, onMentionClick, onPhoneClick, onHashtagClick)
     }
 
     val style = when (block.style) {
@@ -176,7 +179,8 @@ private fun buildRichBlockText(
     block: MessageRichBlock.Text,
     accent: Color,
     onMentionClick: ((String) -> Unit)?,
-    onPhoneClick: ((String) -> Unit)?
+    onPhoneClick: ((String) -> Unit)?,
+    onHashtagClick: ((String) -> Unit)?
 ): AnnotatedString = buildAnnotatedString {
     val offset = block.bullet?.let { bullet ->
         append(bullet)
@@ -184,7 +188,7 @@ private fun buildRichBlockText(
         length
     } ?: 0
 
-    appendTextWithLinks(block.text, onMentionClick, onPhoneClick)
+    appendTextWithLinks(block.text, onMentionClick, onPhoneClick, onHashtagClick)
 
     block.spans.forEach { span ->
         val start = (span.start + offset).coerceIn(0, length)

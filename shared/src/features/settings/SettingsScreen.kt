@@ -295,12 +295,39 @@ private fun SettingsCategoryContent(
                 )
 
                 val accountState by ApiManager.accountState.collectAsState()
-                val activeSession = remember(accountState.activeAccountId) {
-                    accountState.activeAccountId?.let { accountId ->
-                        ApiManager.session(accountId)
-                    }
+                var selectedAccountId by remember {
+                    mutableStateOf(
+                        accountState.activeAccountId
+                            ?: accountState.accounts.firstOrNull()?.id
+                    )
+                }
+                val selectedSession = remember(selectedAccountId) {
+                    selectedAccountId?.let { accountId -> ApiManager.session(accountId) }
                 }
                 var reorderKind by remember { mutableStateOf<StickerPackKind?>(null) }
+
+                if (accountState.accounts.size > 1) {
+                    Text(
+                        text = "Account for pack settings",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        accountState.accounts.forEach { account ->
+                            if (account.id == selectedAccountId) {
+                                Button(onClick = {}) { Text(account.displayName) }
+                            } else {
+                                TextButton(onClick = { selectedAccountId = account.id }) {
+                                    Text(account.displayName)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { reorderKind = StickerPackKind.Sticker }) {
@@ -315,19 +342,28 @@ private fun SettingsCategoryContent(
                 reorderKind?.let { kind ->
                     PackOrderDialog(
                         kind = kind,
-                        session = activeSession,
+                        session = selectedSession,
                         order = if (kind == StickerPackKind.Sticker) {
-                            settings.stickerPackOrder
+                            settings.stickerPackOrders[selectedAccountId].orEmpty()
                         } else {
-                            settings.emojiPackOrder
+                            settings.emojiPackOrders[selectedAccountId].orEmpty()
                         },
                         onDismiss = { reorderKind = null },
                         onSave = { orderedIds ->
+                            val accountId = selectedAccountId
+                                ?: return@PackOrderDialog
+
                             AppSettingsStore.update { current ->
                                 if (kind == StickerPackKind.Sticker) {
-                                    current.copy(stickerPackOrder = orderedIds)
+                                    current.copy(
+                                        stickerPackOrders = current.stickerPackOrders +
+                                            (accountId to orderedIds)
+                                    )
                                 } else {
-                                    current.copy(emojiPackOrder = orderedIds)
+                                    current.copy(
+                                        emojiPackOrders = current.emojiPackOrders +
+                                            (accountId to orderedIds)
+                                    )
                                 }
                             }
                             reorderKind = null
@@ -873,10 +909,29 @@ private fun QuickReactionsDialog(
 private fun PinnedReactionsEditor() {
     val settings by AppSettingsStore.state.collectAsState()
     val accountState by ApiManager.accountState.collectAsState()
-    val session = remember(accountState.activeAccountId) {
-        accountState.activeAccountId?.let { accountId -> ApiManager.session(accountId) }
+    var accountId by remember {
+        mutableStateOf(
+            accountState.activeAccountId ?: accountState.accounts.firstOrNull()?.id
+        )
+    }
+    val session = remember(accountId) {
+        accountId?.let { id -> ApiManager.session(id) }
     }
     var pickerOpen by remember { mutableStateOf(false) }
+
+    if (accountState.accounts.size > 1) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            accountState.accounts.forEach { account ->
+                if (account.id == accountId) {
+                    Button(onClick = {}) { Text(account.displayName) }
+                } else {
+                    TextButton(onClick = { accountId = account.id }) {
+                        Text(account.displayName)
+                    }
+                }
+            }
+        }
+    }
 
     Text(
         text = "Pinned reactions",
