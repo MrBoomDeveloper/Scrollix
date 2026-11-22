@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.storage.DialogScrollPosition
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -28,6 +29,8 @@ class DialogMessageListState internal constructor(
     startReady: Boolean,
     startNewestId: Long?,
     private val history: () -> MessageHistory,
+    /** Messages as rendered, with media albums merged into single rows. */
+    private val displayMessages: () -> List<ChatMessage>,
     private val requestOlderPage: suspend () -> Result<Boolean>,
     private val requestMessage: suspend (Long) -> Result<Boolean>,
     private val refreshNewest: suspend () -> Result<Unit>,
@@ -69,7 +72,10 @@ class DialogMessageListState internal constructor(
                 if (!loaded) return false
             }
 
-            val index = history().indexOf(messageId)
+            val index = displayMessages().indexOfFirst { message ->
+                messageId in message.allMessageIds
+            }
+
             if (index < 0) return false
 
             listState.animateScrollToItem(index)
@@ -91,14 +97,14 @@ class DialogMessageListState internal constructor(
         hasNewMessages = false
 
         try {
-            val loaded = history().messages
+            val loaded = displayMessages()
             if (loaded.isNotEmpty()) {
                 listState.scrollToItem(loaded.lastIndex)
             }
 
             refreshNewest().exceptionOrNull()?.let(onError)
 
-            val messages = history().messages
+            val messages = displayMessages()
             if (messages.isNotEmpty()) {
                 listState.animateScrollToItem(messages.lastIndex)
             }
@@ -141,6 +147,7 @@ class DialogMessageListState internal constructor(
 fun rememberDialogMessageListState(
     providerDialogId: String,
     history: MessageHistory,
+    displayMessages: List<ChatMessage>,
     initialMessageId: Long? = null,
     savedPosition: DialogScrollPosition?,
     trackPosition: Boolean,
@@ -154,7 +161,7 @@ fun rememberDialogMessageListState(
     // LazyColumn can start exactly at the restored anchor instead of rendering
     // the newest message for one frame and then jumping there.
     val initialPosition = remember(providerDialogId) {
-        val messages = history.messages
+        val messages = displayMessages
         val saved = savedPosition
 
         when {
@@ -163,7 +170,7 @@ fun rememberDialogMessageListState(
             // A post opened from global search wins over the saved anchor.
             initialMessageId != null -> {
                 val index = messages.indexOfFirst { message ->
-                    message.messageId == initialMessageId
+                    initialMessageId in message.allMessageIds
                 }
 
                 if (index >= 0) index to 0 else null
@@ -171,7 +178,7 @@ fun rememberDialogMessageListState(
 
             saved != null && !saved.atBottom -> {
                 val index = messages.indexOfFirst { message ->
-                    message.messageId == saved.anchorMessageId
+                    saved.anchorMessageId in message.allMessageIds
                 }
 
                 if (index >= 0) index to saved.offset else null
@@ -186,6 +193,7 @@ fun rememberDialogMessageListState(
         initialFirstVisibleItemScrollOffset = initialPosition?.second ?: 0
     )
     val latestHistory = rememberUpdatedState(history)
+    val latestDisplayMessages = rememberUpdatedState(displayMessages)
     val latestInitialMessageId = rememberUpdatedState(initialMessageId)
     val latestSavedPosition = rememberUpdatedState(savedPosition)
     val latestLoadOlder = rememberUpdatedState(loadOlder)
@@ -204,6 +212,7 @@ fun rememberDialogMessageListState(
                 null
             },
             history = { latestHistory.value },
+            displayMessages = { latestDisplayMessages.value },
             requestOlderPage = { latestLoadOlder.value() },
             requestMessage = { messageId -> latestLoadUntilLoaded.value(messageId) },
             refreshNewest = { latestLoadLatest.value() },
@@ -231,11 +240,15 @@ fun rememberDialogMessageListState(
         val initialTarget = latestInitialMessageId.value
 
         if (initialTarget != null) {
-            var index = latestHistory.value.indexOf(initialTarget)
+            var index = latestDisplayMessages.value.indexOfFirst { message ->
+                initialTarget in message.allMessageIds
+            }
 
             if (index < 0) {
                 latestLoadUntilLoaded.value(initialTarget)
-                index = latestHistory.value.indexOf(initialTarget)
+                index = latestDisplayMessages.value.indexOfFirst { message ->
+                    initialTarget in message.allMessageIds
+                }
             }
 
             if (index >= 0) {
@@ -252,11 +265,15 @@ fun rememberDialogMessageListState(
         val saved = latestSavedPosition.value
 
         if (saved != null && !saved.atBottom) {
-            var index = latestHistory.value.indexOf(saved.anchorMessageId)
+            var index = latestDisplayMessages.value.indexOfFirst { message ->
+                saved.anchorMessageId in message.allMessageIds
+            }
 
             if (index < 0) {
                 latestLoadUntilLoaded.value(saved.anchorMessageId)
-                index = latestHistory.value.indexOf(saved.anchorMessageId)
+                index = latestDisplayMessages.value.indexOfFirst { message ->
+                    saved.anchorMessageId in message.allMessageIds
+                }
             }
 
             if (index >= 0) {
@@ -267,7 +284,7 @@ fun rememberDialogMessageListState(
             }
         }
 
-        val messages = latestHistory.value.messages
+        val messages = latestDisplayMessages.value
         if (messages.isEmpty()) return@LaunchedEffect
 
         listState.requestScrollToItem(messages.lastIndex)
@@ -287,7 +304,7 @@ fun rememberDialogMessageListState(
 
         if (previous == null || previous == newest) return@LaunchedEffect
 
-        val index = latestHistory.value.messages.lastIndex
+        val index = latestDisplayMessages.value.lastIndex
         if (index < 0) return@LaunchedEffect
 
         // Never move the viewport while the user is touching the list: content
@@ -339,7 +356,8 @@ fun rememberDialogMessageListState(
 
                 val info = listState.layoutInfo
                 val first = info.visibleItemsInfo.firstOrNull() ?: return@collect
-                val anchor = current.messages.getOrNull(first.index) ?: return@collect
+                val anchor = latestDisplayMessages.value.getOrNull(first.index)
+                    ?: return@collect
                 val last = info.visibleItemsInfo.lastOrNull()
 
                 latestOnPositionChanged.value(

@@ -151,12 +151,13 @@ fun MessageBubble(
         }
     }
     
+    val primaryMedia = message.allMedia.firstOrNull()
     val isMediaOnly = message.replyTo == null && message.text.isBlank() && (
-        message.media?.kind == MessageMediaKind.Sticker ||
-            message.media?.kind == MessageMediaKind.VideoNote ||
-            message.media?.kind == MessageMediaKind.Animation ||
-            message.media?.kind == MessageMediaKind.Photo
-    ) || (message.replyTo != null && (message.media?.kind == MessageMediaKind.Sticker || message.media?.kind == MessageMediaKind.VideoNote))
+        primaryMedia?.kind == MessageMediaKind.Sticker ||
+            primaryMedia?.kind == MessageMediaKind.VideoNote ||
+            primaryMedia?.kind == MessageMediaKind.Animation ||
+            primaryMedia?.kind == MessageMediaKind.Photo
+    ) || (message.replyTo != null && (primaryMedia?.kind == MessageMediaKind.Sticker || primaryMedia?.kind == MessageMediaKind.VideoNote))
 
     // Messages without reactions put a copy of the footer right after the text,
     // so that short messages don't waste a whole line on it.

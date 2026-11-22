@@ -15,25 +15,66 @@ data class MediaViewerRequest(
     val isVideo: Boolean
 )
 
+data class MediaGalleryRequest(
+    val media: List<MessageMedia>,
+    val initialIndex: Int,
+    val session: AccountSession?
+)
+
 object MediaViewer {
     private val _request = MutableStateFlow<MediaViewerRequest?>(null)
     val request: StateFlow<MediaViewerRequest?> = _request.asStateFlow()
 
+    private val _gallery = MutableStateFlow<MediaGalleryRequest?>(null)
+    val gallery: StateFlow<MediaGalleryRequest?> = _gallery.asStateFlow()
+
     fun showImage(media: MessageMedia, session: AccountSession?) {
+        _gallery.value = null
         _request.value = MediaViewerRequest(media = media, session = session, isVideo = false)
     }
 
     fun showVideo(media: MessageMedia, session: AccountSession?) {
+        _gallery.value = null
         _request.value = MediaViewerRequest(media = media, session = session, isVideo = true)
+    }
+
+    fun showGallery(
+        media: List<MessageMedia>,
+        initialIndex: Int,
+        session: AccountSession?
+    ) {
+        if (media.isEmpty()) return
+
+        _request.value = null
+        _gallery.value = MediaGalleryRequest(
+            media = media,
+            initialIndex = initialIndex.coerceIn(0, media.lastIndex),
+            session = session
+        )
     }
 
     fun close() {
         _request.value = null
+        _gallery.value = null
     }
 }
 
 @Composable
 fun MediaViewerOverlay() {
+    val galleryRequest by MediaViewer.gallery.collectAsState()
+    val currentGallery = galleryRequest
+
+    if (currentGallery != null) {
+        FullscreenGalleryViewer(
+            media = currentGallery.media,
+            initialIndex = currentGallery.initialIndex,
+            session = currentGallery.session,
+            onClose = MediaViewer::close
+        )
+
+        return
+    }
+
     val request by MediaViewer.request.collectAsState()
     val current = request ?: return
 

@@ -185,6 +185,12 @@ data class ChatMessage(
     val timestamp: Long,
     val isOutgoing: Boolean,
     val media: MessageMedia? = null,
+    /** Non-zero when this message is one item of a media album. */
+    val mediaAlbumId: Long? = null,
+    /** All attachments of a grouped album; empty for a single-media message. */
+    val mediaItems: List<MessageMedia> = emptyList(),
+    /** TDLib message ids merged into this row; empty unless this is an album. */
+    val messageIds: List<Long> = emptyList(),
     val poll: MessagePollInfo? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
     val richBlocks: List<MessageRichBlock> = emptyList(),
@@ -194,4 +200,12 @@ data class ChatMessage(
     val shareCount: Int = 0,
     val sendState: MessageSendState = MessageSendState.Sent,
     val isRead: Boolean = false
-)
+) {
+    /** Every attachment in display order, including a single-media message. */
+    val allMedia: List<MessageMedia>
+        get() = mediaItems.ifEmpty { listOfNotNull(media) }
+
+    /** Every TDLib message id represented by this row, albums included. */
+    val allMessageIds: List<Long>
+        get() = messageIds.ifEmpty { listOf(messageId) }
+}

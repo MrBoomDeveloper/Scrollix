@@ -2265,6 +2265,7 @@ class TelegramAccountSession(
             timestamp = message.date.toLong() * 1000L,
             isOutgoing = message.isOutgoing,
             media = mapMedia(message.content),
+            mediaAlbumId = message.mediaAlbumId.takeIf { it != 0L },
             poll = mapPoll(message.content),
             customEmojis = messageCustomEmojis(message.content),
             richBlocks = mapRichBlocks(message.content),

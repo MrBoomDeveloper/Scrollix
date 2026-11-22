@@ -117,6 +117,7 @@ import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+import com.mrboomdev.scrollix.data.model.groupMessageAlbums
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.DialogScrollPositionStore
@@ -135,6 +136,7 @@ import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.components.MediaViewer
+import com.mrboomdev.scrollix.ui.components.MessageGallery
 import com.mrboomdev.scrollix.ui.components.MessageDatePill
 import com.mrboomdev.scrollix.ui.components.MessageBubble
 import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
@@ -288,6 +290,7 @@ fun DialogScreen(
     }
     val history by historyFlow.collectAsState()
     val messages = history.messages
+    val displayMessages = remember(messages) { messages.groupMessageAlbums() }
     val dialog = dialogs.firstOrNull { it.providerDialogId == providerDialogId }
     val settings by AppSettingsStore.state.collectAsState()
     var appWallpaper by remember(settings.wallpaperUpdatedAt) {
@@ -492,12 +495,17 @@ fun DialogScreen(
             !messages[index].isOutgoing
         } ?: start
 
-        unreadAnchorMessageId = messages[anchorIndex].messageId
+        val anchorId = messages[anchorIndex].messageId
+        unreadAnchorMessageId = displayMessages
+            .firstOrNull { message -> anchorId in message.allMessageIds }
+            ?.messageId
+            ?: anchorId
     }
 
     val messageListState = rememberDialogMessageListState(
         providerDialogId = providerDialogId,
         history = history,
+        displayMessages = displayMessages,
         initialMessageId = initialMessageId,
         savedPosition = remember(accountId, providerDialogId) {
             DialogScrollPositionStore.get(accountId, providerDialogId)
@@ -613,7 +621,9 @@ fun DialogScreen(
             return@LaunchedEffect
         }
 
-        if (messages.any { it.messageId == pinnedId }) return@LaunchedEffect
+        if (messages.any { message -> pinnedId in message.allMessageIds }) {
+            return@LaunchedEffect
+        }
         if (loadedPinnedMessage?.messageId == pinnedId) return@LaunchedEffect
         if (attemptedPinnedMessageId == pinnedId) return@LaunchedEffect
 
@@ -676,7 +686,9 @@ fun DialogScreen(
         isSearchPending = false
     }
 
-    val visibleMessages = if (searchQuery.text.isBlank()) messages else searchResults
+    val visibleMessages = remember(displayMessages, searchResults, searchQuery.text) {
+        if (searchQuery.text.isBlank()) displayMessages else searchResults.groupMessageAlbums()
+    }
 
     LaunchedEffect(session, providerDialogId, visibleMessages, messages, loadedReplies) {
         val currentSession = session ?: return@LaunchedEffect
@@ -1190,6 +1202,10 @@ fun DialogScreen(
             }
             
             Column(Modifier.fillMaxSize()) {
+                val selectedMessageCount = displayMessages.count { message ->
+                    message.allMessageIds.any { id -> id in selectedMessageIds }
+                }
+
                 AnimatedVisibility(visible = selectedMessageIds.isNotEmpty()) {
                     Row(
                         modifier = Modifier
@@ -1201,7 +1217,7 @@ fun DialogScreen(
                     ) {
                         Text(
                             modifier = Modifier.weight(1f),
-                            text = "${selectedMessageIds.size} selected",
+                            text = "$selectedMessageCount selected",
                             style = MaterialTheme.typography.bodyMedium
                         )
 
@@ -1291,7 +1307,8 @@ fun DialogScreen(
                                     val nextDate = nextMessage?.let {
                                         messageDate(it.timestamp)
                                     }
-                                    val media = message.media
+                                    val mediaItems = message.allMedia
+                                    val media = mediaItems.firstOrNull()
                                     val reply = replyFor(message, messages, loadedReplies)
                                     val replyMedia = reply?.media
                                         ?.takeIf { it.kind == MessageMediaKind.Photo }
@@ -1351,6 +1368,20 @@ fun DialogScreen(
                                                         }
                                                     }
                                                 )
+                                            }
+                                        }
+                                        mediaItems.size > 1 -> {
+                                            {
+                                                MessageGallery(
+                                                    media = mediaItems,
+                                                    session = session
+                                                ) { index ->
+                                                    MediaViewer.showGallery(
+                                                        media = mediaItems,
+                                                        initialIndex = index,
+                                                        session = session
+                                                    )
+                                                }
                                             }
                                         }
                                         media == null -> null
@@ -1430,19 +1461,20 @@ fun DialogScreen(
                                             isSelected = message.messageId in selectedMessageIds,
                                             isPinned = dialog?.pinnedMessageId == message.messageId,
                                             onToggleSelection = {
+                                                val ids = message.allMessageIds.toSet()
                                                 selectedMessageIds =
                                                     if (message.messageId in selectedMessageIds) {
-                                                        selectedMessageIds - message.messageId
+                                                        selectedMessageIds - ids
                                                     } else {
-                                                        selectedMessageIds + message.messageId
+                                                        selectedMessageIds + ids
                                                     }
                                             },
                                             onReply = { replyingTo = message },
                                             onForward = {
-                                                forwardingMessageIds = longArrayOf(message.messageId)
+                                                forwardingMessageIds = message.allMessageIds.toLongArray()
                                             },
                                             onDelete = {
-                                                deleteMessages(longArrayOf(message.messageId))
+                                                deleteMessages(message.allMessageIds.toLongArray())
                                             },
                                             onPin = {
                                                 pinMessage(
@@ -1451,7 +1483,7 @@ fun DialogScreen(
                                                 )
                                             },
                                             onSelect = {
-                                                selectedMessageIds = setOf(message.messageId)
+                                                selectedMessageIds = message.allMessageIds.toSet()
                                             },
                                             onOpenSender = if (
                                                 !message.isOutgoing &&
