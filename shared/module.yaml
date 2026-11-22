@@ -22,6 +22,8 @@ dependencies:
   - $libs.jetbrains.material3.adaptiveNavigation3
   - $libs.tdlib
   - $libs.qrose
+  - $libs.haze
+  - $libs.haze.blur
   - $libs.compottie
   - nl.jacobras:Human-Readable:2.0.0
   - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0

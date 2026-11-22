@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.key.Key
@@ -52,6 +53,7 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -118,10 +120,12 @@ import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.model.groupMessageAlbums
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.DialogScrollPositionStore
+import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.resources.Res
 import com.mrboomdev.scrollix.resources.wallpaper
@@ -135,6 +139,7 @@ import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
 import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.loadingBlur
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MessageGallery
@@ -163,6 +168,8 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
+
+private const val MaxAlbumAttachments = 10
 
 
 /**
@@ -391,6 +398,10 @@ fun DialogScreen(
     var inputEmojiAdaptive by remember(providerDialogId) {
         mutableStateOf<Set<Long>>(emptySet())
     }
+    var pendingAttachments by remember(providerDialogId) {
+        mutableStateOf<List<PendingAttachment>>(emptyList())
+    }
+    var showAttachmentMenu by remember(providerDialogId) { mutableStateOf(false) }
 
     // Drafts reset to an empty string programmatically, which never reaches
     // onValueChange, so their custom emoji spans are dropped here.
@@ -533,31 +544,27 @@ fun DialogScreen(
     )
     val listState = messageListState.listState
 
-    fun sendAttachment(picked: PickedFile, asPhoto: Boolean) {
-        if (session == null) return
+    fun addAttachments(picked: List<PickedFile>, asPhoto: Boolean) {
+        if (picked.isEmpty() || editingMessage != null) return
 
-        keyboardController?.hide()
-        scope.launch {
-            isSending = true
-            error = null
+        val free = (MaxAlbumAttachments - pendingAttachments.size).coerceAtLeast(0)
+        if (free == 0) {
+            error = "You can attach up to $MaxAlbumAttachments files"
+            return
+        }
 
-            session.sendFile(
-                providerDialogId = providerDialogId,
-                path = picked.path,
-                asPhoto = asPhoto
-            ).onSuccess {
-                scrollRequest = ScrollRequest.Latest
-            }.onFailure {
-                error = it.message ?: "Failed to send file"
-            }
+        pendingAttachments = pendingAttachments + picked
+            .take(free)
+            .map { file -> PendingAttachment(file = file, asPhoto = asPhoto) }
 
-            isSending = false
+        if (picked.size > free) {
+            error = "Only $MaxAlbumAttachments files can be sent at once"
         }
     }
 
     val filePicker = rememberFilePicker(
-        onImagePicked = { picked -> sendAttachment(picked, asPhoto = true) },
-        onFilePicked = { picked -> sendAttachment(picked, asPhoto = false) }
+        onImagesPicked = { picked -> addAttachments(picked, asPhoto = true) },
+        onFilesPicked = { picked -> addAttachments(picked, asPhoto = false) }
     )
 
     fun deleteMessages(messageIds: LongArray) {
@@ -758,7 +765,10 @@ fun DialogScreen(
 
     fun send() {
         val text = input.trim()
-        if (text.isEmpty() || session == null) return
+        val attachments = pendingAttachments
+        val currentSession = session ?: return
+        if (text.isEmpty() && attachments.isEmpty()) return
+        if (editingMessage != null && attachments.isNotEmpty()) return
 
         keyboardController?.hide()
         scope.launch {
@@ -768,7 +778,7 @@ fun DialogScreen(
             val editing = editingMessage
 
             if (editing != null) {
-                session.editMessage(
+                currentSession.editMessage(
                     providerDialogId = providerDialogId,
                     messageId = editing.messageId,
                     text = text,
@@ -779,8 +789,29 @@ fun DialogScreen(
                         editingMessage = null
                     }
                     .onFailure { error = it.message ?: "Failed to edit message" }
+            } else if (attachments.isNotEmpty()) {
+                currentSession.sendFiles(
+                    providerDialogId = providerDialogId,
+                    attachments = attachments.map { attachment ->
+                        OutgoingAttachment(
+                            path = attachment.file.path,
+                            asPhoto = attachment.asPhoto
+                        )
+                    },
+                    caption = text,
+                    replyToMessageId = replyingTo?.messageId,
+                    customEmojis = inputCustomEmojis
+                )
+                    .onSuccess {
+                        input = ""
+                        inputCustomEmojis = emptyList()
+                        pendingAttachments = emptyList()
+                        replyingTo = null
+                        scrollRequest = ScrollRequest.Latest
+                    }
+                    .onFailure { error = it.message ?: "Failed to send attachments" }
             } else {
-                session.sendMessage(
+                currentSession.sendMessage(
                     providerDialogId = providerDialogId,
                     text = text,
                     replyToMessageId = replyingTo?.messageId,
@@ -1371,7 +1402,8 @@ fun DialogScreen(
                                                 )
                                             }
                                         }
-                                        mediaItems.size > 1 -> {
+                                        mediaItems.size > 1 &&
+                                            mediaItems.all { item -> item.isGalleryMedia() } -> {
                                             {
                                                 MessageGallery(
                                                     media = mediaItems,
@@ -1382,6 +1414,72 @@ fun DialogScreen(
                                                         initialIndex = index,
                                                         session = session
                                                     )
+                                                }
+                                            }
+                                        }
+                                        mediaItems.size > 1 -> {
+                                            {
+                                                // A media album can contain documents.
+                                                // Those must render as file cards, not
+                                                // be sent through the image gallery.
+                                                Column(
+                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    for (item in mediaItems) {
+                                                        when (item.kind) {
+                                                            MessageMediaKind.Photo -> MessageImagePreview(
+                                                                media = item,
+                                                                session = session,
+                                                                fillWidth = false
+                                                            ) {
+                                                                MediaViewer.showImage(item, session)
+                                                            }
+
+                                                            MessageMediaKind.Video -> ChatVideoPreview(
+                                                                media = item,
+                                                                session = session
+                                                            ) {
+                                                                MediaViewer.showVideo(item, session)
+                                                            }
+
+                                                            MessageMediaKind.Animation -> ChatAnimationPreview(
+                                                                media = item,
+                                                                session = session
+                                                            ) {
+                                                                MediaViewer.showVideo(item, session)
+                                                            }
+
+                                                            MessageMediaKind.VideoNote -> ChatVideoPreview(
+                                                                media = item,
+                                                                session = session,
+                                                                isRound = true
+                                                            ) {
+                                                                MediaViewer.showVideo(item, session)
+                                                            }
+
+                                                            MessageMediaKind.VoiceNote,
+                                                            MessageMediaKind.Audio -> VoiceMessagePlayer(
+                                                                media = item,
+                                                                session = session
+                                                            )
+
+                                                            MessageMediaKind.File -> MessageFileCard(
+                                                                media = item,
+                                                                session = session,
+                                                                isOutgoing = message.isOutgoing
+                                                            )
+
+                                                            MessageMediaKind.Sticker -> ChatSticker(
+                                                                media = item,
+                                                                session = session,
+                                                                onClick = {
+                                                                    item.stickerSetId?.let { setId ->
+                                                                        openedStickerSetId = setId
+                                                                    }
+                                                                }
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -1486,6 +1584,9 @@ fun DialogScreen(
                                             onSelect = {
                                                 selectedMessageIds = message.allMessageIds.toSet()
                                             },
+                                            onCancelSend = {
+                                                deleteMessages(message.allMessageIds.toLongArray())
+                                            },
                                             onOpenSender = if (
                                                 !message.isOutgoing &&
                                                 !(dialog?.kind ?: DialogKind.Direct).isPeer &&
@@ -1498,10 +1599,12 @@ fun DialogScreen(
 
                                             onEdit = if (
                                                 message.isOutgoing &&
-                                                message.text.isNotBlank()
+                                                message.text.isNotBlank() &&
+                                                !message.isService
                                             ) {
                                                 {
                                                     editingMessage = message
+                                                    pendingAttachments = emptyList()
                                                     input = message.text; inputCustomEmojis = message.customEmojis
                                                 }
                                             } else {
@@ -1736,6 +1839,19 @@ fun DialogScreen(
                     }
                 }
 
+                AnimatedVisibility(visible = pendingAttachments.isNotEmpty()) {
+                    PendingAttachmentsTray(
+                        attachments = pendingAttachments,
+                        onRemove = { index ->
+                            pendingAttachments = pendingAttachments.filterIndexed {
+                                    itemIndex,
+                                    _ -> itemIndex != index
+                            }
+                        },
+                        onClear = { pendingAttachments = emptyList() }
+                    )
+                }
+
                 if (dialog?.canSendMessages == false) {
                     NotSendableNotice()
                 } else Row(
@@ -1760,16 +1876,38 @@ fun DialogScreen(
                             .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        IconButton(
-                            onClick = {
-                                filePicker.pickFile()
+                        Box {
+                            IconButton(
+                                enabled = editingMessage == null,
+                                onClick = { showAttachmentMenu = true }
+                            ) {
+                                Icon(
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    imageVector = add_icon,
+                                    contentDescription = "Attach photos or files"
+                                )
                             }
-                        ) {
-                            Icon(
-                                tint = MaterialTheme.colorScheme.secondary,
-                                imageVector = add_icon,
-                                contentDescription = null
-                            )
+
+                            DropdownMenu(
+                                expanded = showAttachmentMenu,
+                                onDismissRequest = { showAttachmentMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Photos") },
+                                    onClick = {
+                                        showAttachmentMenu = false
+                                        filePicker.pickImages()
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = { Text("Files") },
+                                    onClick = {
+                                        showAttachmentMenu = false
+                                        filePicker.pickFiles()
+                                    }
+                                )
+                            }
                         }
 
                         BasicTextField(
@@ -1835,7 +1973,11 @@ fun DialogScreen(
                                             style = MaterialTheme.typography.bodyLarge,
                                             fontWeight = FontWeight.Normal,
                                             color = MaterialTheme.colorScheme.secondary,
-                                            text = "Write a message..."
+                                            text = if (pendingAttachments.isEmpty()) {
+                                                "Write a message..."
+                                            } else {
+                                                "Add a caption..."
+                                            }
                                         )
                                     }
                                 }
@@ -1863,7 +2005,7 @@ fun DialogScreen(
                             )
                         }
 
-                        AnimatedVisibility(input.isEmpty()) {
+                        AnimatedVisibility(input.isEmpty() && pendingAttachments.isEmpty()) {
                             IconButton(
                                 onClick = {
 
@@ -1878,9 +2020,10 @@ fun DialogScreen(
                         }
                     }
 
-                    AnimatedVisibility(input.isNotEmpty()) {
+                    AnimatedVisibility(input.isNotEmpty() || pendingAttachments.isNotEmpty()) {
                         FilledIconButton(
-                            enabled = input.isNotBlank() && !isSending,
+                            enabled = (input.isNotBlank() || pendingAttachments.isNotEmpty()) &&
+                                !isSending,
                             onClick = ::send
                         ) {
                             if (isSending) {
@@ -1906,6 +2049,143 @@ fun DialogScreen(
         }
     }
 }
+
+@Composable
+private fun PendingAttachmentsTray(
+    attachments: List<PendingAttachment>,
+    onRemove: (Int) -> Unit,
+    onClear: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = "${attachments.size} of $MaxAlbumAttachments attached",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+
+            TextButton(onClick = onClear) {
+                Text("Clear")
+            }
+        }
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            itemsIndexed(attachments) { index, attachment ->
+                PendingAttachmentTile(
+                    attachment = attachment,
+                    onRemove = { onRemove(index) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingAttachmentTile(
+    attachment: PendingAttachment,
+    onRemove: () -> Unit
+) {
+    var preview by remember(attachment.file.path) { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(attachment.file.path, attachment.asPhoto) {
+        if (!attachment.asPhoto) return@LaunchedEffect
+
+        val bytes = withContext(Dispatchers.IO) {
+            readFileBytes(attachment.file.path)
+        }
+
+        preview = bytes?.let { data ->
+            withContext(Dispatchers.Default) { decodeImageBitmap(data) }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(92.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(12.dp))
+    ) {
+        val image = preview
+
+        if (image != null) {
+            Image(
+                bitmap = image,
+                contentDescription = attachment.file.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else if (attachment.asPhoto) {
+            Text(
+                modifier = Modifier.align(Alignment.Center),
+                text = "PHOTO",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = attachment.file.extensionLabel(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Text(
+                    text = attachment.file.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(3.dp)
+                .size(20.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.65f))
+                .clickable(onClick = onRemove),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                modifier = Modifier.size(14.dp),
+                imageVector = close_icon,
+                contentDescription = "Remove attachment",
+                tint = Color.White
+            )
+        }
+    }
+}
+
+private fun PickedFile.extensionLabel(): String {
+    val extension = name.substringAfterLast('.', "")
+        .takeIf { it.isNotBlank() && it.length <= 5 }
+        ?: return "FILE"
+
+    return extension.uppercase()
+}
+
+private data class PendingAttachment(
+    val file: PickedFile,
+    val asPhoto: Boolean
+)
 
 @Composable
 private fun UnreadMessagesHeader() {
@@ -2088,12 +2368,12 @@ private fun MessageImagePreview(
     }
 
     LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
+        isLoading = true
         image = media.minithumbnail?.let { bytes ->
             withContext(Dispatchers.Default) {
                 decodeImageBitmap(bytes)
             }
         }
-        isLoading = image == null
 
         val bytes = media.previewFileId?.let { fileId ->
             session?.loadFile(fileId)?.getOrNull()
@@ -2134,27 +2414,25 @@ private fun MessageImagePreview(
             .clickable(enabled = bitmap != null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        when {
-            bitmap != null -> {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
-                )
-            }
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .loadingBlur(isLoading),
+                contentScale = ContentScale.Fit
+            )
+        } else if (!isLoading) {
+            Text(
+                text = "Image",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
 
-            isLoading -> {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            }
-
-            else -> {
-                Text(
-                    text = "Image",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-            }
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -2415,12 +2693,18 @@ private fun PollOptionMedia(
             data = media.fileId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
         }
 
-        val emoji = remember(media.fileId, data, media.stickerFormat) {
+        val emoji = remember(
+            media.fileId,
+            data,
+            media.stickerFormat,
+            media.needsRepainting
+        ) {
             DialogFolderEmoji(
                 customEmojiId = (media.fileId ?: 0).toLong(),
                 offset = 0,
                 length = 0,
                 fallback = "",
+                needsRepainting = media.needsRepainting,
                 format = when (media.stickerFormat) {
                     MessageStickerFormat.Tgs -> DialogFolderEmojiFormat.Tgs
                     MessageStickerFormat.Webm -> DialogFolderEmojiFormat.Webm
@@ -2496,6 +2780,17 @@ private fun pollTypeLabel(poll: MessagePollInfo): String {
     return parts.joinToString(" · ")
 }
 
+private fun MessageMedia.isGalleryMedia(): Boolean {
+    return when (kind) {
+        MessageMediaKind.Photo,
+        MessageMediaKind.Video,
+        MessageMediaKind.Animation,
+        MessageMediaKind.VideoNote -> true
+
+        else -> false
+    }
+}
+
 @Composable
 private fun MessageFileCard(
     media: MessageMedia,
@@ -2517,67 +2812,88 @@ private fun MessageFileCard(
         MaterialTheme.colorScheme.secondary
     }
 
-    Row(
+    Column(
         modifier = Modifier
-            .width(260.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .width(300.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(
                 if (isOutgoing) {
                     MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f)
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant
+                    MaterialTheme.colorScheme.surfaceContainerHigh
                 }
             )
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(
-                    if (isOutgoing) {
-                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainer
-                    }
-                ),
-            contentAlignment = Alignment.Center
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "FILE",
-                style = MaterialTheme.typography.labelSmall,
-                color = contentColor
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp)
-        ) {
-            Text(
-                text = media.fileName?.takeIf { it.isNotBlank() } ?: "File",
-                style = MaterialTheme.typography.bodyMedium,
-                color = contentColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            val size = formatFileSize(media.size)
-            if (size.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        if (isOutgoing) {
+                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainer
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    text = size,
-                    style = MaterialTheme.typography.labelSmall,
+                    text = media.fileTypeLabel(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = contentColor
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = media.fileName?.takeIf { it.isNotBlank() } ?: "File",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = contentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = formatFileSize(media.size).ifBlank { "File" },
+                    style = MaterialTheme.typography.bodySmall,
                     color = secondaryColor
                 )
             }
         }
 
-        TextButton(
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp),
             enabled = !isDownloading && media.fileId != null,
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isOutgoing) {
+                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                disabledContainerColor = if (isOutgoing) {
+                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.08f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainer
+                },
+                disabledContentColor = secondaryColor
+            ),
+            contentPadding = PaddingValues(horizontal = 12.dp),
             onClick = {
-                val fileId = media.fileId ?: return@TextButton
+                val fileId = media.fileId ?: return@Button
 
                 scope.launch {
                     isDownloading = true
@@ -2599,10 +2915,29 @@ private fun MessageFileCard(
                     savedPath != null -> "Saved"
                     isDownloading -> "Saving..."
                     else -> "Download"
-                }
+                },
+                maxLines = 1
             )
         }
     }
+}
+
+private fun MessageMedia.fileTypeLabel(): String {
+    val fromName = fileName
+        ?.substringAfterLast('.', "")
+        ?.takeIf { extension ->
+            extension.length in 1..4 && extension.all(Char::isLetterOrDigit)
+        }
+
+    val fromMime = mimeType
+        ?.substringAfter('/', "")
+        ?.substringBefore(';')
+        ?.substringBefore('+')
+        ?.takeIf { subtype ->
+            subtype.length in 1..4 && subtype.all(Char::isLetterOrDigit)
+        }
+
+    return (fromName ?: fromMime ?: "FILE").uppercase()
 }
 
 @Composable

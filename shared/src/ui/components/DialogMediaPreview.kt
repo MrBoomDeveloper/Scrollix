@@ -148,12 +148,19 @@ private fun DialogStickerPreview(
         contentAlignment = Alignment.Center
     ) {
         if (bytes != null) {
-            val emoji = remember(fileId, bytes, media.minithumbnail, media.stickerFormat) {
+            val emoji = remember(
+                fileId,
+                bytes,
+                media.minithumbnail,
+                media.stickerFormat,
+                media.needsRepainting
+            ) {
                 DialogFolderEmoji(
                     customEmojiId = fileId.toLong(),
                     offset = 0,
                     length = 0,
                     fallback = "",
+                    needsRepainting = media.needsRepainting,
                     format = when (media.stickerFormat) {
                         MessageStickerFormat.Tgs -> DialogFolderEmojiFormat.Tgs
                         MessageStickerFormat.Webm -> DialogFolderEmojiFormat.Webm

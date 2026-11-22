@@ -76,18 +76,20 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
     val settings by AppSettingsStore.state.collectAsState()
     val scope = rememberCoroutineScope()
     val filePicker = rememberFilePicker(
-        onImagePicked = { picked ->
-            scope.launch {
-                val bytes = withContext(Dispatchers.IO) {
-                    readFileBytes(picked.path)
-                }
+        onImagesPicked = { picked ->
+            picked.firstOrNull()?.let { file ->
+                scope.launch {
+                    val bytes = withContext(Dispatchers.IO) {
+                        readFileBytes(file.path)
+                    }
 
-                if (bytes != null) {
-                    AppSettingsStore.saveWallpaper(bytes)
+                    if (bytes != null) {
+                        AppSettingsStore.saveWallpaper(bytes)
+                    }
                 }
             }
         },
-        onFilePicked = {}
+        onFilesPicked = {}
     )
 
     if (isTwoPane) {
@@ -110,7 +112,7 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                     .fillMaxHeight(),
                 category = selected,
                 settings = settings,
-                onPickWallpaper = { filePicker.pickImage() },
+                onPickWallpaper = { filePicker.pickImages() },
                 onOpenAccountsScreen = onOpenAccountsScreen
             )
         }
@@ -151,7 +153,7 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                     .fillMaxWidth(),
                 category = category,
                 settings = settings,
-                onPickWallpaper = { filePicker.pickImage() },
+                onPickWallpaper = { filePicker.pickImages() },
                 onOpenAccountsScreen = onOpenAccountsScreen
             )
         }
@@ -562,17 +564,19 @@ private fun SettingsBackupContent() {
     var message by remember { mutableStateOf<String?>(null) }
 
     val filePicker = rememberFilePicker(
-        onImagePicked = {},
-        onFilePicked = { picked ->
-            scope.launch {
-                val text = withContext(Dispatchers.IO) {
-                    readFileBytes(picked.path)?.decodeToString()
-                }
+        onImagesPicked = {},
+        onFilesPicked = { picked ->
+            picked.firstOrNull()?.let { file ->
+                scope.launch {
+                    val text = withContext(Dispatchers.IO) {
+                        readFileBytes(file.path)?.decodeToString()
+                    }
 
-                message = if (text != null && AppSettingsStore.importJson(text)) {
-                    "Restored settings from ${picked.name}."
-                } else {
-                    "Could not restore settings from ${picked.name}."
+                    message = if (text != null && AppSettingsStore.importJson(text)) {
+                        "Restored settings from ${file.name}."
+                    } else {
+                        "Could not restore settings from ${file.name}."
+                    }
                 }
             }
         }
@@ -604,7 +608,7 @@ private fun SettingsBackupContent() {
             Text("Back up settings")
         }
 
-        Button(onClick = { filePicker.pickFile() }) {
+        Button(onClick = { filePicker.pickFiles() }) {
             Text("Restore")
         }
     }

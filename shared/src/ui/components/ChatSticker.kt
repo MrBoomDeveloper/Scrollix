@@ -80,12 +80,19 @@ internal fun ChatSticker(
     val width = (StickerSize * aspectRatio).coerceAtMost(maxWidth)
     val height = width / aspectRatio
 
-    val emoji = remember(fileId, data, media.minithumbnail, media.stickerFormat) {
+    val emoji = remember(
+        fileId,
+        data,
+        media.minithumbnail,
+        media.stickerFormat,
+        media.needsRepainting
+    ) {
         DialogFolderEmoji(
             customEmojiId = fileId?.toLong() ?: 0L,
             offset = 0,
             length = 0,
             fallback = "🙂",
+            needsRepainting = media.needsRepainting,
             format = when (media.stickerFormat) {
                 MessageStickerFormat.Tgs -> DialogFolderEmojiFormat.Tgs
                 MessageStickerFormat.Webm -> DialogFolderEmojiFormat.Webm

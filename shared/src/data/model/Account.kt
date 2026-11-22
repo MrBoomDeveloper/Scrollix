@@ -43,6 +43,13 @@ data class ChatMemberInfo(
     val emojiStatusId: Long? = null
 )
 
+data class ProfileTrack(
+    val title: String,
+    val performer: String? = null,
+    val durationSeconds: Int = 0,
+    val media: MessageMedia
+)
+
 data class UserProfileDetails(
     val displayName: String? = null,
     val avatar: Avatar? = null,
@@ -58,6 +65,7 @@ data class UserProfileDetails(
     val description: String? = null,
     val personalChannel: PersonalChannel? = null,
     val commonGroups: List<CommonGroup> = emptyList(),
+    val tracks: List<ProfileTrack> = emptyList(),
     val members: List<ChatMemberInfo> = emptyList(),
     val isSubscribed: Boolean? = null,
     val discussionChatId: String? = null

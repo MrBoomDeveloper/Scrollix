@@ -90,7 +90,18 @@ object CacheStore {
             json.decodeFromString(ListSerializer(ChatMessage.serializer()), payload)
                 .takeLast(limit)
                 .map { message ->
-                    message.copy(senderAvatar = message.senderAvatar?.copy(image = null))
+                    // Cached messages written before service rows were modelled
+                    // still carry the old unsupported-content dump. They must
+                    // not expose Copy/Edit even though the cache lacks the flag.
+                    val isLegacyUnsupported = message.text.startsWith(
+                        "This message is not supported"
+                    )
+
+                    message.copy(
+                        senderAvatar = message.senderAvatar?.copy(image = null),
+                        forwardedFromAvatar = message.forwardedFromAvatar?.copy(image = null),
+                        isService = message.isService || isLegacyUnsupported
+                    )
                 }
         } catch (exception: Exception) {
             println("Dropping unreadable message cache: ${exception.message}")
@@ -108,7 +119,10 @@ object CacheStore {
 
         runCatching {
             val cached = messages.takeLast(MaxCachedMessages).map { message ->
-                message.copy(senderAvatar = message.senderAvatar?.copy(image = null))
+                message.copy(
+                    senderAvatar = message.senderAvatar?.copy(image = null),
+                    forwardedFromAvatar = message.forwardedFromAvatar?.copy(image = null)
+                )
             }
 
             dao.putMessages(

@@ -91,6 +91,13 @@ data class MessageReply(
     val media: MessageMedia? = null
 )
 
+/** A local attachment waiting in the composer before it is sent. */
+data class OutgoingAttachment(
+    val path: String,
+    /** True for image picker selections, false for document picker selections. */
+    val asPhoto: Boolean
+)
+
 @Serializable
 data class MessagePollOptionInfo(
     val id: String,
@@ -181,9 +188,17 @@ data class ChatMessage(
     val senderAvatar: Avatar? = null,
     val senderEmojiStatusId: Long? = null,
     val senderId: Long,
+    /** Title/name of the chat or user this message was forwarded from. */
+    val forwardedFromName: String? = null,
+    val forwardedFromAvatar: Avatar? = null,
     val text: String,
     val timestamp: Long,
     val isOutgoing: Boolean,
+    /**
+     * True for Telegram service messages (wallpaper changed, gift, pin…).
+     * Their text is informational, so it cannot be copied or edited.
+     */
+    val isService: Boolean = false,
     val media: MessageMedia? = null,
     /** Non-zero when this message is one item of a media album. */
     val mediaAlbumId: Long? = null,

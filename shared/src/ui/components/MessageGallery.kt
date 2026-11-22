@@ -94,24 +94,28 @@ private fun GalleryTile(
     var bitmap by remember(media.previewFileId, media.minithumbnail, session) {
         mutableStateOf<ImageBitmap?>(null)
     }
+    var isLoading by remember(media.previewFileId, media.minithumbnail, media.fileId, session) {
+        mutableStateOf(true)
+    }
 
     LaunchedEffect(media.previewFileId, media.minithumbnail, media.fileId, session) {
+        isLoading = true
         bitmap = media.minithumbnail?.let { bytes ->
             withContext(Dispatchers.Default) {
                 decodeImageBitmap(bytes)
             }
         }
 
-        if (bitmap == null) {
-            val previewId = media.previewFileId ?: media.fileId
-            val bytes = previewId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
+        val previewId = media.previewFileId ?: media.fileId
+        val bytes = previewId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
 
-            if (bytes != null) {
-                bitmap = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(bytes)
-                }
+        if (bytes != null) {
+            bitmap = withContext(Dispatchers.Default) {
+                decodeImageBitmap(bytes)
             }
         }
+
+        isLoading = false
     }
 
     val isVideo = media.kind == MessageMediaKind.Video ||
@@ -131,10 +135,14 @@ private fun GalleryTile(
             Image(
                 bitmap = image,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .loadingBlur(isLoading),
                 contentScale = ContentScale.Crop
             )
-        } else {
+        }
+
+        if (isLoading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 1.5.dp

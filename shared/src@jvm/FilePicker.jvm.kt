@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import io.github.vinceglb.filekit.FileKit
+import io.github.vinceglb.filekit.dialogs.FileKitMode
 import io.github.vinceglb.filekit.dialogs.FileKitType
 import io.github.vinceglb.filekit.dialogs.openFilePicker
 import io.github.vinceglb.filekit.name
@@ -14,29 +15,29 @@ import kotlinx.coroutines.withContext
 
 @Composable
 actual fun rememberFilePicker(
-    onImagePicked: (PickedFile) -> Unit,
-    onFilePicked: (PickedFile) -> Unit
+    onImagesPicked: (List<PickedFile>) -> Unit,
+    onFilesPicked: (List<PickedFile>) -> Unit
 ): FilePicker {
     val scope = rememberCoroutineScope()
 
-    return remember(onImagePicked, onFilePicked) {
+    return remember(onImagesPicked, onFilesPicked) {
         object : FilePicker {
-            override fun pickImage() {
+            override fun pickImages() {
                 scope.launch {
-                    chooseFile(imagesOnly = true)?.let(onImagePicked)
+                    chooseFiles(imagesOnly = true).let(onImagesPicked)
                 }
             }
 
-            override fun pickFile() {
+            override fun pickFiles() {
                 scope.launch {
-                    chooseFile(imagesOnly = false)?.let(onFilePicked)
+                    chooseFiles(imagesOnly = false).let(onFilesPicked)
                 }
             }
         }
     }
 }
 
-private suspend fun chooseFile(imagesOnly: Boolean): PickedFile? {
+private suspend fun chooseFiles(imagesOnly: Boolean): List<PickedFile> {
     return withContext(Dispatchers.IO) {
         val type = if (imagesOnly) {
             // Explicit extensions keep WebP selectable on desktop, where the
@@ -46,13 +47,18 @@ private suspend fun chooseFile(imagesOnly: Boolean): PickedFile? {
             FileKitType.File()
         }
 
-        val file = runCatching {
-            FileKit.openFilePicker(type = type)
-        }.getOrNull() ?: return@withContext null
+        val files = runCatching {
+            FileKit.openFilePicker(
+                type = type,
+                mode = FileKitMode.Multiple()
+            )
+        }.getOrNull().orEmpty()
 
-        PickedFile(
-            path = file.path,
-            name = file.name
-        )
+        files.map { file ->
+            PickedFile(
+                path = file.path,
+                name = file.name
+            )
+        }
     }
 }

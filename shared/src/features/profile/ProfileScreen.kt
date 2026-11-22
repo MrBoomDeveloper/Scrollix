@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.features.profile
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +33,7 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,6 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
@@ -70,6 +75,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation3.scene.DialogSceneStrategy.Companion.dialog
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.api.TelegramProvider.displayName
@@ -78,14 +84,19 @@ import com.mrboomdev.scrollix.data.model.ChatMemberInfo
 import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.ProfileTrack
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
 import com.mrboomdev.scrollix.isWideLayout
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
+import com.mrboomdev.scrollix.ui.components.createVoicePlayer
+import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
 import com.mrboomdev.scrollix.ui.icons.cake_icon
@@ -760,6 +771,15 @@ fun ProfileScreen(
                 }   
             }
 
+            val tracks = profile?.tracks.orEmpty()
+
+            if (tracks.isNotEmpty()) {
+                TracksSection(
+                    tracks = tracks,
+                    session = session
+                )
+            }
+
             val members = profile?.members.orEmpty()
 
             if (members.isNotEmpty()) {
@@ -798,6 +818,199 @@ fun ProfileScreen(
             }
         }
     }
+}
+
+@Composable
+private fun TracksSection(
+    tracks: List<ProfileTrack>,
+    session: AccountSession?
+) {
+    val player = remember { createVoicePlayer() }
+    val scope = rememberCoroutineScope()
+    var playingFileId by remember { mutableStateOf<Int?>(null) }
+    var loadingFileId by remember { mutableStateOf<Int?>(null) }
+
+    DisposableEffect(player) {
+        onDispose { player.stop() }
+    }
+
+    fun toggle(track: ProfileTrack) {
+        val fileId = track.media.fileId ?: return
+
+        if (loadingFileId != null) return
+
+        if (playingFileId == fileId) {
+            player.stop()
+            playingFileId = null
+            return
+        }
+
+        player.stop()
+        playingFileId = null
+        loadingFileId = fileId
+
+        scope.launch {
+            val bytes = session?.loadFile(fileId)?.getOrNull()
+            loadingFileId = null
+
+            if (bytes != null) {
+                playingFileId = fileId
+
+                val started = player.play(bytes, 0L) {
+                    if (playingFileId == fileId) {
+                        playingFileId = null
+                    }
+                }
+
+                if (!started) {
+                    playingFileId = null
+                }
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            text = "Pinned tracks",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+
+        for (track in tracks) {
+            val fileId = track.media.fileId
+
+            ProfileTrackCard(
+                track = track,
+                isPlaying = fileId != null && playingFileId == fileId,
+                isLoading = fileId != null && loadingFileId == fileId,
+                onToggle = { toggle(track) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileTrackCard(
+    track: ProfileTrack,
+    isPlaying: Boolean,
+    isLoading: Boolean,
+    onToggle: () -> Unit
+) {
+    var cover by remember(track.media.minithumbnail) {
+        mutableStateOf<ImageBitmap?>(null)
+    }
+
+    LaunchedEffect(track.media.minithumbnail) {
+        cover = track.media.minithumbnail?.let { bytes ->
+            withContext(Dispatchers.Default) {
+                decodeImageBitmap(bytes)
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center
+            ) {
+                val bitmap = cover
+
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        text = "♪",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                val meta = listOfNotNull(
+                    track.performer?.takeIf { it.isNotBlank() },
+                    formatTrackDuration(track.durationSeconds).takeIf { it.isNotBlank() }
+                ).joinToString(" · ")
+
+                if (meta.isNotBlank()) {
+                    Text(
+                        text = meta,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(enabled = !isLoading, onClick = onToggle),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(
+                        text = if (isPlaying) "⏸" else "▶",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatTrackDuration(seconds: Int): String {
+    val safeSeconds = seconds.coerceAtLeast(0)
+
+    if (safeSeconds == 0) return ""
+
+    val minutes = safeSeconds / 60
+    val remaining = safeSeconds % 60
+
+    return "$minutes:${remaining.toString().padStart(2, '0')}"
 }
 
 @Composable

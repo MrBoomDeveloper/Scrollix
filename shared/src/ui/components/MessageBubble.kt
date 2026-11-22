@@ -71,6 +71,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import com.mrboomdev.scrollix.ui.icons.check_icon
+import com.mrboomdev.scrollix.ui.icons.close_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.onSecondaryClick
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
@@ -123,6 +124,7 @@ fun MessageBubble(
     onPin: (() -> Unit)? = null,
     onReaction: ((MessageReactionOption) -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
+    onCancelSend: (() -> Unit)? = null,
     onMentionClick: ((String) -> Unit)? = null,
     onReplyClick: ((Long) -> Unit)? = null
 ) {
@@ -130,6 +132,28 @@ fun MessageBubble(
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
+    var readTimestamp by remember(message.messageId) { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(
+        menuExpanded,
+        session,
+        message.messageId,
+        message.isOutgoing,
+        message.sendState
+    ) {
+        if (
+            !menuExpanded ||
+            !message.isOutgoing ||
+            message.sendState != MessageSendState.Sent ||
+            session == null
+        ) {
+            return@LaunchedEffect
+        }
+
+        readTimestamp = session
+            .loadMessageReadDate(message.providerDialogId, message.messageId)
+            .getOrNull()
+    }
 
     // Entering selection mode closes whatever menu was already open; the menu
     // itself cannot be opened again until the selection is cleared.
@@ -152,7 +176,9 @@ fun MessageBubble(
     }
     
     val primaryMedia = message.allMedia.firstOrNull()
-    val isMediaOnly = message.replyTo == null && message.text.isBlank() && (
+    val isSending = message.sendState == MessageSendState.Sending
+    val isMediaOnly = message.forwardedFromName == null &&
+        message.replyTo == null && message.text.isBlank() && (
         primaryMedia?.kind == MessageMediaKind.Sticker ||
             primaryMedia?.kind == MessageMediaKind.VideoNote ||
             primaryMedia?.kind == MessageMediaKind.Animation ||
@@ -287,6 +313,50 @@ fun MessageBubble(
                             ).width(IntrinsicSize.Max)
                         ) {
                             var isSenderNameShown = false
+
+                            message.forwardedFromName
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { name ->
+                                    isSenderNameShown = true
+                                    val labelColor = if (message.isOutgoing) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.secondary
+                                    }
+                                    val nameColor = if (message.isOutgoing) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    }
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        AvatarImage(
+                                            avatar = message.forwardedFromAvatar
+                                                ?: Avatar.fromName(name),
+                                            size = 20.dp
+                                        )
+
+                                        Text(
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = labelColor,
+                                            text = "Forwarded from"
+                                        )
+
+                                        Text(
+                                            modifier = Modifier.weight(1f, fill = false),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = nameColor,
+                                            text = name,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(Modifier.height(4.dp))
+                                }
 
                             message.senderName?.also { name ->
                                 if (message.isOutgoing || dialogKind.isPeer || isMediaOnly) return@also
@@ -502,7 +572,7 @@ fun MessageBubble(
                     onDismissRequest = { menuExpanded = false },
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    if (onReaction != null) {
+                    if (onReaction != null && !isSending) {
                         ReactionPickerRow(
                             message = message,
                             data = customEmojiData,
@@ -556,30 +626,40 @@ fun MessageBubble(
                             }
                         }
                         
-                        if(onReply != null) {
-                            action(
-                                text = "Reply",
-                                icon = reply_icon,
-                                onClick = onReply
-                            )
-                        }
+                        if (isSending) {
+                            if (onCancelSend != null) {
+                                action(
+                                    text = "Cancel",
+                                    icon = close_icon,
+                                    onClick = onCancelSend
+                                )
+                            }
+                        } else {
+                            if(onReply != null) {
+                                action(
+                                    text = "Reply",
+                                    icon = reply_icon,
+                                    onClick = onReply
+                                )
+                            }
 
-                        if(onForward != null) {
-                            action(
-                                text = "Forward",
-                                icon = forward_icon,
-                                onClick = onForward
-                            )
-                        }
+                            if(onForward != null) {
+                                action(
+                                    text = "Forward",
+                                    icon = forward_icon,
+                                    onClick = onForward
+                                )
+                            }
 
-                        if (message.text.isNotBlank()) {
-                            action(
-                                text = "Copy",
-                                icon = content_copy_icon,
-                                onClick = {
-                                    clipboard.setText(AnnotatedString(message.text))
-                                }
-                            )
+                            if (message.text.isNotBlank() && !message.isService) {
+                                action(
+                                    text = "Copy",
+                                    icon = content_copy_icon,
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(message.text))
+                                    }
+                                )
+                            }
                         }
                     }
                     
@@ -615,36 +695,46 @@ fun MessageBubble(
                         )
                     }
 
-                    if (onPin != null) {
-                        action(
-                            text = if (isPinned) "Unpin" else "Pin",
-                            icon = if(isPinned) keep_off_icon else keep_icon,
-                            onClick = onPin
-                        )
-                    }
+                    if (!isSending) {
+                        if (onPin != null) {
+                            action(
+                                text = if (isPinned) "Unpin" else "Pin",
+                                icon = if(isPinned) keep_off_icon else keep_icon,
+                                onClick = onPin
+                            )
+                        }
 
-                    if (onEdit != null) {
-                        action(
-                            text = "Edit",
-                            icon = edit_icon,
-                            onClick = onEdit
-                        )
-                    }
+                        if (onEdit != null) {
+                            action(
+                                text = "Edit",
+                                icon = edit_icon,
+                                onClick = onEdit
+                            )
+                        }
 
-                    if (onSelect != null) {
-                        action(
-                            text = "Select",
-                            icon = select_check_box_icon,
-                            onClick = onSelect
-                        )
-                    }
+                        if (onSelect != null) {
+                            action(
+                                text = "Select",
+                                icon = select_check_box_icon,
+                                onClick = onSelect
+                            )
+                        }
 
-                    if (onDelete != null) {
-                        action(
-                            text = "Delete",
-                            icon = delete_icon,
-                            onClick = onDelete
-                        )
+                        if (onDelete != null) {
+                            action(
+                                text = "Delete",
+                                icon = delete_icon,
+                                onClick = onDelete
+                            )
+                        }
+                    }
+                    
+                    if(readTimestamp != null) {
+                        HorizontalDivider()
+
+                        MessageMenuTimestamps(
+                            readTimestamp = readTimestamp
+                        )   
                     }
                 }
             }
@@ -655,6 +745,36 @@ fun MessageBubble(
             }
         }
     }
+}
+
+@Composable
+private fun MessageMenuTimestamps(
+    readTimestamp: Long?
+) {
+    Column(
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        readTimestamp?.let { timestamp ->
+            Text(
+                text = "Read ${formatMessageDateTime(timestamp)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+private fun formatMessageDateTime(timestamp: Long): String {
+    val time = Instant.fromEpochSeconds(timestamp / 1000)
+        .toLocalDateTime(TimeZone.currentSystemDefault())
+
+    val day = time.dayOfMonth.toString().padStart(2, '0')
+    val month = time.monthNumber.toString().padStart(2, '0')
+    val hour = time.hour.toString().padStart(2, '0')
+    val minute = time.minute.toString().padStart(2, '0')
+
+    return "$day.$month.${time.year}, $hour:$minute"
 }
 
 @Composable

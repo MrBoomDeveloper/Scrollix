@@ -51,7 +51,10 @@ val ScrollixContextMenuRepresentation: ContextMenuRepresentation = object : Cont
 
         val entries = items()
 
-        if (entries.isEmpty()) {
+        // The text selection menu is still emitted when there is no selection,
+        // but then its only entry is a disabled "Copy". Don't show a menu that
+        // has nothing actionable in it.
+        if (entries.none { it.enabled }) {
             LaunchedEffect(state) {
                 state.status = ContextMenuState.Status.Closed
             }

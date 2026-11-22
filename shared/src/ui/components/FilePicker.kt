@@ -9,12 +9,12 @@ data class PickedFile(
 )
 
 interface FilePicker {
-    fun pickImage()
-    fun pickFile()
+    fun pickImages()
+    fun pickFiles()
 }
 
 @Composable
 expect fun rememberFilePicker(
-    onImagePicked: (PickedFile) -> Unit,
-    onFilePicked: (PickedFile) -> Unit
+    onImagesPicked: (List<PickedFile>) -> Unit,
+    onFilesPicked: (List<PickedFile>) -> Unit
 ): FilePicker

@@ -17,39 +17,51 @@ import java.util.UUID
 
 @Composable
 actual fun rememberFilePicker(
-    onImagePicked: (PickedFile) -> Unit,
-    onFilePicked: (PickedFile) -> Unit
+    onImagesPicked: (List<PickedFile>) -> Unit,
+    onFilesPicked: (List<PickedFile>) -> Unit
 ): FilePicker {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     val imageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
             scope.launch {
-                copyToCache(context, uri)?.let(onImagePicked)
+                val files = buildList {
+                    for (uri in uris) {
+                        copyToCache(context, uri)?.let(::add)
+                    }
+                }
+
+                if (files.isNotEmpty()) onImagesPicked(files)
             }
         }
     }
 
     val fileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
             scope.launch {
-                copyToCache(context, uri)?.let(onFilePicked)
+                val files = buildList {
+                    for (uri in uris) {
+                        copyToCache(context, uri)?.let(::add)
+                    }
+                }
+
+                if (files.isNotEmpty()) onFilesPicked(files)
             }
         }
     }
 
-    return remember(imageLauncher, fileLauncher, onImagePicked, onFilePicked) {
+    return remember(imageLauncher, fileLauncher, onImagesPicked, onFilesPicked) {
         object : FilePicker {
-            override fun pickImage() {
+            override fun pickImages() {
                 imageLauncher.launch("image/*")
             }
 
-            override fun pickFile() {
+            override fun pickFiles() {
                 fileLauncher.launch("*/*")
             }
         }

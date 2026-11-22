@@ -20,7 +20,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -117,7 +116,7 @@ fun ChatAnimationPreview(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(if (isReady) Modifier else Modifier.blur(12.dp)),
+                    .loadingBlur(!isReady),
                 contentScale = ContentScale.Crop
             )
         }

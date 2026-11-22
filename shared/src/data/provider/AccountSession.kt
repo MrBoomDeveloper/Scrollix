@@ -12,6 +12,7 @@ import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
@@ -68,6 +69,15 @@ interface AccountSession {
         path: String,
         asPhoto: Boolean
     ): Result<Unit>
+
+    /** Sends one message with one or more attachments (a TDLib album). */
+    suspend fun sendFiles(
+        providerDialogId: String,
+        attachments: List<OutgoingAttachment>,
+        caption: String = "",
+        replyToMessageId: Long? = null,
+        customEmojis: List<CustomEmojiSpan> = emptyList()
+    ): Result<Unit>
     suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray)
     suspend fun setDialogPinned(
         providerDialogId: String,
@@ -101,6 +111,12 @@ interface AccountSession {
         providerDialogId: String,
         messageId: Long
     ): Result<ChatMessage?>
+
+    /** Read time of a recent outgoing private message, when Telegram exposes it. */
+    suspend fun loadMessageReadDate(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<Long?>
     suspend fun loadCustomEmoji(emojiId: Long): CustomEmojiAsset?
     suspend fun resolveUsername(username: String): Result<Long>
     suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>

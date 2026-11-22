@@ -29,11 +29,13 @@ import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageReply
+import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageRichTextStyle
 import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.PersonalChannel
+import com.mrboomdev.scrollix.data.model.ProfileTrack
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
@@ -433,6 +435,106 @@ class TelegramAccountSession(
         }
     }
 
+    override suspend fun sendFiles(
+        providerDialogId: String,
+        attachments: List<OutgoingAttachment>,
+        caption: String,
+        replyToMessageId: Long?,
+        customEmojis: List<CustomEmojiSpan>
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (attachments.isEmpty()) {
+            return Result.failure(IllegalArgumentException("No attachments selected"))
+        }
+
+        if (attachments.size > 10) {
+            return Result.failure(IllegalArgumentException("An album can contain at most 10 files"))
+        }
+
+        val trimmedCaption = caption.trim()
+        val replyTo = replyToMessageId?.let { messageId ->
+            InputMessageReplyToMessage(
+                messageId = messageId,
+                quote = null,
+                checklistTaskId = 0,
+                pollOptionId = ""
+            )
+        }
+
+        val contents = attachments.mapIndexed { index, attachment ->
+            val fileCaption = if (index == 0 && trimmedCaption.isNotEmpty()) {
+                FormattedText(
+                    text = trimmedCaption,
+                    entities = customEmojiEntities(caption, customEmojis)
+                )
+            } else {
+                null
+            }
+
+            if (attachment.asPhoto) {
+                InputMessagePhoto(
+                    photo = InputPhoto(
+                        photo = InputFileLocal(attachment.path),
+                        thumbnail = null,
+                        video = null,
+                        addedStickerFileIds = intArrayOf(),
+                        width = 0,
+                        height = 0
+                    ),
+                    caption = fileCaption,
+                    showCaptionAboveMedia = false,
+                    selfDestructType = null,
+                    hasSpoiler = false
+                )
+            } else {
+                InputMessageDocument(
+                    document = InputDocument(
+                        document = InputFileLocal(attachment.path),
+                        thumbnail = null,
+                        disableContentTypeDetection = false
+                    ),
+                    caption = fileCaption
+                )
+            }
+        }
+
+        return try {
+            if (contents.size == 1) {
+                when (val result = client.sendMessage(
+                    chatId = chatId,
+                    replyTo = replyTo,
+                    inputMessageContent = contents.single()
+                )) {
+                    is TdlResult.Success -> {
+                        upsertMessage(result.result)
+                        Result.success(Unit)
+                    }
+
+                    is TdlResult.Failure -> Result.failure(Exception(result.message))
+                }
+            } else {
+                when (val result = client.sendMessageAlbum(
+                    chatId = chatId,
+                    replyTo = replyTo,
+                    inputMessageContents = contents.toTypedArray()
+                )) {
+                    is TdlResult.Success -> {
+                        result.result.messages.filterNotNull().forEach(::upsertMessage)
+                        Result.success(Unit)
+                    }
+
+                    is TdlResult.Failure -> Result.failure(Exception(result.message))
+                }
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun forwardMessages(
         providerDialogId: String,
         messageIds: LongArray,
@@ -687,7 +789,8 @@ class TelegramAccountSession(
                     } else {
                         null
                     },
-                    commonGroups = loadCommonGroups(resolvedUserId)
+                    commonGroups = loadCommonGroups(resolvedUserId),
+                    tracks = loadProfileTracks(resolvedUserId)
                 )
             )
         } catch (exception: CancellationException) {
@@ -783,10 +886,13 @@ class TelegramAccountSession(
     }
 
     private fun chatAvatar(chat: Chat): Avatar {
-        val photo = chat.photo
+        return chatAvatar(chat.title, chat.photo)
+    }
+
+    private fun chatAvatar(title: String, photo: ChatPhotoInfo?): Avatar {
         val image = photo?.small?.let(::avatarBytes)
             ?: photo?.minithumbnail?.data
-        val fallback = Avatar.fromName(chat.title)
+        val fallback = Avatar.fromName(title)
 
         return image?.let { bytes ->
             Avatar(
@@ -795,6 +901,35 @@ class TelegramAccountSession(
                 image = bytes
             )
         } ?: fallback
+    }
+
+    private suspend fun loadProfileTracks(
+        userId: Long,
+        limit: Int = 20
+    ): List<ProfileTrack> {
+        val audios = when (val result = client.getUserProfileAudios(
+            userId = userId,
+            offset = 0,
+            limit = limit
+        )) {
+            is TdlResult.Success -> result.result.audios
+            is TdlResult.Failure -> return emptyList()
+        }
+
+        return audios.map(::mapProfileTrack)
+    }
+
+    private fun mapProfileTrack(audio: Audio): ProfileTrack {
+        val media = mapAudio(audio)
+
+        return ProfileTrack(
+            title = audio.title.ifBlank {
+                media.fileName?.takeIf { it.isNotBlank() } ?: "Audio"
+            },
+            performer = audio.performer.takeIf { it.isNotBlank() },
+            durationSeconds = audio.duration,
+            media = media
+        )
     }
 
     private suspend fun loadCommonGroups(userId: Long, limit: Int = 10): List<CommonGroup> {
@@ -2248,6 +2383,11 @@ class TelegramAccountSession(
                 is MessageSenderChat -> _chats.value[sender.chatId]?.title
             }
         }
+        val isChannel = (_chats.value[message.chatId]?.type as? ChatTypeSupergroup)
+            ?.isChannel == true
+        val (forwardedFromName, forwardedFromAvatar) = forwardOrigin(
+            message.forwardInfo?.origin
+        )
 
         return ChatMessage(
             providerId = providerId,
@@ -2261,9 +2401,17 @@ class TelegramAccountSession(
                 is MessageSenderUser -> sender.userId
                 is MessageSenderChat -> sender.chatId
             },
-            text = messageText(message.content),
+            forwardedFromName = forwardedFromName,
+            forwardedFromAvatar = forwardedFromAvatar,
+            text = messageText(
+                content = message.content,
+                isOutgoing = message.isOutgoing,
+                senderName = senderName,
+                isChannel = isChannel
+            ),
             timestamp = message.date.toLong() * 1000L,
             isOutgoing = message.isOutgoing,
+            isService = isServiceContent(message.content),
             media = mapMedia(message.content),
             mediaAlbumId = message.mediaAlbumId.takeIf { it != 0L },
             poll = mapPoll(message.content),
@@ -2287,6 +2435,38 @@ class TelegramAccountSession(
                 _chats.value[message.chatId]?.lastReadOutboxMessageId ?: 0L
             )
         )
+    }
+
+    /** Resolves the chat or user a forwarded message originally came from. */
+    private fun forwardOrigin(origin: MessageOrigin?): Pair<String?, Avatar?> {
+        return when (origin) {
+            is MessageOriginUser -> {
+                val user = _users.value[origin.senderUserId]
+                if (user == null) requestUser(origin.senderUserId)
+
+                val name = user?.let(::userDisplayName) ?: "Telegram user"
+                name to (user?.let(::userAvatar) ?: Avatar.fromName(name))
+            }
+
+            is MessageOriginHiddenUser -> {
+                val name = origin.senderName.ifBlank { "Telegram user" }
+                name to Avatar.fromName(name)
+            }
+
+            is MessageOriginChat -> {
+                val entry = _chats.value[origin.senderChatId]
+                val name = entry?.title?.takeIf { it.isNotBlank() } ?: "Chat"
+                name to (entry?.let { chatAvatar(it.title, it.photo) } ?: Avatar.fromName(name))
+            }
+
+            is MessageOriginChannel -> {
+                val entry = _chats.value[origin.chatId]
+                val name = entry?.title?.takeIf { it.isNotBlank() } ?: "Channel"
+                name to (entry?.let { chatAvatar(it.title, it.photo) } ?: Avatar.fromName(name))
+            }
+
+            else -> null to null
+        }
     }
 
     private fun mapRichBlocks(content: MessageContent): List<MessageRichBlock> {
@@ -2715,7 +2895,12 @@ class TelegramAccountSession(
         }
     }
 
-    private fun messageText(content: MessageContent): String {
+    private fun messageText(
+        content: MessageContent,
+        isOutgoing: Boolean = false,
+        senderName: String? = null,
+        isChannel: Boolean = false
+    ): String {
         return when (content) {
             is MessageText -> content.text.text
             is MessagePhoto -> content.caption.text
@@ -2723,7 +2908,12 @@ class TelegramAccountSession(
             is MessageVideo -> content.caption.text
             is MessageSticker -> ""
             is MessageAnimatedEmoji -> ""
-            is MessageGift -> content.text.text
+            is MessageGift -> serviceMessageText(
+                content = content,
+                isOutgoing = isOutgoing,
+                senderName = senderName,
+                isChannel = isChannel
+            )
             is MessageVideoNote -> ""
             is MessageVoiceNote -> ""
             is MessageAudio -> content.caption.text
@@ -2731,9 +2921,131 @@ class TelegramAccountSession(
             is MessagePoll -> ""
             is MessageSupergroupChatCreate -> supergroupChatCreateText(content)
             is MessageRichMessage -> richPlainText(content.message)
-            is MessageChatChangePhoto -> ""
-            else -> messageBody(content)
+            else -> serviceMessageText(
+                content = content,
+                isOutgoing = isOutgoing,
+                senderName = senderName,
+                isChannel = isChannel
+            )
         }
+    }
+
+    private fun isServiceContent(content: MessageContent): Boolean {
+        return when (content) {
+            is MessageText,
+            is MessagePhoto,
+            is MessageDocument,
+            is MessageVideo,
+            is MessageSticker,
+            is MessageAnimatedEmoji,
+            is MessageVideoNote,
+            is MessageVoiceNote,
+            is MessageAudio,
+            is MessageAnimation,
+            is MessagePoll,
+            is MessageRichMessage -> false
+
+            else -> true
+        }
+    }
+
+    /**
+     * Human-readable text for service messages. TDLib leaves many of these
+     * without a text field, so the chat would otherwise show an empty bubble.
+     */
+    private fun serviceMessageText(
+        content: MessageContent,
+        isOutgoing: Boolean = false,
+        senderName: String? = null,
+        isChannel: Boolean = false
+    ): String {
+        return when (content) {
+            is MessageGift -> content.text.text.ifBlank {
+                if (isOutgoing) "You sent a gift" else "You've got a gift"
+            }
+
+            is MessageChatSetBackground -> chatSetBackgroundText(
+                content = content,
+                isOutgoing = isOutgoing,
+                senderName = senderName,
+                isChannel = isChannel
+            )
+
+            is MessageChatChangePhoto -> "Chat photo changed"
+            is MessageChatDeletePhoto -> "Chat photo deleted"
+
+            is MessageChatChangeTitle -> content.title
+                .trim()
+                .takeIf { it.isNotEmpty() }
+                ?.let { title -> "Chat renamed to \"$title\"" }
+                ?: "Chat title changed"
+
+            is MessageChatAddMembers -> "Members added"
+            is MessageChatDeleteMember -> "Member removed"
+            is MessageChatJoinByLink,
+            is MessageChatJoinByRequest -> "Member joined"
+
+            is MessageScreenshotTaken -> if (isOutgoing) {
+                "You took a screenshot"
+            } else {
+                "Screenshot taken"
+            }
+
+            is MessageContactRegistered -> "Contact joined Telegram"
+            is MessagePinMessage -> "Message pinned"
+            is MessageChatSetMessageAutoDeleteTime -> "Auto-delete time changed"
+            is MessageChatSetTheme -> "Chat theme changed"
+
+            is MessageBasicGroupChatCreate -> content.title
+                .trim()
+                .takeIf { it.isNotEmpty() }
+                ?.let { title -> "Group \"$title\" created" }
+                ?: "Group created"
+
+            is MessageChatUpgradeTo,
+            is MessageChatUpgradeFrom -> "Group upgraded to supergroup"
+
+            is MessageCustomServiceAction -> content.text.ifBlank {
+                fallbackServiceText(content)
+            }
+
+            else -> fallbackServiceText(content)
+        }
+    }
+
+    private fun chatSetBackgroundText(
+        content: MessageChatSetBackground,
+        isOutgoing: Boolean,
+        senderName: String?,
+        isChannel: Boolean
+    ): String {
+        if (content.onlyForSelf) {
+            return if (isOutgoing) {
+                "You set this wallpaper for yourself"
+            } else {
+                "Wallpaper set for you"
+            }
+        }
+
+        val actor = when {
+            isOutgoing -> "You"
+            isChannel -> "This channel"
+            !senderName.isNullOrBlank() -> senderName
+            else -> "This chat"
+        }
+
+        return "$actor set the wallpaper"
+    }
+
+    /** Last-resort label for a service type not handled explicitly. */
+    private fun fallbackServiceText(content: MessageContent): String {
+        val name = content::class.simpleName
+            ?.removePrefix("Message")
+            ?.replace(Regex("(?<=[a-z0-9])(?=[A-Z])"), " ")
+            ?.trim()
+            .orEmpty()
+
+        return name.ifBlank { "Service message" }
     }
 
     private fun mapReactions(interactionInfo: MessageInteractionInfo?): List<MessageReactionInfo> {
@@ -2947,6 +3259,23 @@ class TelegramAccountSession(
         }
     }
 
+    private fun mapAudio(audio: Audio): MessageMedia {
+        return MessageMedia(
+            kind = MessageMediaKind.Audio,
+            fileId = audio.audio.id,
+            fileName = audio.fileName.ifBlank {
+                listOf(audio.performer, audio.title)
+                    .filter(String::isNotBlank)
+                    .joinToString(" - ")
+                    .ifBlank { "Audio" }
+            },
+            mimeType = audio.mimeType,
+            size = audio.audio.size,
+            durationSeconds = audio.duration,
+            minithumbnail = audio.albumCoverMinithumbnail?.data
+        )
+    }
+
     private fun mapMedia(content: MessageContent): MessageMedia? {
         return when (content) {
             is MessageChatChangePhoto -> {
@@ -3008,24 +3337,7 @@ class TelegramAccountSession(
                 )
             }
 
-            is MessageAudio -> {
-                val audio = content.audio
-
-                MessageMedia(
-                    kind = MessageMediaKind.Audio,
-                    fileId = audio.audio.id,
-                    fileName = audio.fileName.ifBlank {
-                        listOf(audio.performer, audio.title)
-                            .filter(String::isNotBlank)
-                            .joinToString(" - ")
-                            .ifBlank { "Audio" }
-                    },
-                    mimeType = audio.mimeType,
-                    size = audio.audio.size,
-                    durationSeconds = audio.duration,
-                    minithumbnail = audio.albumCoverMinithumbnail?.data
-                )
-            }
+            is MessageAudio -> mapAudio(content.audio)
 
             is MessageAnimation -> {
                 val animation = content.animation
@@ -3502,6 +3814,34 @@ class TelegramAccountSession(
         }
     }
 
+    override suspend fun loadMessageReadDate(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<Long?> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.getMessageReadDate(
+                chatId = chatId,
+                messageId = messageId
+            )) {
+                is TdlResult.Success -> Result.success(
+                    (result.result as? MessageReadDateRead)
+                        ?.readDate
+                        ?.toLong()
+                        ?.times(1000L)
+                )
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun loadCustomEmoji(emojiId: Long): CustomEmojiAsset? {
         return try {
             val sticker = customEmojiCacheMutex.withLock {
@@ -3610,6 +3950,17 @@ class TelegramAccountSession(
     }
 
     private fun upsertMessage(message: Message) {
+        val content = message.content
+
+        // The related UpdateChatBackground normally arrives separately, but
+        // applying the service message's background immediately keeps a live
+        // "set wallpaper" message and the chat background in sync.
+        if (content is MessageChatSetBackground) {
+            updateChat(message.chatId) { entry ->
+                entry.copy(background = content.background)
+            }
+        }
+
         val history = histories.value[message.chatId.toString()] ?: return
 
         history.merge(listOf(mapMessage(message)))
@@ -3624,7 +3975,8 @@ class TelegramAccountSession(
             if (message.messageId == messageId) {
                 message.copy(
                     text = messageText(content),
-                    media = mapMedia(content)
+                    media = mapMedia(content),
+                    isService = isServiceContent(content)
                 )
             } else {
                 message
@@ -4460,18 +4812,10 @@ class TelegramAccountSession(
             }
             is MessagePoll -> content.poll.question.text.ifBlank { "Poll" }
             is MessageSupergroupChatCreate -> supergroupChatCreateText(content)
+            is MessageChatSetBackground -> "Chat background changed"
             is MessageChatChangePhoto -> "Chat photo changed"
             is MessageRichMessage -> richPlainText(content.message).ifBlank { "Rich message" }
-            else -> buildString { 
-                append("This message is not supported in your version of Scrollix. Please update to the latest version.")
-                appendLine()
-                appendLine()
-                append("Class: ")
-                append(content::class.qualifiedName)
-                appendLine()
-                append("Structure: ")
-                append(content.toJsonStringByReflection())
-            }
+            else -> serviceMessageText(content)
         }
     }
 
