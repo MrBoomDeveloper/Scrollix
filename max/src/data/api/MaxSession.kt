@@ -134,6 +134,13 @@ internal data class MaxUser(
     val isServiceAccount: Boolean = false
 )
 
+private data class MaxVideoRef(
+    val chatId: Long,
+    val messageId: Long,
+    val videoId: Long,
+    val token: String?
+)
+
 internal data class MaxPollOption(
     val id: String,
     val text: String,
@@ -185,6 +192,13 @@ internal data class MaxAttach(
     val height: Int,
     val durationSeconds: Int,
     val isGif: Boolean = false,
+    /** Static thumbnail URL of a video/GIF attachment. */
+    val thumbnailUrl: String? = null,
+    /** Server id and token of a video/GIF whose bytes need a URL request. */
+    val videoId: Long? = null,
+    val videoToken: String? = null,
+    /** Decoded `previewData` payload (a base64 data URI) for the poster. */
+    val previewBytes: ByteArray? = null,
     val stickerId: Long? = null,
     val setId: Long? = null,
     val lottieUrl: String? = null,
@@ -490,17 +504,28 @@ class MaxSession(
     private val typingJobs = mutableMapOf<Long, Job>()
     private val messageTimes = mutableMapOf<Long, Long>()
 
+    /** Chats whose first message has been reached; older pages stop asking. */
+    private val historyStarts = mutableSetOf<Long>()
+
     private val avatarBytes = mutableMapOf<String, ByteArray>()
     private val maxStickerPacks = mutableMapOf<Long, StickerSetInfo>()
     private val mediaIdsByUrl = mutableMapOf<String, Int>()
     private val mediaUrlsById = mutableMapOf<Int, String>()
     private val mediaMemory = mutableMapOf<Int, ByteArray>()
 
+    /**
+     * Videos and GIFs are delivered without a URL; their id/token pair has to
+     * be exchanged for a temporary MP4 link. The link is resolved lazily, when
+     * the player actually needs the bytes.
+     */
+    private val videoRefsById = mutableMapOf<Int, MaxVideoRef>()
+
     private var rpc: MaxRpc? = null
     private val connectMutex = Mutex()
     private var pushJob: Job? = null
     private var monitorJob: Job? = null
     private var dialogsSaveJob: Job? = null
+    private var historySaveJob: Job? = null
 
     private var started = false
     /** True after the first chat-list sync, so later refreshes stay silent. */
@@ -536,6 +561,7 @@ class MaxSession(
     override suspend fun start() {
         if (started) return
         started = true
+        startHistorySaver()
         _authState.value = AuthState.Initializing
 
         try {
@@ -1144,10 +1170,57 @@ class MaxSession(
         )
 
         histories.update { existing ->
-            existing + (providerDialogId to (existing[providerDialogId] ?: created))
+            if (existing.containsKey(providerDialogId)) {
+                existing
+            } else {
+                existing + (providerDialogId to created)
+            }
         }
 
-        return histories.value[providerDialogId]
+        val winner = histories.value[providerDialogId] ?: return null
+        if (winner !== created) return winner
+
+        // The cached window renders immediately while GET_HISTORY is in
+        // flight, so opening a dialog does not wait for the network.
+        scope.launch {
+            val cached = CacheStore.loadMessages(accountId, providerDialogId)
+
+            if (cached.isNotEmpty() && !closed) {
+                created.seed(cached)
+            }
+        }
+
+        return winner
+    }
+
+    /** Persists loaded windows for the next launch. */
+    private fun startHistorySaver() {
+        if (historySaveJob != null) return
+
+        historySaveJob = scope.launch {
+            val saved = mutableMapOf<String, List<ChatMessage>>()
+
+            while (!closed) {
+                delay(2_000)
+
+                histories.value.forEach { (dialogId, controller) ->
+                    val state = controller.state.value
+                    val messages = state.messages
+
+                    // A jump block that is missing newer history must not
+                    // replace the newest-page cache.
+                    if (
+                        messages.isNotEmpty() &&
+                        !state.hasMoreNewer &&
+                        !state.isLoadingInitial &&
+                        saved[dialogId] !== messages
+                    ) {
+                        CacheStore.saveMessages(accountId, dialogId, messages)
+                        saved[dialogId] = messages
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -1235,6 +1308,11 @@ class MaxSession(
         fromMessageId: Long,
         limit: Int
     ): List<ChatMessage> {
+        // Once the beginning of a chat has been seen, a later scroll to the
+        // top must not probe the server again: MAX answers those requests
+        // with the same oldest page, which keeps the list "loading" forever.
+        if (fromMessageId != 0L && chatId in historyStarts) return emptyList()
+
         val from = if (fromMessageId == 0L) {
             System.currentTimeMillis()
         } else {
@@ -1269,9 +1347,74 @@ class MaxSession(
             // the "newest page" sentinel, so paging would loop forever.
             .filter { message -> message.id != 0L }
 
+        // MAX returns the anchor itself in an older page. When the page is
+        // short and holds nothing before the anchor, this is the chat start.
+        if (
+            fromMessageId != 0L &&
+            messages.size < limit &&
+            messages.none { message -> message.id < fromMessageId }
+        ) {
+            historyStarts += chatId
+            return emptyList()
+        }
+
         messages.forEach { message -> messageTimes[message.id] = message.time }
 
-        return messages.map { toChatMessage(chatId, it) }.sortedBy { it.messageId }
+        // GET_HISTORY may omit reactionInfo. The aggregate counters are then
+        // fetched for the whole page in one GET_REACTIONS_BULK request.
+        val reactions = fetchBulkReactions(chatId, messages)
+
+        return messages
+            .map { message ->
+                toChatMessage(
+                    chatId = chatId,
+                    message = reactions[message.id]?.let { loaded ->
+                        message.copy(reactions = loaded)
+                    } ?: message
+                )
+            }
+            .sortedBy { it.messageId }
+    }
+
+    /** Aggregate reactions for a page of messages, keyed by message id. */
+    private suspend fun fetchBulkReactions(
+        chatId: Long,
+        messages: List<MaxMessage>
+    ): Map<Long, List<MessageReactionInfo>> {
+        if (messages.isEmpty()) return emptyMap()
+
+        val response = runCatching {
+            requestOnLiveConnection(
+                opcode = 180,
+                payload = buildJsonObject {
+                    put("chatId", chatId)
+                    put(
+                        "messageIds",
+                        buildJsonArray {
+                            messages.forEach { message ->
+                                add(JsonPrimitive(message.id.toString()))
+                            }
+                        }
+                    )
+                }
+            )
+        }.getOrNull() ?: return emptyMap()
+
+        val payload = response.obj("messagesReactions")
+            ?: response.obj("reactions")
+            ?: return emptyMap()
+        val result = mutableMapOf<Long, List<MessageReactionInfo>>()
+
+        payload.forEach { (key, value) ->
+            val messageId = key.toLongOrNull() ?: return@forEach
+            val reactions = mapReactions(value as? JsonObject)
+
+            if (reactions.isNotEmpty()) {
+                result[messageId] = reactions
+            }
+        }
+
+        return result
     }
 
     private suspend fun loadMessageTime(chatId: Long, messageId: Long): Long? {
@@ -1295,6 +1438,12 @@ class MaxSession(
         mediaMemory[fileId]?.let { return Result.success(it) }
 
         val url = mediaUrlsById[fileId]
+            ?: videoRefsById[fileId]?.let { ref ->
+                resolveVideoUrl(fileId, ref)?.also { resolved ->
+                    mediaUrlsById[fileId] = resolved
+                    mediaIdsByUrl[resolved] = fileId
+                }
+            }
             ?: return Result.failure(IllegalArgumentException("Unknown MAX media id"))
 
         val cachePath = mediaCachePath(url)
@@ -1320,6 +1469,36 @@ class MaxSession(
         if (!remoteUniqueId.startsWith("http")) return null
 
         return runCatching { storage.readBytes(mediaCachePath(remoteUniqueId)) }.getOrNull()
+    }
+
+    /**
+     * Exchanges a video/GIF id and token for a temporary CDN URL. MAX only
+     * returns MP4 links here, which is also what the WebM frame decoder falls
+     * back to on Android for the autoplaying GIF previews.
+     */
+    private suspend fun resolveVideoUrl(fileId: Int, ref: MaxVideoRef): String? {
+        return try {
+            val response = requestOnLiveConnection(
+                opcode = 83,
+                payload = buildJsonObject {
+                    put("videoId", ref.videoId)
+                    put("chatId", ref.chatId)
+                    put("messageId", ref.messageId.toString())
+                    ref.token?.takeIf { it.isNotBlank() }?.let { token ->
+                        put("token", token)
+                    }
+                }
+            )
+
+            listOf("MP4_720", "MP4_480", "MP4_360", "MP4_240", "MP4_144", "EXTERNAL")
+                .firstNotNullOfOrNull { key ->
+                    response.string(key)?.takeIf { it.startsWith("http") }
+                }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            null
+        }
     }
 
     // ------------------------------------------------------------ messages --
@@ -3663,7 +3842,9 @@ class MaxSession(
         }
 
         val lastMessage = chat.lastMessage
-        val media = lastMessage?.attaches?.firstOrNull()?.let(::toMedia)
+        val media = lastMessage?.attaches?.firstOrNull()?.let { attach ->
+            toMedia(attach, chat.id, lastMessage.id)
+        }
         val peer = chat.peerUser()
 
         return Dialog(
@@ -3811,6 +3992,14 @@ class MaxSession(
             ?: 0
         val photo = objectValue.obj("photo")
         val sticker = objectValue.obj("sticker")
+        val video = objectValue.obj("video")
+        // Video and GIF attachments in history only carry a server id and a
+        // token. Their bytes are resolved lazily through GET_VIDEO_URL; the
+        // static thumbnail is the only immediately downloadable URL.
+        val thumbnailUrl = objectValue.string("thumbnail")
+            ?.takeIf { it.startsWith("http") }
+            ?: objectValue.obj("thumbnail")?.string("url")?.takeIf { it.startsWith("http") }
+            ?: video?.string("thumbnail")?.takeIf { it.startsWith("http") }
 
         return MaxAttach(
             type = type,
@@ -3822,8 +4011,17 @@ class MaxSession(
             fileName = objectValue.string("name") ?: objectValue.string("fileName"),
             mimeType = objectValue.string("mimeType") ?: objectValue.string("mime"),
             size = objectValue.long("size") ?: objectValue.long("fileSize") ?: 0,
-            width = objectValue.int("width") ?: 0,
-            height = objectValue.int("height") ?: 0,
+            width = objectValue.int("width") ?: photo?.int("width")
+                ?: video?.int("width") ?: 0,
+            height = objectValue.int("height") ?: photo?.int("height")
+                ?: video?.int("height") ?: 0,
+            thumbnailUrl = thumbnailUrl,
+            videoId = objectValue.long("videoId")
+                ?: objectValue.long("video_id")
+                ?: video?.long("videoId")
+                ?: objectValue.long("gifId"),
+            videoToken = objectValue.string("token") ?: video?.string("token"),
+            previewBytes = objectValue.string("previewData")?.let(::decodeDataUri),
             durationSeconds = ((objectValue.long("duration") ?: 0) / 1000).toInt(),
             // MAX models an animated image as a photo with the `isGif` flag,
             // but some clients only send the file as `FILE`/`PHOTO` with a
@@ -3923,12 +4121,16 @@ class MaxSession(
             canBeDeleted = canDelete,
             canBeDeletedForEveryone = canDelete,
             canBeForwarded = chat?.canCopyMessages != false,
-            media = message.attaches.firstOrNull()?.let(::toMedia),
+            media = message.attaches.firstOrNull()?.let { attach ->
+                toMedia(attach, chatId, message.id)
+            },
             // MAX delivers every attachment of one message in the same
             // `attaches` array. Mapping only the first one turned media
             // galleries into single images; the full list drives the album
             // grid and the fullscreen viewer.
-            mediaItems = message.attaches.mapNotNull(::toMedia),
+            mediaItems = message.attaches.mapNotNull { attach ->
+                toMedia(attach, chatId, message.id)
+            },
             mediaAlbumId = message.id.takeIf { message.attaches.size > 1 },
             poll = message.attaches.firstNotNullOfOrNull { attach -> attach.toPollInfo() },
             location = message.attaches.firstNotNullOfOrNull { attach -> attach.toLocationInfo() },
@@ -3938,7 +4140,11 @@ class MaxSession(
         )
     }
 
-    private fun toMedia(attach: MaxAttach): MessageMedia? {
+    private fun toMedia(
+        attach: MaxAttach,
+        chatId: Long,
+        messageId: Long
+    ): MessageMedia? {
         val isGif = attach.isGif ||
             attach.mimeType?.startsWith("image/gif", ignoreCase = true) == true ||
             attach.fileName?.endsWith(".gif", ignoreCase = true) == true ||
@@ -3963,7 +4169,29 @@ class MaxSession(
         }
 
         val url = attach.url
-        val fileId = url?.let(::mediaIdForUrl)
+        var fileId = url?.let(::mediaIdForUrl)
+
+        // A video/GIF attachment usually has no direct URL. Give it a stable
+        // synthetic media id and remember how to resolve its real link later.
+        if (fileId == null && attach.videoId != null &&
+            (kind == MessageMediaKind.Video || kind == MessageMediaKind.Animation)
+        ) {
+            val key = "max-video:$chatId:$messageId:${attach.videoId}"
+            fileId = mediaIdForUrl(key)
+            videoRefsById[fileId] = MaxVideoRef(
+                chatId = chatId,
+                messageId = messageId,
+                videoId = attach.videoId,
+                token = attach.videoToken
+            )
+        }
+
+        // The preview is the static thumbnail when MAX provided one; the
+        // animated attachment itself is not a preview image.
+        val previewUrl = attach.thumbnailUrl
+            ?: url?.takeIf { kind == MessageMediaKind.Photo || kind == MessageMediaKind.Sticker }
+            ?: attach.url?.takeIf { kind == MessageMediaKind.Animation }
+        val previewFileId = previewUrl?.let(::mediaIdForUrl)
 
         val stickerFormat = when {
             attach.mimeType == "application/x-tgsticker" || url?.endsWith(".tgs") == true ->
@@ -3977,8 +4205,8 @@ class MaxSession(
 
         return MessageMedia(
             kind = kind,
-            previewFileId = fileId,
-            previewUniqueId = url,
+            previewFileId = previewFileId ?: fileId,
+            previewUniqueId = previewUrl ?: url,
             fileId = fileId,
             fileUniqueId = url ?: attach.remoteId,
             stickerFileId = fileId.takeIf { kind == MessageMediaKind.Sticker },
@@ -3990,20 +4218,29 @@ class MaxSession(
             size = attach.size,
             width = attach.width,
             height = attach.height,
-            durationSeconds = attach.durationSeconds
+            durationSeconds = attach.durationSeconds,
+            minithumbnail = attach.previewBytes
         )
     }
 
     private fun mapReactions(objectValue: JsonObject?): List<MessageReactionInfo> {
-        val counters = objectValue?.array("counters").objects()
+        val counters = objectValue?.array("counters") ?: objectValue?.array("reactions")
         val chosen = objectValue?.string("yourReaction")
+            ?: objectValue?.string("your_reaction")
 
-        return counters.mapNotNull { counter ->
-            val emoji = counter.string("reaction") ?: return@mapNotNull null
+        return counters.objects().mapNotNull { counter ->
+            // Depending on the deployment a counter carries the emoji as a
+            // plain string or as a `{reactionType, id}` object.
+            val reaction = counter.obj("reaction")
+            val emoji = counter.string("reaction")
+                ?: reaction?.string("emoji")
+                ?: reaction?.string("id")
+                ?: counter.string("emoji")
+                ?: return@mapNotNull null
 
             MessageReactionInfo(
                 emoji = emoji,
-                count = counter.int("count") ?: 0,
+                count = counter.int("count") ?: reaction?.int("count") ?: 0,
                 isChosen = emoji == chosen
             )
         }
@@ -4030,6 +4267,22 @@ class MaxSession(
 
     private fun mediaCachePath(url: String): String {
         return "max/$accountId/media/${url.hashCode()}-${url.length}.bin"
+    }
+
+    /**
+     * MAX sends a small inline poster as a base64 data URI. Decoding it here
+     * gives photos and GIFs something to show before the real bytes arrive.
+     */
+    private fun decodeDataUri(value: String): ByteArray? {
+        val comma = value.indexOf(',')
+        if (!value.startsWith("data:") || comma < 0) return null
+
+        val header = value.substring(0, comma)
+        if (!header.contains("base64", ignoreCase = true)) return null
+
+        return runCatching {
+            java.util.Base64.getDecoder().decode(value.substring(comma + 1))
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
 
     private fun MaxChat.kind(): DialogKind = when (type) {
@@ -4136,6 +4389,8 @@ class MaxSession(
     }
 
     override suspend fun close() {
+        historySaveJob?.cancel()
+        historySaveJob = null
         if (closed) return
 
         closed = true

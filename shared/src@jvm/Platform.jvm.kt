@@ -14,9 +14,9 @@ actual fun getPlatform(): Platform = JVMPlatform()
 // The desktop build reports the same TDLib parameters an Android 16 (API 36)
 // phone sends, so the session shows up as a regular mobile device instead of
 // a JVM desktop entry.
-actual fun tdlibDeviceModel(): String = "Pixel 9 Pro"
+actual fun tdlibDeviceModel(): String = "Desktop"
 
-actual fun tdlibSystemVersion(): String = "SDK 36"
+actual fun tdlibSystemVersion(): String = "1.0.0"
 
 actual fun openDialer(phoneNumber: String) = Unit
 

@@ -97,6 +97,9 @@ private fun GalleryTile(
     var isLoading by remember(media.previewFileId, media.minithumbnail, media.fileId, session) {
         mutableStateOf(true)
     }
+    var revealed by remember(media.fileId, media.fileUniqueId) {
+        mutableStateOf(!media.isSpoiler)
+    }
 
     LaunchedEffect(media.previewFileId, media.minithumbnail, media.fileId, session) {
         isLoading = true
@@ -128,7 +131,9 @@ private fun GalleryTile(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(onClick = onClick),
+            .clickable {
+                if (!revealed) revealed = true else onClick()
+            },
         contentAlignment = Alignment.Center
     ) {
         val image = bitmap
@@ -139,9 +144,14 @@ private fun GalleryTile(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .loadingBlur(isLoading),
+                    .loadingBlur(isLoading)
+                    .mediaSpoilerBlur(!revealed, radius = 18.dp),
                 contentScale = ContentScale.Crop
             )
+        }
+
+        if (!revealed) {
+            SpoilerOverlay(onReveal = { revealed = true })
         }
 
         if (isLoading) {
@@ -151,7 +161,7 @@ private fun GalleryTile(
             )
         }
 
-        if (isVideo) {
+        if (isVideo && revealed) {
             Box(
                 modifier = Modifier
                     .size(28.dp)

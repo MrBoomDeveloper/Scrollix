@@ -185,6 +185,9 @@ import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MessageGallery
 import com.mrboomdev.scrollix.ui.components.MessageDatePill
 import com.mrboomdev.scrollix.ui.components.MessageThreadDialog
+import com.mrboomdev.scrollix.ui.components.MessageThreadRail
+import com.mrboomdev.scrollix.ui.components.SpoilerOverlay
+import com.mrboomdev.scrollix.ui.components.mediaSpoilerBlur
 import com.mrboomdev.scrollix.ui.components.MessageBubble
 import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
 import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
@@ -357,6 +360,10 @@ fun DialogScreen(
     var nextPendingMessageId by remember(providerDialogId) { mutableStateOf(-1L) }
     val displayMessages = remember(messages, pendingMessages) {
         (messages + pendingMessages).groupMessageAlbums()
+    }
+    // Thread roots of the loaded window, shown on the rail at the right edge.
+    val threadRailItems = remember(messages) {
+        messages.filter { message -> message.replyCount > 0 }
     }
     // Reply lookups used to scan the whole window for every visible row.
     val messagesById = remember(messages) { messages.associateBy { it.messageId } }
@@ -2471,6 +2478,17 @@ fun DialogScreen(
                         bottomInset = composerInset,
                         onScrollToLatest = { scrollRequest = ScrollRequest.Latest }
                     )
+
+                    if (searchQuery.text.isBlank()) {
+                        MessageThreadRail(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 4.dp, bottom = composerInset + 8.dp),
+                            threads = threadRailItems,
+                            selectedMessageId = threadRoot?.messageId,
+                            onOpen = { root -> threadRoot = root }
+                        )
+                    }
                     }
 
                     Column(
@@ -3592,6 +3610,9 @@ private fun MessageImagePreview(
     var isLoading by remember(media.previewFileId, media.minithumbnail, session) {
         mutableStateOf(true)
     }
+    var revealed by remember(media.fileId, media.fileUniqueId) {
+        mutableStateOf(!media.isSpoiler)
+    }
 
     LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
         isLoading = true
@@ -3640,7 +3661,9 @@ private fun MessageImagePreview(
             .aspectRatio(aspectRatio)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(enabled = bitmap != null, onClick = onClick),
+            .clickable(enabled = bitmap != null) {
+                if (!revealed) revealed = true else onClick()
+            },
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
@@ -3649,10 +3672,17 @@ private fun MessageImagePreview(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .loadingBlur(isLoading),
+                    .loadingBlur(isLoading)
+                    .mediaSpoilerBlur(!revealed, radius = 26.dp),
                 contentScale = ContentScale.Fit
             )
-        } else if (!isLoading) {
+        }
+
+        if (bitmap != null && !revealed) {
+            SpoilerOverlay(onReveal = { revealed = true })
+        }
+
+        if (bitmap == null && !isLoading) {
             Text(
                 text = "Image",
                 style = MaterialTheme.typography.labelMedium,

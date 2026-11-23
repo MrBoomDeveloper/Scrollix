@@ -64,6 +64,9 @@ fun ChatVideoPreview(
     var isLoading by remember(media.fileId, session, isRound) {
         mutableStateOf(isRound)
     }
+    var revealed by remember(media.fileId, media.fileUniqueId) {
+        mutableStateOf(!media.isSpoiler)
+    }
     val roundSizePx = with(LocalDensity.current) {
         RoundVideoNoteSize.roundToPx()
     }
@@ -197,6 +200,11 @@ fun ChatVideoPreview(
             .clip(if (isRound) CircleShape else RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable {
+                if (!revealed) {
+                    revealed = true
+                    return@clickable
+                }
+
                 if (!isRound) {
                     onClick()
                     return@clickable
@@ -208,7 +216,7 @@ fun ChatVideoPreview(
         contentAlignment = Alignment.Center
     ) {
         when {
-            isRound && webm != null && webm.frames.isNotEmpty() -> {
+            isRound && revealed && webm != null && webm.frames.isNotEmpty() -> {
                 Image(
                     bitmap = webm.frames[frameIndex.coerceIn(0, webm.frames.lastIndex)],
                     contentDescription = null,
@@ -230,7 +238,8 @@ fun ChatVideoPreview(
                         } else {
                             Modifier
                         }
-                    ),
+                    )
+                    .mediaSpoilerBlur(!revealed),
                 contentScale = ContentScale.Crop
             )
 
@@ -243,15 +252,19 @@ fun ChatVideoPreview(
             )
         }
 
+        if (!revealed) {
+            SpoilerOverlay(onReveal = { revealed = true })
+        }
+
         // The poster stays visible underneath while the round video is being
         // downloaded and decoded.
-        if (isRound && webm == null && isLoading) {
+        if (isRound && revealed && webm == null && isLoading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(24.dp)
             )
         }
 
-        if (!isRound) {
+        if (!isRound && revealed) {
             Box(
                 modifier = Modifier
                     .size(48.dp)

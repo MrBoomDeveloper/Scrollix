@@ -4200,6 +4200,9 @@ class TelegramSession(
             if (message.messageId == messageId) {
                 message.copy(
                     reactions = mapReactions(interactionInfo),
+                    // New replies change the thread badge and the thread rail
+                    // without a reload of the message itself.
+                    replyCount = interactionInfo?.replyInfo?.replyCount ?: message.replyCount,
                     viewCount = interactionInfo?.viewCount ?: 0,
                     shareCount = interactionInfo?.forwardCount ?: 0
                 )
@@ -4419,7 +4422,8 @@ class TelegramSession(
                     size = size?.photo?.size ?: 0,
                     width = size?.width ?: 0,
                     height = size?.height ?: 0,
-                    minithumbnail = content.photo.minithumbnail?.data
+                    minithumbnail = content.photo.minithumbnail?.data,
+                    isSpoiler = content.hasSpoiler
                 )
             }
 
@@ -4468,7 +4472,8 @@ class TelegramSession(
                     size = animation.animation.size,
                     width = animation.width,
                     height = animation.height,
-                    minithumbnail = animation.minithumbnail?.data
+                    minithumbnail = animation.minithumbnail?.data,
+                    isSpoiler = content.hasSpoiler
                 )
             }
 
@@ -4520,6 +4525,7 @@ class TelegramSession(
                     width = video.width,
                     height = video.height,
                     minithumbnail = video.minithumbnail?.data,
+                    isSpoiler = content.hasSpoiler,
                     videoQualities = content.alternativeVideos
                         .map { alternative ->
                             MessageVideoQuality(

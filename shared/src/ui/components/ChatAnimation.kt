@@ -45,6 +45,9 @@ fun ChatAnimationPreview(
         mutableStateOf<WebmAnimation?>(null)
     }
     var isLoading by remember(media.fileId, session) { mutableStateOf(true) }
+    var revealed by remember(media.fileId, media.fileUniqueId) {
+        mutableStateOf(!media.isSpoiler)
+    }
 
     val aspectRatio = if (media.width > 0 && media.height > 0) {
         media.width.toFloat() / media.height
@@ -103,7 +106,9 @@ fun ChatAnimationPreview(
             .aspectRatio(aspectRatio.coerceIn(0.75f, 1.8f))
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick),
+            .clickable {
+                if (!revealed) revealed = true else onClick()
+            },
         contentAlignment = Alignment.Center
     ) {
         val isReady = webm != null && webm.frames.isNotEmpty()
@@ -117,12 +122,15 @@ fun ChatAnimationPreview(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .loadingBlur(!isReady),
+                    .loadingBlur(!isReady)
+                    .mediaSpoilerBlur(!revealed),
                 contentScale = ContentScale.Crop
             )
         }
 
-        if (isReady) {
+        if (!revealed) {
+            SpoilerOverlay(onReveal = { revealed = true })
+        } else if (isReady) {
             WebmFrames(
                 animation = webm,
                 modifier = Modifier.fillMaxSize(),

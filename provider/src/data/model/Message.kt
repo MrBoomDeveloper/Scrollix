@@ -93,7 +93,12 @@ data class MessageMedia(
      */
     val lottieUrl: String? = null,
     /** Alternative encodings of a video, best last. */
-    val videoQualities: List<MessageVideoQuality> = emptyList()
+    val videoQualities: List<MessageVideoQuality> = emptyList(),
+    /**
+     * True when the provider marks the media as a spoiler. The UI blurs it
+     * until the reader taps it at least once.
+     */
+    val isSpoiler: Boolean = false
 )
 
 data class MessageReactionOption(
