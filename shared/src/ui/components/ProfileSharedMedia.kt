@@ -24,7 +24,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,14 +41,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.test.gif_box_icon_filled
+import com.example.test.microphone_icon
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.ui.icons.draft_icon
+import com.mrboomdev.scrollix.ui.icons.draft_icon_filled
+import com.mrboomdev.scrollix.ui.icons.gif_box_icon
+import com.mrboomdev.scrollix.ui.icons.image_icon
+import com.mrboomdev.scrollix.ui.icons.image_icon_filled
+import com.mrboomdev.scrollix.ui.icons.link_icon
+import com.mrboomdev.scrollix.ui.icons.microphone_icon_filled
+import com.mrboomdev.scrollix.ui.icons.videocam_icon
+import com.mrboomdev.scrollix.ui.icons.videocam_icon_filled
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,13 +71,18 @@ import kotlin.time.Instant
 private const val SharedMediaPageSize = 30
 
 /** Tabs of the shared media section shown on chat profiles. */
-private enum class SharedMediaTab(val label: String, val kind: SharedMediaKind) {
-    Photos("Photos", SharedMediaKind.Photo),
-    Videos("Videos", SharedMediaKind.Video),
-    Gifs("GIFs", SharedMediaKind.Animation),
-    Voices("Voice", SharedMediaKind.Voice),
-    Links("Links", SharedMediaKind.Link),
-    Files("Files", SharedMediaKind.File)
+private enum class SharedMediaTab(
+    val label: String, 
+    val icon: ImageVector,
+    val activeIcon: ImageVector = icon,
+    val kind: SharedMediaKind
+) {
+    Photos("Photos", image_icon, image_icon_filled, kind = SharedMediaKind.Photo),
+    Videos("Videos", videocam_icon, videocam_icon_filled, kind = SharedMediaKind.Video),
+    Gifs("GIFs", gif_box_icon, gif_box_icon_filled, kind = SharedMediaKind.Animation),
+    Voices("Voice", microphone_icon, microphone_icon_filled, kind = SharedMediaKind.Voice),
+    Links("Links", link_icon, kind = SharedMediaKind.Link),
+    Files("Files", draft_icon, draft_icon_filled, kind = SharedMediaKind.File)
 }
 
 /**
@@ -125,22 +144,27 @@ fun ProfileSharedMediaSection(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-        Text(
-            modifier = Modifier.fillMaxWidth(),
-            text = "Shared media",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.secondary
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer
         )
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             items(SharedMediaTab.entries) { tab ->
                 FilterChip(
                     selected = tab == selectedTab,
                     onClick = { selectedTab = tab },
+                    leadingIcon = {
+                        Icon(
+                            modifier = Modifier.size(FilterChipDefaults.IconSize),
+                            imageVector = if(tab == selectedTab) {
+                                tab.activeIcon
+                            } else tab.icon,
+                            contentDescription = null
+                        )
+                    },
                     label = { Text(tab.label) }
                 )
             }
@@ -292,7 +316,6 @@ private fun SharedMediaTile(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable { onOpenMessage(message.messageId) }
     ) {

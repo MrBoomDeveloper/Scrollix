@@ -1183,29 +1183,29 @@ private fun DialogItem(
                     }
                 }
 
-                if (dialog.statusText == "online" && dialog.kind != DialogKind.Bot) {
-                    // The online dot sits just left of the account badge (with
-                    // a small gap) instead of covering it.
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .offset(
-                                x = if (showAccountAvatarBadge) (-18).dp else 4.dp,
-                                y = 4.dp
-                            )
-                            .size(16.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.background)
-                            .padding(3.dp)
-                    ) {
-                        Spacer(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                                .fillMaxSize()
-                        )
-                    }
-                }
+//                if (dialog.statusText == "online" && dialog.kind != DialogKind.Bot) {
+//                    // The online dot sits just left of the account badge (with
+//                    // a small gap) instead of covering it.
+//                    Box(
+//                        modifier = Modifier
+//                            .align(Alignment.BottomEnd)
+//                            .offset(
+//                                x = if (showAccountAvatarBadge) (-18).dp else 4.dp,
+//                                y = 4.dp
+//                            )
+//                            .size(16.dp)
+//                            .clip(CircleShape)
+//                            .background(MaterialTheme.colorScheme.background)
+//                            .padding(3.dp)
+//                    ) {
+//                        Spacer(
+//                            modifier = Modifier
+//                                .clip(CircleShape)
+//                                .background(MaterialTheme.colorScheme.primary)
+//                                .fillMaxSize()
+//                        )
+//                    }
+//                }
             }
 
             Column(

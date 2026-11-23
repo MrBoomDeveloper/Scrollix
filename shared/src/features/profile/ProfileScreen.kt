@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.features.profile
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,18 +10,18 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalGridApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Grid
+import androidx.compose.foundation.layout.GridTrackSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.columns
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -36,7 +37,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,13 +45,14 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -83,9 +84,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.navigation3.scene.DialogSceneStrategy.Companion.dialog
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.getPlatform
 import com.mrboomdev.scrollix.openDialer
@@ -100,12 +100,15 @@ import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
 import com.mrboomdev.scrollix.isWideLayout
+import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.components.AdaptiveGrid
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.ProfileAvatarGalleryDialog
 import com.mrboomdev.scrollix.ui.components.ProfileSharedMediaSection
 import com.mrboomdev.scrollix.ui.components.createVoicePlayer
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -114,22 +117,37 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
 import com.mrboomdev.scrollix.ui.icons.cake_icon
 import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
+import com.mrboomdev.scrollix.ui.icons.block_icon
 import com.mrboomdev.scrollix.ui.icons.call_icon
 import com.mrboomdev.scrollix.ui.icons.campaign_icon
 import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
+import com.mrboomdev.scrollix.ui.icons.delete_icon
+import com.mrboomdev.scrollix.ui.icons.edit_icon
+import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.music_note_icon
 import com.mrboomdev.scrollix.ui.icons.notifications_icon
+import com.mrboomdev.scrollix.ui.icons.notifications_off_icon
+import com.mrboomdev.scrollix.ui.icons.pause_icon_filled
+import com.mrboomdev.scrollix.ui.icons.play_icon_filled
 import com.mrboomdev.scrollix.ui.icons.schedule_icon
 
 @Composable
 private fun PersonalChannelCard(
-    modifier: Modifier = Modifier,
     channel: com.mrboomdev.scrollix.data.model.PersonalChannel,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onPortrait: Boolean
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        if(onPortrait) {
+            HorizontalDivider(
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            )
+        }
+        
         val textStyle = MaterialTheme.typography.bodyMedium
 
         val inlinePlaceholder = remember(textStyle) {
@@ -161,23 +179,22 @@ private fun PersonalChannelCard(
         )
 
         Surface(
-            modifier = modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onClick),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer
+            modifier = if(onPortrait) Modifier.fillMaxWidth() else Modifier,
+            shape = MaterialTheme.shapes.large,
+            color = Color.Transparent,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            onClick = onClick
         ) {
             Row(
-                modifier = Modifier.padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AvatarImage(
                     avatar = channel.avatar ?: Avatar.fromName(channel.title),
-                    size = 44.dp
+                    size = 40.dp
                 )
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column {
                     Text(
                         text = channel.title,
                         style = MaterialTheme.typography.titleSmall,
@@ -194,11 +211,14 @@ private fun PersonalChannelCard(
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
+                
+                Spacer(Modifier.width(4.dp))
             }
         }
     }
 }
 
+@OptIn(ExperimentalGridApi::class)
 @Composable
 private fun CommonGroupsSection(
     groups: List<CommonGroup>,
@@ -208,41 +228,71 @@ private fun CommonGroupsSection(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-        Text(
-            modifier = Modifier.fillMaxWidth(),
-            text = "Groups in common",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.secondary
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer
         )
 
-        for (group in groups) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { onOpenGroup(group) },
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AvatarImage(
-                        avatar = group.avatar ?: Avatar.fromName(group.title),
-                        size = 44.dp
-                    )
+        val textStyle = MaterialTheme.typography.bodyMedium
 
-                    Text(
-                        modifier = Modifier.weight(1f),
-                        text = group.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+        val inlinePlaceholder = remember(textStyle) {
+            Placeholder(
+                width = textStyle.fontSize * 1.4,
+                height = textStyle.fontSize * 1.4,
+                placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+            )
+        }
+
+        Text(
+            style = textStyle,
+            color = MaterialTheme.colorScheme.secondary,
+
+            inlineContent = remember(textStyle) {
+                mapOf("icon" to InlineTextContent(inlinePlaceholder) {
+                    Icon(
+                        tint = MaterialTheme.colorScheme.secondary,
+                        imageVector = group_icon,
+                        contentDescription = null
                     )
+                })
+            },
+
+            text = buildAnnotatedString {
+                appendInlineContent("icon")
+                append(" Groups in common")
+            }
+        )
+
+        AdaptiveGrid(
+            modifier = Modifier.fillMaxWidth(),
+            minColumnWidth = 150.dp,
+            gap = 8.dp
+        ) {
+            for (group in groups) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = MaterialTheme.shapes.large,
+                    color = Color.Transparent,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    onClick = { onOpenGroup(group) }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        AvatarImage(
+                            avatar = group.avatar ?: Avatar.fromName(group.title),
+                            size = 48.dp
+                        )
+
+                        Text(
+                            text = group.title,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
@@ -284,17 +334,6 @@ private fun ProfileScreenActions(
             Modifier.weight(1f)
         } else Modifier
 
-        OutlinedButton(
-            modifier = actionModifier,
-            onClick = onMessage
-        ) {
-            Icon(
-                modifier = Modifier.size(ButtonDefaults.IconSize),
-                imageVector = chat_bubble_icon,
-                contentDescription = null
-            )
-        }
-
         if(isChannel) {
             Button(
                 modifier = actionModifier,
@@ -307,6 +346,18 @@ private fun ProfileScreenActions(
             }
         }
 
+        OutlinedButton(
+            modifier = actionModifier,
+            onClick = onMessage
+        ) {
+            Icon(
+                modifier = Modifier.size(ButtonDefaults.IconSize),
+                tint = MaterialTheme.colorScheme.primary,
+                imageVector = chat_bubble_icon,
+                contentDescription = null
+            )
+        }
+
         if (dialog?.kind == DialogKind.Direct &&
             getPlatform().name.startsWith("Android")
         ) {
@@ -317,6 +368,7 @@ private fun ProfileScreenActions(
             ) {
                 Icon(
                     modifier = Modifier.size(ButtonDefaults.IconSize),
+                    tint = MaterialTheme.colorScheme.primary,
                     imageVector = call_icon,
                     contentDescription = null
                 )
@@ -332,12 +384,10 @@ private fun ProfileScreenActions(
             ) {
                 Icon(
                     modifier = Modifier.size(ButtonDefaults.IconSize),
-                    tint = if (isMuted == true) {
-                        MaterialTheme.colorScheme.secondary
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                    imageVector = notifications_icon,
+                    tint = MaterialTheme.colorScheme.primary,
+                    imageVector = if(isMuted == true) {
+                        notifications_off_icon
+                    } else notifications_icon,
                     contentDescription = if (isMuted == true) {
                         "Unmute notifications"
                     } else {
@@ -360,6 +410,7 @@ private fun ProfileScreenActions(
                 ) {
                     Icon(
                         modifier = Modifier.size(ButtonDefaults.IconSize),
+                        tint = MaterialTheme.colorScheme.primary,
                         imageVector = more_vertical_icon,
                         contentDescription = null
                     )
@@ -367,22 +418,17 @@ private fun ProfileScreenActions(
 
                 DropdownMenu(
                     expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
+                    onDismissRequest = { menuExpanded = false },
+                    shape = MaterialTheme.shapes.extraLarge
                 ) {
-                    if (canBlock) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(if (isBlocked) "Unblock user" else "Block user")
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onToggleBlock()
-                            }
-                        )
-                    }
-
                     if (canManageContacts) {
                         DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = edit_icon,
+                                    contentDescription = null
+                                )
+                            },
                             text = {
                                 Text(if (isContact) "Edit contact" else "Add contact")
                             },
@@ -394,6 +440,12 @@ private fun ProfileScreenActions(
 
                         if (isContact) {
                             DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = delete_icon,
+                                        contentDescription = null
+                                    )
+                                },
                                 text = { Text("Remove contact") },
                                 onClick = {
                                     menuExpanded = false
@@ -401,6 +453,24 @@ private fun ProfileScreenActions(
                                 }
                             )
                         }
+                    }
+
+                    if (canBlock) {
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = block_icon,
+                                    contentDescription = null
+                                )
+                            },
+                            text = {
+                                Text(if (isBlocked) "Unblock user" else "Block user")
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onToggleBlock()
+                            }
+                        )
                     }
                 }
             }
@@ -485,6 +555,8 @@ private fun ProfileScreenInfo(
     profile: UserProfileDetails?,
     fallbackStatus: String? = null
 ) {
+    val layoutInfo = currentAdaptiveLayoutInfo()
+    
     Column {
         CompositionLocalProvider(
             LocalContentColor provides MaterialTheme.colorScheme.secondary,
@@ -505,7 +577,7 @@ private fun ProfileScreenInfo(
             }
 
             FlowRow(
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+                modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -882,7 +954,7 @@ fun ProfileScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
-                        if (accentBrush != null) {
+                        if(accentBrush != null) {
                             Modifier
                                 .clip(RoundedCornerShape(24.dp))
                                 .background(accentBrush)
@@ -953,9 +1025,9 @@ fun ProfileScreen(
                     AnimatedVisibility(isWide) {
                         profile?.personalChannel?.let { channel ->
                             PersonalChannelCard(
-                                modifier = Modifier.width(IntrinsicSize.Max),
                                 channel = channel,
-                                onClick = { onOpenChannelProfile(channel.providerDialogId) }
+                                onClick = { onOpenChannelProfile(channel.providerDialogId) },
+                                onPortrait = false
                             )
                         }
                     }
@@ -1042,9 +1114,9 @@ fun ProfileScreen(
             AnimatedVisibility(!isWide) {
                 profile?.personalChannel?.let { channel ->
                     PersonalChannelCard(
-                        modifier = Modifier.fillMaxWidth(),
                         channel = channel,
-                        onClick = { onOpenChannelProfile(channel.providerDialogId) }
+                        onClick = { onOpenChannelProfile(channel.providerDialogId) },
+                        onPortrait = true
                     )
                 }   
             }
@@ -1079,21 +1151,21 @@ fun ProfileScreen(
                 )
             }
 
-            entry?.let { accountEntry ->
-                Text(
-                    text = "Account: ${accountEntry.account.displayName}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-            }
-
-            if (entry != null && userId == null && entry.dialog.identity.remoteId.isNotBlank()) {
-                Text(
-                    text = entry.dialog.identity.remoteId,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-            }
+//            entry?.let { accountEntry ->
+//                Text(
+//                    text = "Account: ${accountEntry.account.displayName}",
+//                    style = MaterialTheme.typography.bodyMedium,
+//                    color = MaterialTheme.colorScheme.secondary
+//                )
+//            }
+//
+//            if (entry != null && userId == null && entry.dialog.identity.remoteId.isNotBlank()) {
+//                Text(
+//                    text = entry.dialog.identity.remoteId,
+//                    style = MaterialTheme.typography.bodySmall,
+//                    color = MaterialTheme.colorScheme.secondary
+//                )
+//            }
 
             if (providerDialogId.isNotBlank() && !ownAccount) {
                 ProfileSharedMediaSection(
@@ -1155,6 +1227,7 @@ fun ProfileScreen(
     }
 }
 
+@OptIn(ExperimentalGridApi::class)
 @Composable
 private fun TracksSection(
     tracks: List<ProfileTrack>,
@@ -1208,28 +1281,63 @@ private fun TracksSection(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-        Text(
-            modifier = Modifier.fillMaxWidth(),
-            text = "Pinned tracks",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.secondary
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer
         )
 
-        for (track in tracks) {
-            val fileId = track.media.fileId
+        val textStyle = MaterialTheme.typography.bodyMedium
 
-            ProfileTrackCard(
-                track = track,
-                isPlaying = fileId != null && playingFileId == fileId,
-                isLoading = fileId != null && loadingFileId == fileId,
-                onToggle = { toggle(track) }
+        val inlinePlaceholder = remember(textStyle) {
+            Placeholder(
+                width = textStyle.fontSize * 1.4,
+                height = textStyle.fontSize * 1.4,
+                placeholderVerticalAlign = PlaceholderVerticalAlign.Center
             )
+        }
+
+        Text(
+            style = textStyle,
+            color = MaterialTheme.colorScheme.secondary,
+
+            inlineContent = remember(textStyle) {
+                mapOf("icon" to InlineTextContent(inlinePlaceholder) {
+                    Icon(
+                        tint = MaterialTheme.colorScheme.secondary,
+                        imageVector = music_note_icon,
+                        contentDescription = null
+                    )
+                })
+            },
+
+            text = buildAnnotatedString {
+                appendInlineContent("icon")
+                append(" Pinned tracks")
+            }
+        )
+
+        AdaptiveGrid(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
+            minColumnWidth = 250.dp,
+            gap = 8.dp
+        ) {
+            for (track in tracks) {
+                val fileId = track.media.fileId
+
+                ProfileTrackCard(
+                    track = track,
+                    isPlaying = fileId != null && playingFileId == fileId,
+                    isLoading = fileId != null && loadingFileId == fileId,
+                    onToggle = { toggle(track) }
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ProfileTrackCard(
     track: ProfileTrack,
@@ -1251,18 +1359,18 @@ private fun ProfileTrackCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer
+        shape = MaterialTheme.shapes.large,
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center
             ) {
@@ -1284,13 +1392,10 @@ private fun ProfileTrackCard(
                 }
             }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     text = track.title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1311,26 +1416,26 @@ private fun ProfileTrackCard(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable(enabled = !isLoading, onClick = onToggle),
-                contentAlignment = Alignment.Center
+            CompositionLocalProvider(
+                LocalMinimumInteractiveComponentSize provides Dp.Unspecified
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text(
-                        text = if (isPlaying) "⏸" else "▶",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 14.sp
-                    )
+                FilledTonalIconButton(
+                    shapes = IconButtonDefaults.shapes(),
+                    onClick = onToggle
+                ) {
+                    if(isLoading) {
+                        LoadingIndicator(
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    } else {
+                        Icon(
+                            modifier = Modifier.size(18.dp),
+                            imageVector = if(isPlaying) {
+                                pause_icon_filled
+                            } else play_icon_filled,
+                            contentDescription = null
+                        )
+                    }
                 }
             }
         }

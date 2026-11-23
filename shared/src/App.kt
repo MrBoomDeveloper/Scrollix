@@ -408,7 +408,8 @@ fun App() {
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = Color.Black,
-            surfaceContainer = Color(0xff101010)
+            surfaceContainer = Color(0xff101010),
+            secondaryContainer = Color(0xFF3A1E5A)
         ),
         typography = appTypography()
     ) {
