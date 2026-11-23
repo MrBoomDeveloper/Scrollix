@@ -57,12 +57,21 @@ object MediaViewer {
         _request.value = null
         _gallery.value = null
     }
+
+    val isShowing: Boolean
+        get() = _request.value != null || _gallery.value != null
 }
 
 @Composable
 fun MediaViewerOverlay() {
     val galleryRequest by MediaViewer.gallery.collectAsState()
+    val request by MediaViewer.request.collectAsState()
     val currentGallery = galleryRequest
+    val current = request
+
+    // The viewer is an overlay, not a route: back closes it and must not pop
+    // the chat behind it.
+    PlatformBackHandler(enabled = MediaViewer.isShowing, onBack = MediaViewer::close)
 
     if (currentGallery != null) {
         FullscreenGalleryViewer(
@@ -75,19 +84,18 @@ fun MediaViewerOverlay() {
         return
     }
 
-    val request by MediaViewer.request.collectAsState()
-    val current = request ?: return
+    val currentRequest = current ?: return
 
-    if (current.isVideo) {
+    if (currentRequest.isVideo) {
         FullscreenVideoViewer(
-            media = current.media,
-            session = current.session,
+            media = currentRequest.media,
+            session = currentRequest.session,
             onClose = MediaViewer::close
         )
     } else {
         FullscreenImageViewer(
-            media = current.media,
-            session = current.session,
+            media = currentRequest.media,
+            session = currentRequest.session,
             onClose = MediaViewer::close
         )
     }

@@ -1,11 +1,16 @@
 package com.mrboomdev.scrollix.ui.components
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -20,15 +25,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.readFileBytes
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** One option of a poll being composed. */
 data class PollOptionDraft(
@@ -83,6 +97,33 @@ fun PollCreateDialog(
     var explanation by remember { mutableStateOf("") }
     var emojiTarget by remember { mutableStateOf<PollEmojiTarget?>(null) }
     var attachmentTarget by remember { mutableStateOf<Int?>(null) }
+    var emojiData by remember { mutableStateOf<Map<Long, ByteArray>>(emptyMap()) }
+    var emojiAdaptive by remember { mutableStateOf<Set<Long>>(emptySet()) }
+
+    // Custom emoji picked into the question or an option are drawn as stickers,
+    // so their assets have to be loaded before the field can render them.
+    LaunchedEffect(session, questionCustomEmojis, options) {
+        val currentSession = session ?: return@LaunchedEffect
+        val ids = (
+            questionCustomEmojis.map { span -> span.emojiId } +
+                options.flatMap { option -> option.customEmojis.map { it.emojiId } }
+            )
+            .distinct()
+            .filter { id -> id !in emojiData }
+
+        if (ids.isEmpty()) return@LaunchedEffect
+
+        val loaded = ids.mapNotNull { id ->
+            currentSession.loadCustomEmoji(id)?.let { asset -> id to asset }
+        }.toMap()
+
+        if (loaded.isNotEmpty()) {
+            emojiData = emojiData + loaded.mapValues { (_, asset) -> asset.data }
+            emojiAdaptive = emojiAdaptive + loaded
+                .filterValues { asset -> asset.needsRepainting }
+                .keys
+        }
+    }
 
     val filePicker = rememberFilePicker(
         onImagesPicked = { picked ->
@@ -211,12 +252,14 @@ fun PollCreateDialog(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                OutlinedTextField(
+                PollEmojiTextField(
                     modifier = Modifier.weight(1f),
                     value = question,
                     onValueChange = ::updateQuestion,
-                    label = { Text("Question") },
-                    maxLines = 3
+                    label = "Question",
+                    customEmojis = questionCustomEmojis,
+                    emojiData = emojiData,
+                    emojiAdaptive = emojiAdaptive
                 )
 
                 TextButton(
@@ -237,12 +280,15 @@ fun PollCreateDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        OutlinedTextField(
+                        PollEmojiTextField(
                             modifier = Modifier.weight(1f),
                             value = option.text,
                             onValueChange = { value -> updateOption(index, value) },
-                            label = { Text("Option ${index + 1}") },
-                            singleLine = true
+                            label = "Option ${index + 1}",
+                            singleLine = true,
+                            customEmojis = option.customEmojis,
+                            emojiData = emojiData,
+                            emojiAdaptive = emojiAdaptive
                         )
 
                         TextButton(
@@ -304,11 +350,17 @@ fun PollCreateDialog(
                     option.media?.let { media ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            PollImagePreview(
+                                path = media.path,
+                                name = media.name
+                            )
+
                             Text(
                                 modifier = Modifier.weight(1f),
-                                text = "Image: ${media.name}",
+                                text = media.name,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )
@@ -444,7 +496,10 @@ fun PollCreateDialog(
                 onCustomEmojiSelected = { emojiId, fallback ->
                     insertEmoji(target, fallback, emojiId)
                     emojiTarget = null
-                }
+                },
+                // The field only accepts emoji, so stickers and GIFs are not
+                // offered here.
+                emojiOnly = true
             )
         } else {
             AlertDialog(
@@ -489,6 +544,85 @@ private fun PollSettingRow(
             enabled = enabled,
             onCheckedChange = onCheckedChange
         )
+    }
+}
+
+/**
+ * An outlined field whose custom emoji are drawn as stickers. The real field
+ * keeps the caret and selection while its text is transparent, and the emoji
+ * text is painted on top of it.
+ */
+@Composable
+private fun PollEmojiTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    customEmojis: List<CustomEmojiSpan>,
+    emojiData: Map<Long, ByteArray>,
+    emojiAdaptive: Set<Long>,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = false
+) {
+    val hasCustomEmojis = customEmojis.isNotEmpty()
+    val baseStyle: TextStyle = MaterialTheme.typography.bodyLarge
+
+    Box(modifier) {
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            singleLine = singleLine,
+            maxLines = if (singleLine) 1 else 3,
+            textStyle = baseStyle.copy(
+                color = if (hasCustomEmojis) Color.Transparent else MaterialTheme.colorScheme.onSurface
+            )
+        )
+
+        if (hasCustomEmojis) {
+            CustomEmojiMessageText(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(start = 16.dp, end = 16.dp, top = 18.dp),
+                text = value,
+                style = baseStyle,
+                color = MaterialTheme.colorScheme.onSurface,
+                emojis = customEmojis,
+                data = emojiData,
+                adaptiveEmojis = emojiAdaptive
+            )
+        }
+    }
+}
+
+/** Thumbnail of the image attached to a poll option. */
+@Composable
+private fun PollImagePreview(path: String, name: String) {
+    var bitmap by remember(path) { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(path) {
+        val bytes = withContext(Dispatchers.IO) { readFileBytes(path) }
+
+        bitmap = bytes?.let { data ->
+            withContext(Dispatchers.Default) { decodeImageBitmap(data) }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        bitmap?.let { image ->
+            Image(
+                bitmap = image,
+                contentDescription = name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
     }
 }
 

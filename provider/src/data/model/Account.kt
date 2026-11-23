@@ -75,5 +75,14 @@ data class UserProfileDetails(
     val isSubscribed: Boolean? = null,
     val discussionChatId: String? = null,
     /** True when the signed-in user has blocked this user. */
-    val isBlocked: Boolean? = null
+    val isBlocked: Boolean? = null,
+    /**
+     * False when the provider refuses blocking this profile, such as Telegram
+     * support accounts or MAX service accounts.
+     */
+    val canBlock: Boolean = true,
+    /** Whether this user is in the account's contact list. */
+    val isContact: Boolean? = null,
+    /** Providers that can add, rename and remove contacts set this to true. */
+    val canManageContacts: Boolean = false
 )

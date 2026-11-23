@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +72,7 @@ internal fun StickerSetDialog(
     var isLoading by remember(target) { mutableStateOf(true) }
     var isUpdating by remember(target) { mutableStateOf(false) }
     var error by remember(target) { mutableStateOf<String?>(null) }
+    var showRemoveConfirmation by remember(target) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
 
@@ -180,13 +182,20 @@ internal fun StickerSetDialog(
                     onClick = {
                         val current = info ?: return@Button
 
+                        // Removing a pack is destructive and easy to trigger by
+                        // accident, so it asks first.
+                        if (current.isInstalled) {
+                            showRemoveConfirmation = true
+                            return@Button
+                        }
+
                         scope.launch {
                             isUpdating = true
                             error = null
 
-                            session.setStickerSetInstalled(current.id, !current.isInstalled)
+                            session.setStickerSetInstalled(current.id, true)
                                 .onSuccess {
-                                    info = current.copy(isInstalled = !current.isInstalled)
+                                    info = current.copy(isInstalled = true)
                                 }
                                 .onFailure { failure ->
                                     error = failure.message ?: "Failed to update the sticker pack"
@@ -213,6 +222,49 @@ internal fun StickerSetDialog(
                 }
             }
         }
+    }
+
+    if (showRemoveConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showRemoveConfirmation = false },
+            title = { Text("Remove pack?") },
+            text = {
+                Text(
+                    "Remove \"${info?.title ?: "this pack"}\" from your $noun?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val current = info ?: return@TextButton
+                        showRemoveConfirmation = false
+
+                        scope.launch {
+                            isUpdating = true
+                            error = null
+
+                            session.setStickerSetInstalled(current.id, false)
+                                .onSuccess {
+                                    info = current.copy(isInstalled = false)
+                                }
+                                .onFailure { failure ->
+                                    error = failure.message
+                                        ?: "Failed to update the sticker pack"
+                                }
+
+                            isUpdating = false
+                        }
+                    }
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

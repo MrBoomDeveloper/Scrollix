@@ -28,6 +28,11 @@ import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.fetchUrlBytes
+import io.github.alexzhirkevich.compottie.Compottie
+import io.github.alexzhirkevich.compottie.LottieCompositionSpec
+import io.github.alexzhirkevich.compottie.rememberLottieComposition
+import io.github.alexzhirkevich.compottie.rememberLottiePainter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -43,6 +48,17 @@ internal fun ChatSticker(
     var data by remember(fileId, session) { mutableStateOf<ByteArray?>(null) }
     var isLoading by remember(fileId, session) { mutableStateOf(fileId != null) }
     var bitmap by remember(fileId) { mutableStateOf<ImageBitmap?>(null) }
+    // MAX ships most stickers as Lottie animations; the static image only
+    // shows the first frame, so the animation is fetched separately.
+    var lottieJson by remember(media.lottieUrl) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(media.lottieUrl) {
+        lottieJson = media.lottieUrl?.let { url ->
+            withContext(Dispatchers.IO) { fetchUrlBytes(url) }
+                ?.decodeToString()
+                ?.takeIf { json -> json.trimStart().startsWith("{") }
+        }
+    }
 
     LaunchedEffect(fileId, session) {
         data = session?.loadMediaBytes(
@@ -108,6 +124,8 @@ internal fun ChatSticker(
 
     // Nothing is drawn in place of the sticker while it loads; the sticker
     // itself fades in once its bytes (or preview) are available.
+    val lottieAnimation = lottieJson
+
     val contentAlpha by animateFloatAsState(
         targetValue = if (data != null || media.minithumbnail != null) 1f else 0f,
         animationSpec = tween(durationMillis = 160),
@@ -127,6 +145,13 @@ internal fun ChatSticker(
         contentAlignment = Alignment.Center
     ) {
         when {
+            lottieAnimation != null -> LottieSticker(
+                json = lottieAnimation,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(contentAlpha)
+            )
+
             decoded != null -> Image(
                 bitmap = decoded,
                 contentDescription = null,
@@ -171,4 +196,26 @@ internal fun ChatSticker(
             )
         }
     }
+}
+
+@Composable
+private fun LottieSticker(
+    json: String,
+    modifier: Modifier
+) {
+    val compositionResult = rememberLottieComposition(json) {
+        LottieCompositionSpec.JsonString(json)
+    }
+    val composition = compositionResult.value ?: return
+    val painter = rememberLottiePainter(
+        composition = composition,
+        iterations = Compottie.IterateForever
+    )
+
+    Image(
+        painter = painter,
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = ContentScale.Fit
+    )
 }

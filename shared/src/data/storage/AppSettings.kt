@@ -29,7 +29,9 @@ data class AppSettings(
     val pinnedCustomReactions: List<ReactionPreference> = emptyList(),
     /** Reaction sent by double tapping a message; null means the first pinned one. */
     val doubleTapReaction: ReactionPreference? = null,
-    val defaultHomeTab: String = "all",
+    val defaultHomeTab: String = "direct",
+    /** Settings schema version, used to apply one-time default changes. */
+    val settingsVersion: Int = 0,
     /** User order of folder chips; keys are "all", "folder:<account:id>" or "tab:<index>". */
     val folderOrder: List<String> = emptyList(),
     /** Per-account order of installed sticker packs (ids). */
@@ -46,6 +48,8 @@ data class AppSettings(
     val wallpaperUpdatedAt: Long = 0,
     val emojiPickerTab: Int = 0
 )
+
+private const val CurrentSettingsVersion = 1
 
 object AppSettingsStore {
     private const val FILE_NAME = "settings.json"
@@ -118,9 +122,24 @@ object AppSettingsStore {
     }
 
     private fun read(): AppSettings {
-        return runCatching {
+        val settings = runCatching {
             val text = storage.readText(FILE_NAME) ?: return@runCatching null
             json.decodeFromString(AppSettings.serializer(), text)
-        }.getOrNull() ?: AppSettings()
+        }.getOrNull() ?: return AppSettings().copy(settingsVersion = CurrentSettingsVersion)
+
+        if (settings.settingsVersion >= CurrentSettingsVersion) return settings
+
+        // Older files stored "all" as the implicit default. Preserve explicit
+        // choices of the other tabs while moving the untouched default to DM.
+        val migrated = settings.copy(
+            defaultHomeTab = if (settings.defaultHomeTab == "all") "direct" else settings.defaultHomeTab,
+            settingsVersion = CurrentSettingsVersion
+        )
+
+        runCatching {
+            storage.writeText(FILE_NAME, json.encodeToString(AppSettings.serializer(), migrated))
+        }
+
+        return migrated
     }
 }

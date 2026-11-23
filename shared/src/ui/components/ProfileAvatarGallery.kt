@@ -37,9 +37,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
+import com.mrboomdev.scrollix.fetchUrlBytes
 import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,18 +49,22 @@ import kotlinx.coroutines.withContext
 
 /**
  * Shows every profile photo of a user, newest first, and can save the
- * currently selected one to the device.
+ * currently selected one to the device. Providers without a photo list (MAX)
+ * fall back to the profile avatar, which can still be viewed and saved.
  */
 @Composable
 fun ProfileAvatarGalleryDialog(
     userId: Long,
     session: AccountSession?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    fallbackAvatar: Avatar? = null
 ) {
     var photos by remember(userId) { mutableStateOf<List<MessageMedia>>(emptyList()) }
     var isLoading by remember(userId) { mutableStateOf(true) }
     var selectedIndex by remember(userId) { mutableStateOf(0) }
     var bitmap by remember(userId, selectedIndex) { mutableStateOf<ImageBitmap?>(null) }
+    var fallbackBytes by remember(userId) { mutableStateOf<ByteArray?>(null) }
+    var fallbackBitmap by remember(userId) { mutableStateOf<ImageBitmap?>(null) }
     var isDownloading by remember(userId) { mutableStateOf(false) }
     var status by remember(userId) { mutableStateOf<String?>(null) }
 
@@ -80,6 +86,23 @@ fun ProfileAvatarGalleryDialog(
         }
     }
 
+    // No photo list from the provider: show the avatar the profile already
+    // loaded instead of an empty gallery.
+    LaunchedEffect(isLoading, photos, fallbackAvatar) {
+        if (isLoading || photos.isNotEmpty()) return@LaunchedEffect
+
+        val avatar = fallbackAvatar ?: return@LaunchedEffect
+        val bytes = avatar.image
+            ?: avatar.url?.let { url ->
+                withContext(Dispatchers.IO) { fetchUrlBytes(url) }
+            }
+
+        fallbackBytes = bytes
+        fallbackBitmap = bytes?.let { image ->
+            withContext(Dispatchers.Default) { decodeImageBitmap(image) }
+        }
+    }
+
     LaunchedEffect(photos, selectedIndex, session) {
         val photo = photos.getOrNull(selectedIndex) ?: return@LaunchedEffect
 
@@ -98,8 +121,21 @@ fun ProfileAvatarGalleryDialog(
     }
 
     fun download() {
-        val photo = photos.getOrNull(selectedIndex) ?: return
+        val photo = photos.getOrNull(selectedIndex)
         val currentSession = session ?: return
+
+        if (photo == null) {
+            val bytes = fallbackBytes ?: return
+
+            scope.launch {
+                isDownloading = true
+                status = null
+                status = saveProfilePhoto("profile-photo.jpg", bytes)
+                isDownloading = false
+            }
+
+            return
+        }
 
         scope.launch {
             isDownloading = true
@@ -113,12 +149,7 @@ fun ProfileAvatarGalleryDialog(
             status = if (bytes == null) {
                 "Could not load the photo"
             } else {
-                val path = saveFileToDevice(
-                    fileName = "profile-photo-${selectedIndex + 1}.jpg",
-                    bytes = bytes
-                )
-
-                if (path != null) "Saved to $path" else "Could not save the photo"
+                saveProfilePhoto("profile-photo-${selectedIndex + 1}.jpg", bytes)
             }
 
             isDownloading = false
@@ -162,12 +193,16 @@ fun ProfileAvatarGalleryDialog(
                         .background(MaterialTheme.colorScheme.surfaceContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    val image = bitmap
+                    val image = bitmap ?: fallbackBitmap
 
                     when {
                         image != null -> Image(
                             bitmap = image,
-                            contentDescription = "Profile photo ${selectedIndex + 1}",
+                            contentDescription = if (photos.isEmpty()) {
+                                "Profile photo"
+                            } else {
+                                "Profile photo ${selectedIndex + 1}"
+                            },
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Fit
                         )
@@ -203,17 +238,17 @@ fun ProfileAvatarGalleryDialog(
                 ) {
                     Text(
                         modifier = Modifier.weight(1f),
-                        text = if (photos.isEmpty()) {
-                            status.orEmpty()
-                        } else {
-                            status ?: "${selectedIndex + 1} / ${photos.size}"
+                        text = when {
+                            photos.isNotEmpty() -> status ?: "${selectedIndex + 1} / ${photos.size}"
+                            fallbackBitmap != null -> status ?: "Current profile photo"
+                            else -> status.orEmpty()
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
 
                     Button(
-                        enabled = photos.isNotEmpty() && !isDownloading,
+                        enabled = (photos.isNotEmpty() || fallbackBytes != null) && !isDownloading,
                         onClick = ::download
                     ) {
                         if (isDownloading) {
@@ -230,6 +265,11 @@ fun ProfileAvatarGalleryDialog(
             }
         }
     }
+}
+
+private suspend fun saveProfilePhoto(fileName: String, bytes: ByteArray): String {
+    val path = saveFileToDevice(fileName = fileName, bytes = bytes)
+    return if (path != null) "Saved to $path" else "Could not save the photo"
 }
 
 @Composable

@@ -18,6 +18,12 @@ data class AuthChallenge(
     val isSubmitting: Boolean = false,
     val qrLink: String? = null,
     /**
+     * Seconds the provider wants the user to wait before another code can be
+     * requested. Null means the provider has no opinion and the screen falls
+     * back to its own cooldown. Zero means a resend is allowed right away.
+     */
+    val resendAfterSeconds: Int? = null,
+    /**
      * Link of a provider captcha that has to be solved before the next step.
      * The solved token is passed to [AccountSession.submitAuth] under
      * [AuthCaptchaValueId].

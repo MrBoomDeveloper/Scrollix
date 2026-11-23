@@ -61,6 +61,7 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageLinkPreview
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
@@ -86,6 +87,7 @@ import com.mrboomdev.scrollix.ui.icons.forward_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
 import com.mrboomdev.scrollix.ui.icons.keep_off_icon
 import com.mrboomdev.scrollix.ui.icons.reply_icon
+import com.mrboomdev.scrollix.ui.icons.schedule_icon
 import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
 import com.mrboomdev.scrollix.ui.icons.share_icon
 import com.mrboomdev.scrollix.ui.icons.visibility_icon
@@ -119,11 +121,14 @@ fun MessageBubble(
     isSelected: Boolean = false,
     isPinned: Boolean = false,
     onOpenStickerSet: ((Long) -> Unit)? = null,
+    onOpenWebApp: ((MessageButton) -> Unit)? = null,
     onDoubleTap: (() -> Unit)? = null,
     onOpenSender: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
     onToggleSelection: (() -> Unit)? = null,
     onReply: (() -> Unit)? = null,
+    /** Opens the message's reply thread; null when it has no thread. */
+    onOpenThread: (() -> Unit)? = null,
     onForward: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onPin: (() -> Unit)? = null,
@@ -567,6 +572,16 @@ fun MessageBubble(
                                 )
                             }
 
+                            if (message.keyboard.isNotEmpty()) {
+                                onOpenWebApp?.let { openWebApp ->
+                                    MessageKeyboardButtons(
+                                        modifier = Modifier.padding(top = 6.dp),
+                                        keyboard = message.keyboard,
+                                        onOpenWebApp = openWebApp
+                                    )
+                                }
+                            }
+
                             if (!isMediaOnly && !isFooterInline) {
                                 MessageFooter(
                                     message = message,
@@ -724,6 +739,14 @@ fun MessageBubble(
                                     text = "Reply",
                                     icon = reply_icon,
                                     onClick = onReply
+                                )
+                            }
+
+                            if (onOpenThread != null) {
+                                action(
+                                    text = "Thread",
+                                    icon = reply_icon,
+                                    onClick = onOpenThread
                                 )
                             }
 
@@ -947,11 +970,22 @@ private fun ReactionPickerRow(
             ?: DefaultQuickReactions.map(::MessageReactionOption)
     }
 
-    val entries = remember(quick, available, packs, packItems) {
+    // Channels (and chats with a restricted reaction set) only accept the
+    // reactions the server lists. The user's pinned quick reactions must not
+    // stay in the menu when they are not sendable here.
+    val sendableQuick = remember(quick, available) {
+        if (available.isEmpty()) {
+            quick
+        } else {
+            quick.filter { option -> available.any { it.key == option.key } }
+        }
+    }
+
+    val entries = remember(sendableQuick, available, packs, packItems) {
         buildList {
             add(
                 ReactionMenuEntry.Available(
-                    options = (quick + available).distinctBy { it.key }
+                    options = (sendableQuick + available).distinctBy { it.key }
                 )
             )
 
@@ -982,7 +1016,7 @@ private fun ReactionPickerRow(
     Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
         if (!expanded) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                quick.forEach { option ->
+                sendableQuick.ifEmpty { available }.forEach { option ->
                     ReactionPickerButton(
                         option = option,
                         chosen = isChosen(option),
@@ -1524,14 +1558,15 @@ private fun MessageStatusRow(
 
             if(message.isOutgoing) {
                 when (message.sendState) {
-                    MessageSendState.Sending -> CircularProgressIndicator(
-                        modifier = Modifier.size(12.dp),
-                        strokeWidth = 1.5.dp,
-                        color = if(onMedia) {
+                    MessageSendState.Sending -> Icon(
+                        modifier = Modifier.size(14.dp),
+                        tint = if (onMedia) {
                             Color.White
                         } else {
                             MaterialTheme.colorScheme.onPrimary
-                        }
+                        },
+                        imageVector = schedule_icon,
+                        contentDescription = "Sending"
                     )
 
                     MessageSendState.Failed -> Text(

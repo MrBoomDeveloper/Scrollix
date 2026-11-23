@@ -168,6 +168,13 @@ Keep these invariants when changing the related code:
   `setScopeMuted`, `setDialogMuted` and `isDialogMuted`. The settings screen
   exposes them per account, and profiles expose the per-chat mute toggle. Do
   not move these to local-only storage.
+  New unread messages raise an OS notification through
+  `showDesktopNotification`, which `App` calls only for unmuted chats and only
+  when the unread counter grows. Android posts them on the `messages` channel
+  (`createNotificationChannels`), requests `POST_NOTIFICATIONS`, and suppresses
+  them while an activity is in front; tapping one opens the chat through
+  `NotificationExtras` and `ChatOpenHandler`. Notifications only arrive while
+  the process is alive, since there is no push service.
 - **Reactions.** `pinnedCustomReactions` and `doubleTapReaction` in
   `AppSettings` are `ReactionPreference` values that may carry a custom emoji
   id. Double-tap reactions are only wired on compact/mobile layouts; the

@@ -39,6 +39,9 @@ dependencies@android:
   - androidx.camera:camera-lifecycle:1.4.2
   - androidx.camera:camera-view:1.4.2
   - com.google.zxing:core:3.5.3
+  # Headless Lottie rendering: TGS stickers are prerendered to GIF for MAX,
+  # which has no animated sticker format.
+  - $libs.lottie.android
   - $libs.alpha.video
   - $libs.alpha.video.vpx
 

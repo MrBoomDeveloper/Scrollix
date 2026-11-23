@@ -4,6 +4,7 @@ dependencies:
   - //max
   - //shared
   - //telegram
+  - //vk
   - $libs.androidx.activity.compose
   - $compose.preview
   - $compose.uiTooling

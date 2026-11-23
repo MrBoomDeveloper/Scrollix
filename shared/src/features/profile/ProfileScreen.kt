@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,12 +46,14 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -110,7 +113,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
 import com.mrboomdev.scrollix.ui.icons.cake_icon
-import com.mrboomdev.scrollix.ui.icons.TelegramLogoIcon
+import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
 import com.mrboomdev.scrollix.ui.icons.call_icon
 import com.mrboomdev.scrollix.ui.icons.campaign_icon
 import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
@@ -256,7 +259,11 @@ private fun ProfileScreenActions(
     isMuted: Boolean?,
     canBlock: Boolean,
     isBlocked: Boolean,
+    canManageContacts: Boolean,
+    isContact: Boolean,
     stretch: Boolean,
+    onEditContact: () -> Unit,
+    onRemoveContact: () -> Unit,
     onMessage: () -> Unit,
     onToggleSubscription: () -> Unit,
     onToggleMute: () -> Unit,
@@ -340,36 +347,62 @@ private fun ProfileScreenActions(
             }
         }
 
-        Box {
-            OutlinedButton(
-                modifier = actionModifier,
-                contentPadding = PaddingValues(0.dp),
-                onClick = {
+        // An empty menu must not leave a dead "more" button behind, which is
+        // what a service account (no blocking) used to get.
+        val hasMenuOptions = canBlock || canManageContacts
+
+        if (hasMenuOptions) {
+            Box {
+                OutlinedButton(
+                    modifier = actionModifier,
+                    contentPadding = PaddingValues(0.dp),
+                    onClick = { menuExpanded = true }
+                ) {
+                    Icon(
+                        modifier = Modifier.size(ButtonDefaults.IconSize),
+                        imageVector = more_vertical_icon,
+                        contentDescription = null
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
                     if (canBlock) {
-                        menuExpanded = true
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (isBlocked) "Unblock user" else "Block user")
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onToggleBlock()
+                            }
+                        )
+                    }
+
+                    if (canManageContacts) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (isContact) "Edit contact" else "Add contact")
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onEditContact()
+                            }
+                        )
+
+                        if (isContact) {
+                            DropdownMenuItem(
+                                text = { Text("Remove contact") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRemoveContact()
+                                }
+                            )
+                        }
                     }
                 }
-            ) {
-                Icon(
-                    modifier = Modifier.size(ButtonDefaults.IconSize),
-                    imageVector = more_vertical_icon,
-                    contentDescription = null
-                )
-            }
-
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                DropdownMenuItem(
-                    text = {
-                        Text(if (isBlocked) "Unblock user" else "Block user")
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        onToggleBlock()
-                    }
-                )
             }
         }
     }
@@ -600,6 +633,11 @@ fun ProfileScreen(
     var showAvatarGallery by remember(accountId, providerDialogId) {
         mutableStateOf(false)
     }
+    var showContactEditor by remember(accountId, providerDialogId) {
+        mutableStateOf(false)
+    }
+    var contactFirstName by remember(accountId, providerDialogId) { mutableStateOf("") }
+    var contactLastName by remember(accountId, providerDialogId) { mutableStateOf("") }
 
     LaunchedEffect(accountId, providerDialogId, session, ownAccount) {
         if (!ownAccount && providerDialogId.isNotBlank()) {
@@ -625,6 +663,8 @@ fun ProfileScreen(
     fun toggleBlock() {
         val currentSession = session ?: return
         val targetUserId = details?.userId ?: return
+        if (details?.canBlock == false) return
+
         val blocked = details?.isBlocked == true
 
         details = details?.copy(isBlocked = !blocked)
@@ -633,6 +673,58 @@ fun ProfileScreen(
             currentSession.setUserBlocked(targetUserId, !blocked).onFailure {
                 details = details?.copy(isBlocked = blocked)
                 actionError = it.message ?: "Failed to update the block state"
+            }
+        }
+    }
+
+    fun openContactEditor() {
+        val parts = details?.displayName.orEmpty().trim().split(' ', limit = 2)
+
+        contactFirstName = parts.firstOrNull().orEmpty()
+        contactLastName = parts.getOrNull(1).orEmpty()
+        showContactEditor = true
+    }
+
+    fun saveContact() {
+        val currentSession = session ?: return
+        val targetUserId = details?.userId ?: return
+        val firstName = contactFirstName.trim()
+        val lastName = contactLastName.trim()
+
+        if (firstName.isEmpty()) {
+            actionError = "Enter a first name"
+            return
+        }
+
+        showContactEditor = false
+        actionError = null
+
+        details = details?.copy(
+            isContact = true,
+            displayName = listOf(firstName, lastName)
+                .filter { part -> part.isNotBlank() }
+                .joinToString(" ")
+        )
+
+        scope.launch {
+            currentSession.addContact(targetUserId, firstName, lastName).onFailure {
+                details = details?.copy(isContact = false)
+                actionError = it.message ?: "Failed to update the contact"
+            }
+        }
+    }
+
+    fun removeContact() {
+        val currentSession = session ?: return
+        val targetUserId = details?.userId ?: return
+
+        details = details?.copy(isContact = false)
+        actionError = null
+
+        scope.launch {
+            currentSession.removeContact(targetUserId).onFailure {
+                details = details?.copy(isContact = true)
+                actionError = it.message ?: "Failed to remove the contact"
             }
         }
     }
@@ -840,9 +932,15 @@ fun ProfileScreen(
                             isUpdatingSubscription = isUpdatingSubscription,
                             isMuted = isMuted,
                             canBlock = dialog?.kind == DialogKind.Direct &&
-                                details?.userId != null,
+                                details?.userId != null &&
+                                details?.canBlock != false,
                             isBlocked = details?.isBlocked == true,
+                            canManageContacts = dialog?.kind == DialogKind.Direct &&
+                                details?.canManageContacts == true,
+                            isContact = details?.isContact == true,
                             stretch = false,
+                            onEditContact = ::openContactEditor,
+                            onRemoveContact = ::removeContact,
                             onMessage = {
                                 onMessage(details?.discussionChatId ?: providerDialogId)
                             },
@@ -867,9 +965,10 @@ fun ProfileScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (session?.providerId == "telegram") {
-                        TelegramLogoIcon(size = 18.dp)
-                    }
+                    ProviderLogoIcon(
+                        providerId = session?.providerId,
+                        size = 18.dp
+                    )
 
                     SharedProfileElement(key = "$sharedProfileKey:name") {
                         Text(
@@ -887,8 +986,6 @@ fun ProfileScreen(
                             size = 22.dp
                         )
                     }
-
-                    // TODO: Add provider icon
                 }
 
                 CompositionLocalProvider(
@@ -910,9 +1007,15 @@ fun ProfileScreen(
                     isUpdatingSubscription = isUpdatingSubscription,
                     isMuted = isMuted,
                     canBlock = dialog?.kind == DialogKind.Direct &&
-                        details?.userId != null,
+                        details?.userId != null &&
+                        details?.canBlock != false,
                     isBlocked = details?.isBlocked == true,
+                    canManageContacts = dialog?.kind == DialogKind.Direct &&
+                        details?.canManageContacts == true,
+                    isContact = details?.isContact == true,
                     stretch = true,
+                    onEditContact = ::openContactEditor,
+                    onRemoveContact = ::removeContact,
                     onMessage = {
                         onMessage(details?.discussionChatId ?: providerDialogId)
                     },
@@ -1005,9 +1108,48 @@ fun ProfileScreen(
                     ProfileAvatarGalleryDialog(
                         userId = profileUserId,
                         session = session,
+                        fallbackAvatar = avatar,
                         onDismiss = { showAvatarGallery = false }
                     )
                 }
+            }
+
+            if (showContactEditor) {
+                AlertDialog(
+                    onDismissRequest = { showContactEditor = false },
+                    title = {
+                        Text(if (details?.isContact == true) "Edit contact" else "Add contact")
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                modifier = Modifier.fillMaxWidth(),
+                                value = contactFirstName,
+                                onValueChange = { contactFirstName = it },
+                                label = { Text("First name") },
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                modifier = Modifier.fillMaxWidth(),
+                                value = contactLastName,
+                                onValueChange = { contactLastName = it },
+                                label = { Text("Last name") },
+                                singleLine = true
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = ::saveContact) {
+                            Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showContactEditor = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
         }
     }

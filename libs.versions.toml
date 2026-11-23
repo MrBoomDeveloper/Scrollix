@@ -8,10 +8,12 @@ haze = "2.1.0"
 okhttp = "4.12.0"
 compose-webview = "2.0.3"
 kcef = "2025.03.23"
+lottie = "6.7.1"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version = "1.6.2" }
 compottie = { module = "io.github.alexzhirkevich:compottie", version = "2.3.3" }
+lottie-android = { module = "com.airbnb.android:lottie", version.ref = "lottie" }
 alpha-video = { module = "dev.mediacache:alpha-video", version = "1.0.1" }
 alpha-video-vpx = { module = "dev.mediacache:alpha-video-vpx", version = "1.0.1" }
 javacv = { module = "org.bytedeco:javacv", version = "1.5.14" }

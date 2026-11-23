@@ -3,6 +3,8 @@ package com.mrboomdev.scrollix.ui.components
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,8 +51,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.mrboomdev.scrollix.currentLocation
 import com.mrboomdev.scrollix.fetchUrlBytes
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.atan
@@ -93,6 +98,8 @@ fun LocationPickerDialog(
     var tileImage by remember { mutableStateOf<ImageBitmap?>(null) }
     var isLoadingTile by remember { mutableStateOf(false) }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
+    var isLocating by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     val latitude = latitudeText.toDoubleOrNull()
     val longitude = longitudeText.toDoubleOrNull()
@@ -154,13 +161,36 @@ fun LocationPickerDialog(
                 color = MaterialTheme.colorScheme.surface
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier
+                        .padding(16.dp)
+                        // The picker has more content than a short desktop
+                        // window; keep every control reachable.
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
                         text = "Share a location",
                         style = MaterialTheme.typography.titleLarge
                     )
+
+                    TextButton(
+                        enabled = !isLocating,
+                        onClick = {
+                            isLocating = true
+
+                            scope.launch {
+                                val position = currentLocation()
+                                isLocating = false
+
+                                if (position != null) {
+                                    latitudeText = formatLocationCoordinate(position.first)
+                                    longitudeText = formatLocationCoordinate(position.second)
+                                }
+                            }
+                        }
+                    ) {
+                        Text(if (isLocating) "Locating…" else "Use my location")
+                    }
 
                     Box(
                         modifier = Modifier

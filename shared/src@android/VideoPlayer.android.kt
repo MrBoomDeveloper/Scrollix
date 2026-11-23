@@ -123,14 +123,17 @@ private class AndroidVideoPlayer : VideoPlayback {
                 )
 
                 setOnVideoSizeChangedListener { _, width, height ->
-                    videoWidth = width
-                    videoHeight = height
+                    // Inside apply { } these names resolve to MediaPlayer's
+                    // read-only videoWidth/videoHeight, so the player's own
+                    // size fields have to be qualified explicitly.
+                    this@AndroidVideoPlayer.videoWidth = width
+                    this@AndroidVideoPlayer.videoHeight = height
                     applyAspectRatio()
                 }
 
                 setOnPreparedListener { prepared ->
-                    videoWidth = prepared.videoWidth
-                    videoHeight = prepared.videoHeight
+                    this@AndroidVideoPlayer.videoWidth = prepared.videoWidth
+                    this@AndroidVideoPlayer.videoHeight = prepared.videoHeight
                     applyAspectRatio()
 
                     _state.value = _state.value.copy(

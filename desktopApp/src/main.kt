@@ -2,6 +2,10 @@ package com.mrboomdev.scrollix
 
 import androidx.compose.foundation.LocalContextMenuRepresentation
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.mrboomdev.scrollix.ui.components.ScrollixContextMenuRepresentation
@@ -9,6 +13,7 @@ import com.mrboomdev.scrollix.ui.components.shutdownCaptchaBrowser
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.max.MaxIntegration
 import com.mrboomdev.scrollix.data.telegram.TelegramIntegration
+import com.mrboomdev.scrollix.data.vk.VkIntegration
 import kotlinx.coroutines.runBlocking
 import java.awt.AWTEvent
 import java.awt.EventQueue
@@ -20,10 +25,21 @@ import java.awt.event.MouseWheelEvent
 fun main() {
     TelegramIntegration.init()
     MaxIntegration.init()
+    VkIntegration.init()
     installHorizontalScrollSupport()
 
     application {
         Window(
+            // Escape is the desktop equivalent of a back press: App closes the
+            // open overlay or pops the current route.
+            onPreviewKeyEvent = { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    BackNavigation.requestBack()
+                    true
+                } else {
+                    false
+                }
+            },
             onCloseRequest = {
                 runBlocking {
                     ApiManager.shutdown()

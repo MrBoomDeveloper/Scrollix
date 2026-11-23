@@ -4,9 +4,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -25,6 +27,17 @@ internal class MaxApiException(
     val isAuthError: Boolean
         get() = errorCode?.startsWith("auth.") == true
 }
+
+/**
+ * The transport lost its socket. A request that was in flight fails with this
+ * error, and callers can tell it apart from a protocol error (cmd=3) to decide
+ * whether reconnecting and resending the same payload is safe.
+ */
+internal class MaxConnectionClosedException(
+    val reason: String?
+) : IllegalStateException(
+    "MAX connection was lost. Please try again." + (reason?.let { " ($it)" } ?: "")
+)
 
 internal data class MaxPush(
     val opcode: Int,
@@ -51,6 +64,14 @@ internal data class MaxFrame(
 internal class MaxRpc(
     private val socket: MaxSocket
 ) {
+    private companion object {
+        // MAX drops a session whose socket stays silent, and a dropped socket
+        // is only noticed on the next write (the server answers with a RST, so
+        // the frame fails with "Broken pipe"). The web client therefore sends
+        // PING (opcode 1) requests of its own between operations.
+        const val HeartbeatIntervalMillis = 30_000L
+    }
+
     private val sequence = AtomicInteger(1)
     private val pending = mutableMapOf<Int, CompletableDeferred<JsonElement?>>()
     private val pendingMutex = Mutex()
@@ -63,7 +84,14 @@ internal class MaxRpc(
 
     val closed = CompletableDeferred<String?>()
 
+    /** False once the socket is gone, so a request is never written to it. */
+    val isAlive: Boolean get() = !closed.isCompleted
+
+    @Volatile
+    private var closedReason: String? = null
+
     private var readerJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     suspend fun connect(scope: CoroutineScope) {
         // Subscribe before the socket opens: the server answers the first
@@ -73,11 +101,29 @@ internal class MaxRpc(
         }
         readerJob = reader
 
+        val heartbeat = scope.launch {
+            while (isActive) {
+                delay(HeartbeatIntervalMillis)
+                if (closed.isCompleted) return@launch
+
+                // A keep-alive that cannot even be written means the socket is
+                // gone, even when the platform never reported a close frame.
+                val heartbeat = runCatching { sendHeartbeat() }
+
+                if (heartbeat.isFailure) {
+                    markClosed(heartbeat.exceptionOrNull()?.message ?: "Heartbeat failed")
+                }
+            }
+        }
+        heartbeatJob = heartbeat
+
         try {
             socket.connect()
         } catch (exception: Exception) {
             reader.cancel()
             readerJob = null
+            heartbeat.cancel()
+            heartbeatJob = null
             throw exception
         }
     }
@@ -87,6 +133,10 @@ internal class MaxRpc(
         payload: JsonObject? = null,
         timeoutMillis: Long = 30_000
     ): JsonElement? {
+        if (closed.isCompleted) {
+            throw MaxConnectionClosedException(closedReason)
+        }
+
         val seq = nextSequence()
         val response = CompletableDeferred<JsonElement?>()
 
@@ -110,16 +160,14 @@ internal class MaxRpc(
         readerJob?.cancel()
         readerJob = null
 
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+
         runCatching { socket.close() }
 
-        pendingMutex.withLock {
-            pending.values.forEach { deferred ->
-                deferred.completeExceptionally(IllegalStateException("MAX session was closed"))
-            }
-            pending.clear()
-        }
-
-        closed.complete(null)
+        // In-flight requests treat this as a dead socket and can retry, which
+        // also covers a connection torn down while another frame was pending.
+        markClosed("connection was closed")
     }
 
     private fun nextSequence(): Int {
@@ -132,22 +180,43 @@ internal class MaxRpc(
         socket.send(buildMaxFrame(cmd = 0, seq = seq, opcode = opcode, payload = payload))
     }
 
+    /**
+     * A keep-alive PING is a plain request: no response is awaited by a caller,
+     * and a late answer for its `seq` finds no pending entry, which is fine.
+     */
+    private suspend fun sendHeartbeat() {
+        sendFrame(
+            seq = nextSequence(),
+            opcode = 1,
+            payload = buildJsonObject { put("interactive", false) }
+        )
+    }
+
     private suspend fun handleEvent(event: MaxSocketEvent) {
         when (event) {
             is MaxSocketEvent.Binary -> handleFrame(event.bytes)
-            is MaxSocketEvent.Closed -> {
-                pendingMutex.withLock {
-                    pending.values.forEach { deferred ->
-                        deferred.completeExceptionally(
-                            IllegalStateException("MAX connection closed: ${event.reason ?: "unknown reason"}")
-                        )
-                    }
-                    pending.clear()
-                }
-
-                closed.complete(event.reason ?: "Connection closed")
-            }
+            is MaxSocketEvent.Closed -> markClosed(event.reason ?: "Connection closed")
         }
+    }
+
+    /**
+     * Ends the transport once: every in-flight request fails with
+     * [MaxConnectionClosedException] so callers can reconnect and resend, and
+     * the session learns the connection is gone.
+     */
+    private suspend fun markClosed(reason: String?) {
+        if (closed.isCompleted) return
+
+        closedReason = reason
+
+        pendingMutex.withLock {
+            pending.values.forEach { deferred ->
+                deferred.completeExceptionally(MaxConnectionClosedException(reason))
+            }
+            pending.clear()
+        }
+
+        closed.complete(reason ?: "Connection closed")
     }
 
     private suspend fun handleFrame(bytes: ByteArray) {

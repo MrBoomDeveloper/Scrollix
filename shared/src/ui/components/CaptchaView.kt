@@ -26,6 +26,11 @@ expect fun CaptchaView(
  * Android JavaScript bridge and a global that the desktop build polls. The
  * widget reports `{type: "vk-sak-sdk", handler: "VKCaptchaGetResult", params:
  * {token}}` to its embedder.
+ *
+ * The widget only posts that frame when its URL carries an `origin` query
+ * parameter; without it the check is solved on screen but the token is never
+ * delivered. The official VK captcha SDK appends it, so the wrapper does too,
+ * using the origin of the document that embeds the iframe (this page).
  */
 internal fun captchaPage(link: String): String {
     val escaped = link
@@ -45,7 +50,7 @@ internal fun captchaPage(link: String): String {
           </style>
         </head>
         <body>
-          <iframe src="$escaped" referrerpolicy="no-referrer-when-downgrade"></iframe>
+          <iframe id="scrollix-captcha-frame" data-src="$escaped" referrerpolicy="no-referrer-when-downgrade"></iframe>
           <script>
             (function () {
               function deliver(token) {
@@ -66,13 +71,59 @@ internal fun captchaPage(link: String): String {
                 } catch (ignored) {}
               }
 
+              // Kept for the desktop build, which cannot receive callbacks from
+              // the page and polls these globals instead.
+              window.__scrollixCaptchaMessages = [];
+
+              function embedderOrigin() {
+                try {
+                  var base = new URL(document.baseURI);
+                  if (base.protocol === 'https:' || base.protocol === 'http:') {
+                    return base.protocol + '//' + base.hostname;
+                  }
+                } catch (ignored) {}
+
+                return location.protocol + '//' + location.hostname;
+              }
+
+              var frame = document.getElementById('scrollix-captcha-frame');
+
+              try {
+                var captchaUrl = new URL(frame.dataset.src);
+
+                if (!captchaUrl.searchParams.get('origin')) {
+                  captchaUrl.searchParams.set('origin', embedderOrigin());
+                }
+
+                frame.src = captchaUrl.href;
+              } catch (ignored) {
+                frame.src = frame.dataset.src;
+              }
+
               window.addEventListener('message', function (event) {
                 var data = event.data;
-                if (!data || typeof data !== 'object' || data.type !== 'vk-sak-sdk') return;
 
-                if (data.handler === 'VKCaptchaGetResult' && data.params && data.params.token) {
-                  deliver(String(data.params.token));
-                } else if (data.handler === 'common: error') {
+                try {
+                  var text = typeof data === 'string' ? data : JSON.stringify(data);
+                  window.__scrollixCaptchaMessages.push(String(text).slice(0, 400));
+                  if (window.__scrollixCaptchaMessages.length > 20) {
+                    window.__scrollixCaptchaMessages.shift();
+                  }
+                } catch (ignored) {}
+
+                // The widget may deliver its payload as a plain object or as a
+                // JSON string, and some embedders only forward the result.
+                if (typeof data === 'string') {
+                  try { data = JSON.parse(data); } catch (ignored) { return; }
+                }
+
+                if (!data || typeof data !== 'object') return;
+
+                var params = data.params || {};
+
+                if (params.token) {
+                  deliver(String(params.token));
+                } else if (data.handler === 'common: error' || data.handler === 'VKSDKError') {
                   fail('The captcha reported an error');
                 }
               });

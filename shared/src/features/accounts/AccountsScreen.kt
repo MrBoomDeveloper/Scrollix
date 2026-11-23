@@ -46,7 +46,7 @@ import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
-import com.mrboomdev.scrollix.ui.icons.TelegramLogoIcon
+import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import kotlinx.coroutines.launch
@@ -183,9 +183,10 @@ fun AccountsScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (provider.id == "telegram") {
-                                        TelegramLogoIcon(size = 20.dp)
-                                    }
+                                    ProviderLogoIcon(
+                                        providerId = provider.id,
+                                        size = 20.dp
+                                    )
 
                                     Text(provider.displayName)
                                 }
@@ -295,10 +296,17 @@ private fun AccountRow(
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         onClick = {
-            if (authState is AuthState.Ready) {
-                onOpenOwnProfile()
-            } else {
-                onOpenLogin(account.id)
+            when (authState) {
+                is AuthState.Ready -> onOpenOwnProfile()
+
+                // An account that failed to load (network error, TDLib setup
+                // failure, ...) is not in the auth flow. Opening the login
+                // screen for it would let Back cancel the pending account and
+                // reset the stored session, so the row stays inert and the
+                // status text explains the failure.
+                is AuthState.Error, is AuthState.Closed -> Unit
+
+                else -> onOpenLogin(account.id)
             }
         }
     ) {
@@ -330,9 +338,10 @@ private fun AccountRow(
                         )
                     }
 
-                    if (account.providerId == "telegram") {
-                        TelegramLogoIcon(size = 14.dp)
-                    }
+                    ProviderLogoIcon(
+                        providerId = account.providerId,
+                        size = 14.dp
+                    )
 
                 }
 

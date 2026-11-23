@@ -8,6 +8,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
@@ -36,9 +39,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +55,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import com.mrboomdev.scrollix.ui.components.MainMiniAppDialog
+import com.mrboomdev.scrollix.ui.components.MiniAppDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetTarget
 import androidx.compose.foundation.text.BasicTextField
@@ -106,7 +114,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -139,6 +150,7 @@ import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
@@ -172,6 +184,7 @@ import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MessageGallery
 import com.mrboomdev.scrollix.ui.components.MessageDatePill
+import com.mrboomdev.scrollix.ui.components.MessageThreadDialog
 import com.mrboomdev.scrollix.ui.components.MessageBubble
 import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
 import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
@@ -183,6 +196,7 @@ import com.mrboomdev.scrollix.ui.components.readClipboardImages
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.openDialer
 import com.mrboomdev.scrollix.ui.icons.call_icon
 import com.mrboomdev.scrollix.ui.icons.mood_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
@@ -195,6 +209,7 @@ import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
@@ -332,7 +347,17 @@ fun DialogScreen(
     }
     val history by historyFlow.collectAsState()
     val messages = history.messages
-    val displayMessages = remember(messages) { messages.groupMessageAlbums() }
+    // A message that is still being sent lives here instead of in the provider
+    // history: it renders at the end of the list right away and drops out once
+    // the provider echoes the real message.
+    var pendingMessages by remember(providerDialogId) {
+        mutableStateOf<List<ChatMessage>>(emptyList())
+    }
+    val pendingJobs = remember(providerDialogId) { mutableMapOf<Long, Job>() }
+    var nextPendingMessageId by remember(providerDialogId) { mutableStateOf(-1L) }
+    val displayMessages = remember(messages, pendingMessages) {
+        (messages + pendingMessages).groupMessageAlbums()
+    }
     // Reply lookups used to scan the whole window for every visible row.
     val messagesById = remember(messages) { messages.associateBy { it.messageId } }
     val dialog = dialogs.firstOrNull { it.providerDialogId == providerDialogId }
@@ -425,6 +450,9 @@ fun DialogScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     var input by remember(providerDialogId) { mutableStateOf("") }
+    // The caret lives beside the text so an inserted emoji can move it past
+    // the inserted run instead of leaving it in front of the sticker.
+    var inputSelection by remember(providerDialogId) { mutableStateOf(TextRange.Zero) }
     var inputCustomEmojis by remember(providerDialogId) {
         mutableStateOf<List<CustomEmojiSpan>>(emptyList())
     }
@@ -449,6 +477,7 @@ fun DialogScreen(
     var recordingStartedAt by remember(providerDialogId) { mutableLongStateOf(0L) }
     var recordingElapsedMs by remember(providerDialogId) { mutableLongStateOf(0L) }
     var recordedMedia by remember(providerDialogId) { mutableStateOf<RecordedMedia?>(null) }
+    var threadRoot by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var isSendingRecording by remember(providerDialogId) { mutableStateOf(false) }
     var recordingError by remember(providerDialogId) { mutableStateOf<String?>(null) }
 
@@ -507,6 +536,34 @@ fun DialogScreen(
                 .keys
         }
     }
+    /**
+     * Inserts text at the caret and leaves the caret after it. Custom emoji
+     * runs are tracked, so a sticker inserted mid-sentence stays where it was
+     * put while the user keeps typing after it.
+     */
+    fun insertIntoComposer(text: String, emojiId: Long? = null) {
+        val start = inputSelection.start.coerceIn(0, input.length)
+        val end = inputSelection.end.coerceIn(start, input.length)
+        val updated = input.replaceRange(start, end, text)
+
+        inputCustomEmojis = adjustCustomEmojiSpans(
+            oldText = input,
+            newText = updated,
+            spans = inputCustomEmojis
+        ) + listOfNotNull(
+            emojiId?.let { id ->
+                CustomEmojiSpan(
+                    start = start,
+                    end = start + text.length,
+                    emojiId = id
+                )
+            }
+        )
+
+        input = updated
+        inputSelection = TextRange(start + text.length)
+    }
+
     var error by remember(providerDialogId) { mutableStateOf<String?>(null) }
     var isSending by remember(providerDialogId) { mutableStateOf(false) }
     var searchOpen by remember(providerDialogId) { mutableStateOf(false) }
@@ -539,6 +596,7 @@ fun DialogScreen(
             if (input.isEmpty() && editingMessage == null) {
                 input = draft.text
                 inputCustomEmojis = draft.customEmojis
+                inputSelection = TextRange(draft.text.length)
             }
         }
 
@@ -561,6 +619,9 @@ fun DialogScreen(
     var forwardingMessageIds by remember(providerDialogId) {
         mutableStateOf<LongArray?>(null)
     }
+    var deleteConfirmationIds by remember(providerDialogId) {
+        mutableStateOf<LongArray?>(null)
+    }
     var showUnpinConfirmation by remember(providerDialogId) { mutableStateOf(false) }
     var loadedPinnedMessage by remember(providerDialogId) { mutableStateOf<ChatMessage?>(null) }
     var attemptedPinnedMessageId by remember(providerDialogId) { mutableStateOf<Long?>(null) }
@@ -570,6 +631,8 @@ fun DialogScreen(
     var attemptedReplyIds by remember(providerDialogId) { mutableStateOf<Set<Long>>(emptySet()) }
     var showMoreMenu by remember(providerDialogId) { mutableStateOf(false) }
     var openedStickerSetId by remember(providerDialogId) { mutableStateOf<Long?>(null) }
+    var webAppButton by remember(providerDialogId) { mutableStateOf<MessageButton?>(null) }
+    var showMainWebApp by remember(providerDialogId) { mutableStateOf(false) }
     var showEmojiPicker by remember(providerDialogId) { mutableStateOf(false) }
     var emojiPickerAnchor by remember { mutableStateOf<Rect?>(null) }
     var showHoverPicker by remember { mutableStateOf(false) }
@@ -704,6 +767,13 @@ fun DialogScreen(
                 }
                 .onFailure { error = it.message ?: "Failed to delete messages" }
         }
+    }
+
+    /** Every delete is confirmed first, because it reaches the other side. */
+    fun requestDelete(messageIds: LongArray) {
+        if (messageIds.isEmpty()) return
+
+        deleteConfirmationIds = messageIds
     }
 
     fun forwardMessages(messageIds: LongArray, targetDialogId: String) {
@@ -964,120 +1034,245 @@ fun DialogScreen(
         if (editingMessage != null && attachments.isNotEmpty()) return
 
         keyboardController?.hide()
-        scope.launch {
-            isSending = true
-            error = null
 
-            val editing = editingMessage
+        val editing = editingMessage
 
-            if (editing != null) {
-                currentSession.editMessage(
-                    providerDialogId = providerDialogId,
-                    messageId = editing.messageId,
-                    text = text,
-                    customEmojis = inputCustomEmojis
-                )
-                    .onSuccess {
-                        input = ""
-                        editingMessage = null
-                    }
-                    .onFailure { error = it.message ?: "Failed to edit message" }
-            } else if (attachments.isNotEmpty()) {
-                currentSession.sendFiles(
-                    providerDialogId = providerDialogId,
-                    attachments = attachments.map { attachment ->
-                        OutgoingAttachment(
-                            path = attachment.file.path,
-                            asPhoto = attachment.asPhoto
-                        )
-                    },
-                    caption = text,
-                    replyToMessageId = replyingTo?.messageId,
-                    customEmojis = inputCustomEmojis
-                )
-                    .onSuccess {
-                        input = ""
-                        inputCustomEmojis = emptyList()
-                        pendingAttachments = emptyList()
-                        replyingTo = null
-                        scrollRequest = ScrollRequest.Latest
-                    }
-                    .onFailure { error = it.message ?: "Failed to send attachments" }
-            } else {
-                currentSession.sendMessage(
-                    providerDialogId = providerDialogId,
-                    text = text,
-                    replyToMessageId = replyingTo?.messageId,
-                    customEmojis = inputCustomEmojis
-                )
-                    .onSuccess {
-                        input = ""
-                        replyingTo = null
-                        scrollRequest = ScrollRequest.Latest
-                    }
-                    .onFailure { error = it.message ?: "Failed to send message" }
+        // Editing keeps its flow, and attachments keep the blocking review
+        // modal; only a plain text message is shown optimistically.
+        if (editing != null || attachments.isNotEmpty()) {
+            scope.launch {
+                isSending = true
+                error = null
+
+                if (editing != null) {
+                    currentSession.editMessage(
+                        providerDialogId = providerDialogId,
+                        messageId = editing.messageId,
+                        text = text,
+                        customEmojis = inputCustomEmojis
+                    )
+                        .onSuccess {
+                            input = ""
+                            inputSelection = TextRange.Zero
+                            editingMessage = null
+                        }
+                        .onFailure { error = it.message ?: "Failed to edit message" }
+                } else {
+                    currentSession.sendFiles(
+                        providerDialogId = providerDialogId,
+                        attachments = attachments.map { attachment ->
+                            OutgoingAttachment(
+                                path = attachment.file.path,
+                                asPhoto = attachment.asPhoto
+                            )
+                        },
+                        caption = text,
+                        replyToMessageId = replyingTo?.messageId,
+                        customEmojis = inputCustomEmojis
+                    )
+                        .onSuccess {
+                            input = ""
+                            inputSelection = TextRange.Zero
+                            inputCustomEmojis = emptyList()
+                            pendingAttachments = emptyList()
+                            replyingTo = null
+                            scrollRequest = ScrollRequest.Latest
+                        }
+                        .onFailure { error = it.message ?: "Failed to send attachments" }
+                }
+
+                isSending = false
             }
 
-            isSending = false
+            return
+        }
+
+        // The row appears with a clock immediately, so the composer is free
+        // while the request is in flight. Negative ids sort after every server
+        // id because the list is built from history plus these pending rows.
+        val pendingId = nextPendingMessageId
+        nextPendingMessageId = pendingId - 1
+
+        val spans = inputCustomEmojis
+        val replyToMessageId = replyingTo?.messageId
+
+        pendingMessages = pendingMessages + ChatMessage(
+            providerId = currentSession.providerId,
+            accountId = currentSession.accountId,
+            providerDialogId = providerDialogId,
+            messageId = pendingId,
+            senderId = 0,
+            text = text,
+            timestamp = System.currentTimeMillis(),
+            isOutgoing = true,
+            customEmojis = spans,
+            sendState = MessageSendState.Sending
+        )
+
+        input = ""
+        inputSelection = TextRange.Zero
+        inputCustomEmojis = emptyList()
+        replyingTo = null
+        error = null
+        scrollRequest = ScrollRequest.Latest
+
+        pendingJobs[pendingId] = scope.launch {
+            val result = currentSession.sendMessage(
+                providerDialogId = providerDialogId,
+                text = text,
+                replyToMessageId = replyToMessageId,
+                customEmojis = spans
+            )
+
+            pendingJobs.remove(pendingId)
+
+            if (result.isSuccess) {
+                // The provider merged the real message into history. The
+                // pending row is only removed, never replaced, so a message
+                // the server echoed late cannot appear twice.
+                pendingMessages = pendingMessages.filterNot { message ->
+                    message.messageId == pendingId
+                }
+            } else {
+                pendingMessages = pendingMessages.map { message ->
+                    if (message.messageId == pendingId) {
+                        message.copy(sendState = MessageSendState.Failed)
+                    } else {
+                        message
+                    }
+                }
+
+                error = result.exceptionOrNull()?.message ?: "Failed to send message"
+            }
+        }
+    }
+
+    /** Drops a message that has not reached the server yet. */
+    fun cancelPendingMessage(messageId: Long) {
+        pendingJobs.remove(messageId)?.cancel()
+
+        pendingMessages = pendingMessages.filterNot { message ->
+            message.messageId == messageId
         }
     }
 
     forwardingMessageIds?.let { messageIds ->
-        AlertDialog(
-            onDismissRequest = { forwardingMessageIds = null },
-            title = { Text("Forward to") },
-            text = {
-                // Only chats that accept messages can be a forwarding target.
-                val forwardTargets = dialogs.filter { target ->
-                    target.canSendMessages && target.providerDialogId != providerDialogId
-                }
+        // Only chats that accept messages can be a forwarding target, so MAX
+        // channels the account cannot post into and read-only Telegram chats
+        // are not offered.
+        val forwardTargets = dialogs.filter { target ->
+            target.canSendMessages && target.providerDialogId != providerDialogId
+        }
 
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+        Dialog(onDismissRequest = { forwardingMessageIds = null }) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 560.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Forward to",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
                     if (forwardTargets.isEmpty()) {
-                        item {
-                            Text(
-                                text = "No chats to forward to",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
-
-                    itemsIndexed(forwardTargets) { _, target ->
-                        Row(
+                        Text(
+                            modifier = Modifier.padding(vertical = 24.dp),
+                            text = "No chats to forward to",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    } else {
+                        LazyVerticalGrid(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    forwardingMessageIds = null
-                                    forwardMessages(messageIds, target.providerDialogId)
-                                }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .heightIn(max = 420.dp)
+                                .padding(top = 12.dp),
+                            columns = GridCells.Adaptive(minSize = 92.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            if (target.isSavedMessages) {
-                                SavedMessagesAvatar(size = 36.dp)
-                            } else {
-                                AvatarImage(
-                                    avatar = target.avatar ?: Avatar.fromName(target.title),
-                                    size = 36.dp
-                                )
-                            }
+                            items(count = forwardTargets.size) { index ->
+                                val target = forwardTargets[index]
 
-                            Text(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 12.dp),
-                                text = target.title,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                                Column(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            forwardingMessageIds = null
+                                            forwardMessages(messageIds, target.providerDialogId)
+                                        }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    if (target.isSavedMessages) {
+                                        SavedMessagesAvatar(size = 56.dp)
+                                    } else {
+                                        AvatarImage(
+                                            avatar = target.avatar ?: Avatar.fromName(target.title),
+                                            size = 56.dp
+                                        )
+                                    }
+
+                                    Text(
+                                        text = target.title,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { forwardingMessageIds = null }) {
+                            Text("Cancel")
                         }
                     }
                 }
+            }
+        }
+    }
+
+    deleteConfirmationIds?.let { messageIds ->
+        AlertDialog(
+            onDismissRequest = { deleteConfirmationIds = null },
+            title = {
+                Text(
+                    if (messageIds.size == 1) {
+                        "Delete for everyone?"
+                    } else {
+                        "Delete ${messageIds.size} messages for everyone?"
+                    }
+                )
+            },
+            text = {
+                Text(
+                    "The message disappears for every participant." +
+                        " This cannot be undone."
+                )
             },
             confirmButton = {
-                TextButton(onClick = { forwardingMessageIds = null }) {
+                TextButton(
+                    onClick = {
+                        deleteConfirmationIds = null
+                        deleteMessages(messageIds)
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmationIds = null }) {
                     Text("Cancel")
                 }
             }
@@ -1125,6 +1320,26 @@ fun DialogScreen(
             target = StickerSetTarget.ById(stickerSetId),
             session = session,
             onDismiss = { openedStickerSetId = null }
+        )
+    }
+
+    val activeWebAppButton = webAppButton
+
+    if (activeWebAppButton != null) {
+        MiniAppDialog(
+            session = session,
+            providerDialogId = providerDialogId,
+            button = activeWebAppButton,
+            onDismiss = { webAppButton = null }
+        )
+    }
+
+    if (showMainWebApp) {
+        MainMiniAppDialog(
+            session = session,
+            providerDialogId = providerDialogId,
+            title = dialog?.title ?: "Mini app",
+            onDismiss = { showMainWebApp = false }
         )
     }
 
@@ -1238,6 +1453,18 @@ fun DialogScreen(
         )
     }
 
+    threadRoot?.let { root ->
+        val currentSession = session
+
+        if (currentSession != null) {
+            MessageThreadDialog(
+                rootMessage = root,
+                session = currentSession,
+                onDismiss = { threadRoot = null }
+            )
+        }
+    }
+
     // Attachments are reviewed in a blocking modal: the chat stays dimmed and
     // the composer can't be used until the message is sent or discarded.
     if (pendingAttachments.isNotEmpty()) {
@@ -1255,6 +1482,7 @@ fun DialogScreen(
                 )
 
                 input = value
+                inputSelection = TextRange(value.length)
             },
             onInsertEmoji = { fallback, emojiId ->
                 val start = input.length
@@ -1279,6 +1507,7 @@ fun DialogScreen(
             onDiscard = {
                 pendingAttachments = emptyList()
                 input = ""
+                inputSelection = TextRange.Zero
                 inputCustomEmojis = emptyList()
                 showAttachmentMenu = false
             },
@@ -1412,16 +1641,17 @@ fun DialogScreen(
                 )
             }
 
-            if(dialog?.kind == DialogKind.Direct) {
-                IconButton(
-                    onClick = {
-
-                    }
-                ) {
+            val callNumber = dialog?.phoneNumber
+            if (
+                isMobileLayout &&
+                dialog?.kind == DialogKind.Direct &&
+                !callNumber.isNullOrBlank()
+            ) {
+                IconButton(onClick = { openDialer(callNumber) }) {
                     Icon(
                         tint = MaterialTheme.colorScheme.secondary,
                         imageVector = call_icon,
-                        contentDescription = null
+                        contentDescription = "Call"
                     )
                 }
             }
@@ -1653,6 +1883,16 @@ fun DialogScreen(
                 }
 
                 AnimatedVisibility(visible = selectedMessageIds.isNotEmpty()) {
+                    val selectedMessages = displayMessages.filter { message ->
+                        message.allMessageIds.any { id -> id in selectedMessageIds }
+                    }
+                    val canForwardSelection = selectedMessages.isNotEmpty() &&
+                        selectedMessages.all { message -> message.canBeForwarded }
+                    val canDeleteSelection = selectedMessages.isNotEmpty() &&
+                        selectedMessages.all { message ->
+                            message.canBeDeleted || dialog?.canDeleteMessages == true
+                        }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1667,18 +1907,24 @@ fun DialogScreen(
                             style = MaterialTheme.typography.bodyMedium
                         )
 
-                        TextButton(
-                            onClick = {
-                                forwardingMessageIds = selectedMessageIds.toLongArray()
+                        if (canForwardSelection) {
+                            TextButton(
+                                onClick = {
+                                    forwardingMessageIds = selectedMessageIds.toLongArray()
+                                }
+                            ) {
+                                Text("Forward")
                             }
-                        ) {
-                            Text("Forward")
                         }
 
-                        TextButton(
-                            onClick = { deleteMessages(selectedMessageIds.toLongArray()) }
-                        ) {
-                            Text("Delete")
+                        if (canDeleteSelection) {
+                            TextButton(
+                                onClick = {
+                                    requestDelete(selectedMessageIds.toLongArray())
+                                }
+                            ) {
+                                Text("Delete")
+                            }
                         }
 
                         IconButton(onClick = { selectedMessageIds = emptySet() }) {
@@ -1963,7 +2209,17 @@ fun DialogScreen(
                                         else -> null
                                     }
 
+                                    // Rows of the same sender within a day sit
+                                    // flush against each other; the list adds
+                                    // no extra gap between connected bubbles.
+                                    val isConnectedToPrevious =
+                                        previousDate == date &&
+                                            previousMessage?.senderId == message.senderId
+
                                     Column(
+                                        modifier = Modifier.padding(
+                                            top = if (isConnectedToPrevious) 0.dp else 6.dp
+                                        ),
                                         verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         if (previousDate != date) {
@@ -1998,6 +2254,9 @@ fun DialogScreen(
                                             onOpenStickerSet = { setId ->
                                                 openedStickerSetId = setId
                                             },
+                                            onOpenWebApp = { button ->
+                                                webAppButton = button
+                                            },
                                             onDoubleTap = if (
                                                 isMobileLayout && doubleTapReaction != null
                                             ) {
@@ -2016,26 +2275,64 @@ fun DialogScreen(
                                                         selectedMessageIds + ids
                                                     }
                                             },
-                                            onReply = { replyingTo = message },
-                                            onForward = {
-                                                forwardingMessageIds = message.allMessageIds.toLongArray()
+                                            onReply = if (dialog?.canSendMessages != false) {
+                                                { replyingTo = message }
+                                            } else {
+                                                null
                                             },
-                                            onDelete = {
-                                                deleteMessages(message.allMessageIds.toLongArray())
+                                            onOpenThread = if (message.replyCount > 0) {
+                                                { threadRoot = message }
+                                            } else {
+                                                null
                                             },
-                                            onPin = {
-                                                pinMessage(
-                                                    message = message,
-                                                    isPinned = dialog?.pinnedMessageId?.let { id ->
-                                                        id !in message.allMessageIds
-                                                    } != false
-                                                )
+                                            onForward = if (message.canBeForwarded) {
+                                                {
+                                                    forwardingMessageIds =
+                                                        message.allMessageIds.toLongArray()
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                            onDelete = if (
+                                                message.messageId < 0 ||
+                                                message.canBeDeleted ||
+                                                dialog?.canDeleteMessages == true
+                                            ) {
+                                                {
+                                                    if (message.messageId < 0) {
+                                                        cancelPendingMessage(message.messageId)
+                                                    } else {
+                                                        requestDelete(
+                                                            message.allMessageIds.toLongArray()
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                            onPin = if (dialog?.canPinMessages != false) {
+                                                {
+                                                    pinMessage(
+                                                        message = message,
+                                                        isPinned = dialog?.pinnedMessageId?.let { id ->
+                                                            id !in message.allMessageIds
+                                                        } != false
+                                                    )
+                                                }
+                                            } else {
+                                                null
                                             },
                                             onSelect = {
                                                 selectedMessageIds = message.allMessageIds.toSet()
                                             },
                                             onCancelSend = {
-                                                deleteMessages(message.allMessageIds.toLongArray())
+                                                if (message.messageId < 0) {
+                                                    cancelPendingMessage(message.messageId)
+                                                } else {
+                                                    requestDelete(
+                                                        message.allMessageIds.toLongArray()
+                                                    )
+                                                }
                                             },
                                             onOpenSender = if (
                                                 !message.isOutgoing &&
@@ -2055,7 +2352,9 @@ fun DialogScreen(
                                                 {
                                                     editingMessage = message
                                                     pendingAttachments = emptyList()
-                                                    input = message.text; inputCustomEmojis = message.customEmojis
+                                                    input = message.text
+                                                    inputSelection = TextRange(message.text.length)
+                                                    inputCustomEmojis = message.customEmojis
                                                 }
                                             } else {
                                                 null
@@ -2133,6 +2432,9 @@ fun DialogScreen(
                                         )
                                         }
 
+                                        if (message.isService) {
+                                            ServiceMessagePill(message.text)
+                                        } else {
                                         if (shouldAnimate) {
                                             val appearanceState = remember(message.messageId) {
                                                 MutableTransitionState(false)
@@ -2154,6 +2456,7 @@ fun DialogScreen(
                                             }
                                         } else {
                                             bubbleContent()
+                                        }
                                         }
                                     }
                                 }
@@ -2205,6 +2508,7 @@ fun DialogScreen(
                             onClick = {
                                 editingMessage = null
                                 input = ""
+                                inputSelection = TextRange.Zero
                             }
                         ) {
                             Text("Cancel")
@@ -2240,16 +2544,11 @@ fun DialogScreen(
                         EmojiPicker(
                             modifier = pickerModifier,
                             session = session,
-                            onEmojiSelected = { emoji -> input += emoji },
+                            onEmojiSelected = { emoji ->
+                                insertIntoComposer(emoji)
+                            },
                             onCustomEmojiSelected = { emojiId, fallback ->
-                                val start = input.length
-
-                                input += fallback
-                                inputCustomEmojis = inputCustomEmojis + CustomEmojiSpan(
-                                    start = start,
-                                    end = start + fallback.length,
-                                    emojiId = emojiId
-                                )
+                                insertIntoComposer(fallback, emojiId)
                             },
                             onStickerSelected = { sticker ->
                                 showEmojiPicker = false
@@ -2309,6 +2608,34 @@ fun DialogScreen(
                                             error = it.message ?: "Failed to send the GIF"
                                         }
                                 }
+                            },
+                            onCrossProviderAnimationSelected = { source, animation ->
+                                showEmojiPicker = false
+                                showHoverPicker = false
+
+                                scope.launch {
+                                    val bytes = source.loadMediaBytes(
+                                        fileId = animation.fileId,
+                                        uniqueId = animation.fileUniqueId
+                                    )
+
+                                    if (bytes == null) {
+                                        error = "Could not load the GIF"
+                                    } else {
+                                        session.sendAnimationBytes(
+                                            providerDialogId = providerDialogId,
+                                            bytes = bytes,
+                                            mimeType = animation.mimeType,
+                                            width = animation.width,
+                                            height = animation.height,
+                                            durationSeconds = animation.durationSeconds
+                                        ).onSuccess {
+                                            scrollRequest = ScrollRequest.Latest
+                                        }.onFailure {
+                                            error = it.message ?: "Failed to send the GIF"
+                                        }
+                                    }
+                                }
                             }
                         )
                     }
@@ -2351,9 +2678,36 @@ fun DialogScreen(
                     }
                 }
 
+                if (dialog?.hasMainWebApp == true) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            onClick = { showMainWebApp = true },
+                            contentPadding = PaddingValues(
+                                horizontal = 16.dp,
+                                vertical = 6.dp
+                            )
+                        ) {
+                            Text("Open")
+                        }
+                    }
+                }
+
                 if (dialog?.canSendMessages == false) {
                     NotSendableNotice()
-                } else Row(
+                } else Column {
+                    // The composer slides away while recording, leaving a slim
+                    // bar with the elapsed time and a pause action.
+                    AnimatedVisibility(
+                        visible = !isRecording,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                    Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 8.dp, end = 4.dp, bottom = 2.dp),
@@ -2453,15 +2807,22 @@ fun DialogScreen(
                                         false
                                     }
                                 },
-                            value = input,
+                            value = TextFieldValue(
+                                text = input,
+                                selection = TextRange(
+                                    start = inputSelection.start.coerceIn(0, input.length),
+                                    end = inputSelection.end.coerceIn(0, input.length)
+                                )
+                            ),
                             onValueChange = { value ->
                                 inputCustomEmojis = adjustCustomEmojiSpans(
                                     oldText = input,
-                                    newText = value,
+                                    newText = value.text,
                                     spans = inputCustomEmojis
                                 )
 
-                                input = value
+                                input = value.text
+                                inputSelection = value.selection
                             },
                             enabled = !isSending,
                             maxLines = 10,
@@ -2545,9 +2906,22 @@ fun DialogScreen(
                                             }
 
                                             if (releasedEarly != null) {
-                                                if (mediaRecorder.supportsVideo) {
-                                                    videoMessageMode = !videoMessageMode
+                                                // A tap starts a voice recording and
+                                                // turns the microphone into the pause
+                                                // control; releasing no longer stops it.
+                                                val kind = MediaRecordingKind.Voice
+                                                recordingError = null
+                                                recordingKind = kind
+
+                                                if (!mediaRecorder.start(kind)) {
+                                                    recordingError =
+                                                        "Microphone permission is required"
+                                                    return@awaitEachGesture
                                                 }
+
+                                                recordingStartedAt = System.currentTimeMillis()
+                                                recordingElapsedMs = 0L
+                                                isRecording = true
                                                 return@awaitEachGesture
                                             }
 
@@ -2624,6 +2998,36 @@ fun DialogScreen(
                             )
                         }
                     }
+                    }
+                    }
+
+                    AnimatedVisibility(
+                        visible = isRecording,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            val seconds = recordingElapsedMs / 1000L
+
+                            Text(
+                                text = "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            Spacer(Modifier.weight(1f))
+
+                            FilledIconButton(onClick = { stopRecording() }) {
+                                Text("⏸", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
                 }
 
                 if (!isTwoPaneWindow && showEmojiPicker && session != null) {
@@ -2634,6 +3038,29 @@ fun DialogScreen(
         }
     }
 }
+}
+
+/** Centered date-pill styling for informational service messages. */
+@Composable
+private fun ServiceMessagePill(text: String) {
+    if (text.isBlank()) return
+
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(32.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Text(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2831,6 +3258,9 @@ private fun AttachmentReviewDialog(
         EmojiPickerDialog(
             isMobile = isMobile,
             session = session,
+            // An attachment caption is plain text: stickers and GIFs cannot
+            // be inserted into it, so only the emoji tab belongs here.
+            emojiOnly = true,
             onDismiss = { showEmojiPicker = false },
             onEmojiSelected = { emoji ->
                 onInsertEmoji(emoji, null)

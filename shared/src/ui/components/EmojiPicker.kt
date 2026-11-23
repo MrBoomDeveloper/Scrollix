@@ -24,6 +24,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -32,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -105,7 +111,9 @@ internal fun EmojiPickerDialog(
     session: AccountSession,
     onDismiss: () -> Unit,
     onEmojiSelected: (String) -> Unit,
-    onCustomEmojiSelected: (emojiId: Long, fallback: String) -> Unit
+    onCustomEmojiSelected: (emojiId: Long, fallback: String) -> Unit,
+    /** Emoji fields (poll question/options) only accept emoji. */
+    emojiOnly: Boolean = false
 ) {
     val content: @Composable () -> Unit = {
         EmojiPicker(
@@ -116,7 +124,8 @@ internal fun EmojiPickerDialog(
             onEmojiSelected = onEmojiSelected,
             onCustomEmojiSelected = onCustomEmojiSelected,
             onStickerSelected = {},
-            onAnimationSelected = {}
+            onAnimationSelected = {},
+            emojiOnly = emojiOnly
         )
     }
 
@@ -148,14 +157,22 @@ internal fun EmojiPicker(
     /** Sessions whose packs are shown alongside this account's own packs. */
     otherSessions: List<AccountSession> = emptyList(),
     /** Importing is only offered where the callback is provided. */
-    onCrossProviderStickerSelected: ((AccountSession, MessageMedia) -> Unit)? = null
+    onCrossProviderStickerSelected: ((AccountSession, MessageMedia) -> Unit)? = null,
+    /** Importing a GIF from another account is only offered where provided. */
+    onCrossProviderAnimationSelected: ((AccountSession, MessageMedia) -> Unit)? = null,
+    /** Renders only the emoji tab, for fields that take no stickers or GIFs. */
+    emojiOnly: Boolean = false
 ) {
     val settings by AppSettingsStore.state.collectAsState()
 
     // The picker opens on the tab that was used last, even across restarts.
     var selectedTab by remember {
-        mutableStateOf(settings.emojiPickerTab.coerceIn(0, 2))
+        mutableStateOf(
+            if (emojiOnly) 0 else settings.emojiPickerTab.coerceIn(0, 2)
+        )
     }
+
+    val activeTab = if (emojiOnly) 0 else selectedTab
 
     Surface(
         modifier = modifier
@@ -164,28 +181,30 @@ internal fun EmojiPicker(
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                listOf("Emoji", "Stickers", "GIFs").forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = {
-                            selectedTab = index
-                            AppSettingsStore.update { it.copy(emojiPickerTab = index) }
-                        },
-                        text = {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-                    )
+            if (!emojiOnly) {
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ) {
+                    listOf("Emoji", "Stickers", "GIFs").forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = {
+                                selectedTab = index
+                                AppSettingsStore.update { it.copy(emojiPickerTab = index) }
+                            },
+                            text = {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                        )
+                    }
                 }
             }
 
-            when (selectedTab) {
+            when (activeTab) {
                 0 -> EmojiTab(
                     session = session,
                     showRecents = settings.showRecentStickersAndEmojis,
@@ -206,7 +225,9 @@ internal fun EmojiPicker(
 
                 2 -> GifTab(
                     session = session,
-                    onAnimationSelected = onAnimationSelected
+                    otherSessions = otherSessions,
+                    onAnimationSelected = onAnimationSelected,
+                    onCrossProviderAnimationSelected = onCrossProviderAnimationSelected
                 )
             }
         }
@@ -402,11 +423,21 @@ private fun StickerTab(
         mutableStateOf<List<ForeignStickerPack>>(emptyList())
     }
     var isLoading by remember(session) { mutableStateOf(true) }
+    var pendingRemoveSticker by remember(session) { mutableStateOf<MessageMedia?>(null) }
 
-    val gridState = rememberLazyGridState()
+    val gridState = rememberLazyStaggeredGridState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session, settings.stickerPackOrders[session.accountId]) {
+    // The other accounts register asynchronously, so their packs must be
+    // re-read when a session shows up; keying on the session alone loaded the
+    // foreign list once, while it was still empty.
+    val otherAccountIds = otherSessions.map { source -> source.accountId }
+
+    LaunchedEffect(
+        session,
+        settings.stickerPackOrders[session.accountId],
+        otherAccountIds
+    ) {
         isLoading = true
         recents = session.loadRecentStickers(StickerPackKind.Sticker)
             .getOrDefault(emptyList())
@@ -546,24 +577,27 @@ private fun StickerTab(
             return@Column
         }
 
-        LazyVerticalGrid(
+        // A staggered grid lets each sticker keep its own aspect ratio while
+        // the columns pack tightly, instead of forcing square cells that leave
+        // empty holes under wide stickers.
+        LazyVerticalStaggeredGrid(
             state = gridState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 8.dp),
-            columns = GridCells.Adaptive(60.dp),
+            columns = StaggeredGridCells.Adaptive(60.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalItemSpacing = 4.dp
         ) {
             items(
                 count = entries.size,
                 key = { index -> entries[index].key },
                 span = { index ->
                     if (entries[index].isHeader) {
-                        GridItemSpan(maxLineSpan)
+                        StaggeredGridItemSpan.FullLine
                     } else {
-                        GridItemSpan(1)
+                        StaggeredGridItemSpan.SingleLane
                     }
                 }
             ) { index ->
@@ -580,19 +614,16 @@ private fun StickerTab(
                     )
 
                     is StickerEntry.Recent -> {
+                        // Removing a recent sticker is destructive, so it asks
+                        // for confirmation instead of acting on the gesture.
                         val remove: () -> Unit = {
-                            scope.launch {
-                                session.removeRecentSticker(entry.media).onSuccess {
-                                    recents = recents.filterNot { media ->
-                                        media.fileId == entry.media.fileId
-                                    }
-                                }
-                            }
+                            pendingRemoveSticker = entry.media
                         }
 
                         Box(
                             modifier = Modifier
-                                .aspectRatio(1f)
+                                .fillMaxWidth()
+                                .aspectRatio(stickerAspect(entry.media))
                                 .clip(RoundedCornerShape(10.dp))
                                 .onSecondaryClick(remove)
                                 .combinedClickable(
@@ -616,7 +647,9 @@ private fun StickerTab(
                     )
 
                     is StickerEntry.Sticker -> Box(
-                        modifier = Modifier.aspectRatio(1f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(stickerAspect(entry.media)),
                         contentAlignment = Alignment.Center
                     ) {
                         PickerSticker(
@@ -634,7 +667,9 @@ private fun StickerTab(
                     )
 
                     is StickerEntry.ForeignSticker -> Box(
-                        modifier = Modifier.aspectRatio(1f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(stickerAspect(entry.media)),
                         contentAlignment = Alignment.Center
                     ) {
                         PickerSticker(
@@ -653,31 +688,83 @@ private fun StickerTab(
             }
         }
     }
+
+    pendingRemoveSticker?.let { sticker ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoveSticker = null },
+            title = { Text("Remove sticker?") },
+            text = { Text("Remove this sticker from the recent stickers?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRemoveSticker = null
+
+                        scope.launch {
+                            session.removeRecentSticker(sticker).onSuccess {
+                                recents = recents.filterNot { media ->
+                                    media.fileId == sticker.fileId
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoveSticker = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
+
+/** A saved GIF together with the account it belongs to. */
+private data class SavedGif(
+    val source: AccountSession,
+    val media: MessageMedia
+)
 
 @Composable
 private fun GifTab(
     session: AccountSession,
-    onAnimationSelected: (MessageMedia) -> Unit
+    otherSessions: List<AccountSession>,
+    onAnimationSelected: (MessageMedia) -> Unit,
+    onCrossProviderAnimationSelected: ((AccountSession, MessageMedia) -> Unit)?
 ) {
-    var animations by remember(session) { mutableStateOf<List<MessageMedia>>(emptyList()) }
-    var isLoading by remember(session) { mutableStateOf(true) }
+    val sources = remember(session, otherSessions) {
+        (listOf(session) + otherSessions).distinctBy { it.accountId }
+    }
+
+    var gifs by remember(sources) { mutableStateOf<List<SavedGif>>(emptyList()) }
+    var isLoading by remember(sources) { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session) {
+    LaunchedEffect(sources) {
         isLoading = true
-        animations = session.loadSavedAnimations().getOrDefault(emptyList())
+
+        // A MAX account has no saved GIFs of its own, so the tab would be
+        // empty in a MAX chat even though the Telegram accounts have GIFs.
+        gifs = sources.flatMap { source ->
+            source.loadSavedAnimations()
+                .getOrDefault(emptyList())
+                .map { media -> SavedGif(source, media) }
+        }
+
         isLoading = false
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         SectionHeader(
             title = "Saved GIFs",
-            onClear = if (animations.isNotEmpty()) {
+            onClear = if (gifs.isNotEmpty()) {
                 {
                     scope.launch {
                         session.clearSavedAnimations().onSuccess {
-                            animations = emptyList()
+                            gifs = gifs.filterNot { gif ->
+                                gif.source.accountId == session.accountId
+                            }
                         }
                     }
                 }
@@ -699,7 +786,7 @@ private fun GifTab(
             return@Column
         }
 
-        if (animations.isEmpty()) {
+        if (gifs.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -723,17 +810,24 @@ private fun GifTab(
                 .padding(horizontal = 8.dp),
             columns = GridCells.Adaptive(96.dp)
         ) {
-            items(animations, key = { media -> media.fileId ?: 0 }) { animation ->
+            items(gifs, key = { gif -> "${gif.source.accountId}:${gif.media.fileId}" }) { gif ->
                 PickerAnimation(
-                    media = animation,
-                    session = session,
-                    onClick = { onAnimationSelected(animation) },
+                    media = gif.media,
+                    session = gif.source,
+                    onClick = {
+                        if (gif.source.accountId == session.accountId) {
+                            onAnimationSelected(gif.media)
+                        } else {
+                            onCrossProviderAnimationSelected?.invoke(gif.source, gif.media)
+                                ?: onAnimationSelected(gif.media)
+                        }
+                    },
                     onRemove = {
+                        if (gif.source.accountId != session.accountId) return@PickerAnimation
+
                         scope.launch {
-                            session.removeSavedAnimation(animation).onSuccess {
-                                animations = animations.filterNot { media ->
-                                    media.fileId == animation.fileId
-                                }
+                            gif.source.removeSavedAnimation(gif.media).onSuccess {
+                                gifs = gifs.filterNot { entry -> entry === gif }
                             }
                         }
                     }
@@ -1120,6 +1214,12 @@ private sealed interface EmojiEntry {
     ) : EmojiEntry {
         override val key: String = "emoji-pack-item-$packId-${media.fileId}"
     }
+}
+
+/** Cell ratio of a sticker, clamped so one odd asset cannot break the grid. */
+private fun stickerAspect(media: MessageMedia): Float {
+    if (media.width <= 0 || media.height <= 0) return 1f
+    return (media.width.toFloat() / media.height.toFloat()).coerceIn(0.6f, 1.8f)
 }
 
 private data class ForeignStickerPack(

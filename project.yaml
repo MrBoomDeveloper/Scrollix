@@ -6,6 +6,7 @@ modules:
   - provider
   - shared
   - telegram
+  - vk
 
 plugins:
   - ./build-config

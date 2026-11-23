@@ -1,8 +1,11 @@
 package com.mrboomdev.scrollix.data.storage
 
 import io.github.vinceglb.filekit.FileKit
+import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.dialogs.openFileSaver
 import io.github.vinceglb.filekit.path
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -84,17 +87,42 @@ actual fun readFileBytes(path: String): ByteArray? {
     }.getOrNull()
 }
 
+private fun downloadsDirectory(): File {
+    return File(System.getProperty("user.home"), "Downloads/Scrollix").apply { mkdirs() }
+}
+
+actual fun deviceDownloadsDirectory(): String = downloadsDirectory().absolutePath
+
+actual suspend fun listDeviceDownloads(): List<DeviceDownloadedFile> {
+    return withContext(Dispatchers.IO) {
+        downloadsDirectory().listFiles()
+            ?.filter(File::isFile)
+            ?.sortedByDescending(File::lastModified)
+            ?.map { file ->
+                DeviceDownloadedFile(
+                    name = file.name,
+                    path = file.absolutePath,
+                    size = file.length(),
+                    modifiedAt = file.lastModified()
+                )
+            }
+            .orEmpty()
+    }
+}
+
 actual suspend fun saveFileToDevice(fileName: String, bytes: ByteArray): String? {
     val safeName = fileName.ifBlank { "file" }
         .replace(Regex("[\\\\/:*?\"<>|]"), "_")
 
     // Let the user pick both the directory and the file name. Cancelling the
-    // dialog is a normal outcome, not a failure.
+    // dialog is a normal outcome, not a failure. The picker starts in the
+    // Downloads/Scrollix folder which the Downloads tab lists.
     val target = runCatching {
         FileKit.openFileSaver(
             suggestedName = safeName,
             defaultExtension = safeName.substringAfterLast('.', "")
-                .takeIf { extension -> extension.isNotBlank() }
+                .takeIf { extension -> extension.isNotBlank() },
+            directory = PlatformFile(downloadsDirectory())
         )
     }.getOrNull() ?: return null
 

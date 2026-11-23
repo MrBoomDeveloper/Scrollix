@@ -72,8 +72,12 @@ private class OkHttpMaxSocket(
     }
 
     override suspend fun send(bytes: ByteArray) {
-        val socket = webSocket ?: error("MAX WebSocket is not connected")
-        if (!socket.send(bytes.toByteString())) error("MAX WebSocket rejected the frame")
+        val socket = webSocket
+            ?: throw MaxConnectionClosedException("WebSocket is not connected")
+
+        if (!socket.send(bytes.toByteString())) {
+            throw MaxConnectionClosedException("WebSocket rejected the frame")
+        }
     }
 
     override suspend fun close() {

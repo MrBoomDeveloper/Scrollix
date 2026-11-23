@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -55,20 +57,31 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.AccountDialogFolder
@@ -87,6 +100,7 @@ import com.mrboomdev.scrollix.ui.components.DialogMediaPreview
 import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.components.FolderNameText
 import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.MainMiniAppDialog
 import com.mrboomdev.scrollix.ui.components.ReorderDialog
 import com.mrboomdev.scrollix.ui.components.ReorderItem
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
@@ -98,6 +112,7 @@ import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
+import com.mrboomdev.scrollix.ui.icons.verified_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
 import com.mrboomdev.scrollix.ui.icons.settings_icon
@@ -106,6 +121,7 @@ import com.mrboomdev.scrollix.isWideLayout
 import com.mrboomdev.scrollix.onSecondaryClick
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 private const val TAB_ALL = 0
@@ -147,6 +163,17 @@ fun HomeScreen(
     val isSingleRowFilters = settings.singleRowFilters
     val isUsingNativeFolders = settings.useNativeFolders
     val scope = rememberCoroutineScope()
+
+    // Chip geometry backs both the "scroll the selected folder into view"
+    // behaviour and dragging a chip to a new place in the row.
+    val folderRowScroll = rememberScrollState()
+    var folderRowWidth by remember { mutableIntStateOf(0) }
+    var folderRowOrigin by remember { mutableStateOf(Offset.Zero) }
+    val chipBounds = remember { mutableStateMapOf<String, Rect>() }
+    var draggedChipKey by remember { mutableStateOf<String?>(null) }
+    var draggedChipShift by remember { mutableStateOf(Offset.Zero) }
+    val dragEdge = with(LocalDensity.current) { 32.dp.toPx() }
+    val dragScrollStep = with(LocalDensity.current) { 12.dp.toPx() }
 
     var showFolderOrderDialog by remember { mutableStateOf(false) }
     var showPinnedOrderDialog by remember { mutableStateOf(false) }
@@ -257,6 +284,32 @@ fun HomeScreen(
         }
     }
 
+    val selectedChipKey = if (isUsingNativeFolders) {
+        selectedNativeFolder?.key?.let { key -> "folder:$key" } ?: "all"
+    } else {
+        "tab:$selectedTab"
+    }
+
+    // A swipe can land on a folder whose chip sits past the right edge of the
+    // row, which used to leave the row looking like a different folder was
+    // selected. Bring the chip of the visible page on screen.
+    LaunchedEffect(selectedChipKey, isSingleRowFilters, folderRowWidth, chipBounds.size) {
+        if (!isSingleRowFilters) return@LaunchedEffect
+
+        val bounds = chipBounds[selectedChipKey] ?: return@LaunchedEffect
+        val viewport = folderRowWidth
+        if (viewport <= 0) return@LaunchedEffect
+
+        val start = bounds.left.toInt()
+        val end = bounds.right.toInt()
+        val current = folderRowScroll.value
+
+        when {
+            start < current -> folderRowScroll.animateScrollTo(start)
+            end > current + viewport -> folderRowScroll.animateScrollTo(end - viewport)
+        }
+    }
+
     val duplicateFolderNames = remember(folders) {
         folders.groupingBy { it.folder.name }
             .eachCount()
@@ -308,6 +361,73 @@ fun HomeScreen(
         null
     }
 
+    /**
+     * Applies a drop: the chip is inserted where it was released, judged by
+     * the centres of the other chips in the row (row-major, so wrapped chips
+     * reorder too). The resulting list is the same `folderOrder` the reorder
+     * dialog and the pager pages use.
+     */
+    fun dropChip(key: String) {
+        val bounds = chipBounds[key] ?: return
+        val keys = folderPages.map { page -> page.orderKey() }
+        if (key !in keys) return
+
+        val center = Offset(
+            bounds.center.x + draggedChipShift.x,
+            bounds.center.y + draggedChipShift.y
+        )
+        val tolerance = (bounds.height / 2f).coerceAtLeast(1f)
+        val others = keys.filter { other -> other != key }
+
+        val before = others.count { other ->
+            val otherCenter = chipBounds[other]?.center ?: return@count false
+
+            if (abs(otherCenter.y - center.y) > tolerance) {
+                otherCenter.y < center.y
+            } else {
+                otherCenter.x < center.x
+            }
+        }
+
+        val reordered = others.toMutableList().apply {
+            add(before.coerceIn(0, size), key)
+        }
+
+        if (reordered == keys) return
+
+        AppSettingsStore.update { current -> current.copy(folderOrder = reordered) }
+    }
+
+    /** Scrolls the row when a dragged chip reaches its left or right edge. */
+    fun autoScrollRow(key: String) {
+        if (!isSingleRowFilters) return
+
+        val bounds = chipBounds[key] ?: return
+        val viewportStart = folderRowScroll.value.toFloat()
+        val viewportEnd = viewportStart + folderRowWidth
+        val visualStart = bounds.left + draggedChipShift.x
+        val visualEnd = bounds.right + draggedChipShift.x
+
+        val delta = when {
+            visualStart < viewportStart + dragEdge -> -dragScrollStep
+            visualEnd > viewportEnd - dragEdge -> dragScrollStep
+            else -> 0f
+        }
+
+        if (delta == 0f) return
+
+        val consumed = folderRowScroll.dispatchRawDelta(delta)
+
+        // The content moved under the finger, so move the dragged chip with it
+        // and the drop target keeps matching what the user sees.
+        if (consumed != 0f) draggedChipShift += Offset(consumed, 0f)
+    }
+
+    // The drag gesture must not restart when the preview order changes (that
+    // would drop the finger). This holder always calls the latest dropChip,
+    // which reads the current chip geometry and order.
+    val currentDropChip by rememberUpdatedState<(String) -> Unit>({ key -> dropChip(key) })
+
     val visibleEntries = remember(
         entries,
         selectedTab,
@@ -326,19 +446,21 @@ fun HomeScreen(
                             folderId in entry.dialog.folderIds
                     }
                 }
-                .sortedWith(dialogComparator(folderId))
+                .let { filtered -> sortDialogs(filtered, folderId) }
         } else {
-            entries.filter { entry ->
-                when (selectedTab) {
-                    TAB_DIRECT -> entry.dialog.kind == DialogKind.Direct ||
-                        entry.dialog.kind == DialogKind.Secret
+            entries
+                .filter { entry ->
+                    when (selectedTab) {
+                        TAB_DIRECT -> entry.dialog.kind == DialogKind.Direct ||
+                            entry.dialog.kind == DialogKind.Secret
 
-                    TAB_GROUPS -> entry.dialog.kind == DialogKind.Group
-                    TAB_CHANNELS -> entry.dialog.kind == DialogKind.Channel
-                    TAB_BOTS -> entry.dialog.kind == DialogKind.Bot
-                    else -> true
+                        TAB_GROUPS -> entry.dialog.kind == DialogKind.Group
+                        TAB_CHANNELS -> entry.dialog.kind == DialogKind.Channel
+                        TAB_BOTS -> entry.dialog.kind == DialogKind.Bot
+                        else -> true
+                    }
                 }
-            }
+                .let { filtered -> sortDialogs(filtered, null) }
         }
     }
 
@@ -453,9 +575,16 @@ fun HomeScreen(
                     FlexBox(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .onSizeChanged { size -> folderRowWidth = size.width }
                             .then(if(isSingleRowFilters) {
-                                Modifier.horizontalScroll(rememberScrollState())
+                                Modifier.horizontalScroll(folderRowScroll)
                             } else Modifier)
+                            // Placed after the scroll modifier this reports the
+                            // content node, whose origin moves with the scroll
+                            // offset, so chip position minus it is stable.
+                            .onGloballyPositioned { coordinates ->
+                                folderRowOrigin = coordinates.positionInWindow()
+                            }
                             .padding(horizontal = 8.dp)
                             .windowInsetsPadding(
                                 WindowInsets.safeDrawing.only(
@@ -477,10 +606,68 @@ fun HomeScreen(
                             grow(1f)
                         }
 
+                        fun chipModifierFor(key: String): Modifier = chipModifier
+                            .zIndex(if (draggedChipKey == key) 1f else 0f)
+                            .graphicsLayer {
+                                // The held chip lifts and grows with an animated
+                                // transition as soon as the drag begins.
+                                val lift = if (draggedChipKey == key) 1.08f else 1f
+                                scaleX = lift
+                                scaleY = lift
+
+                                if (draggedChipKey != key) return@graphicsLayer
+
+                                translationX = draggedChipShift.x
+                                translationY = draggedChipShift.y
+                            }
+                            .onGloballyPositioned { coordinates ->
+                                // The dragged chip is translated by a graphics
+                                // layer, so its reported position is not a
+                                // content position; keep the pre-drag bounds.
+                                if (draggedChipKey == key) return@onGloballyPositioned
+
+                                val position = coordinates.positionInWindow()
+                                val left = position.x - folderRowOrigin.x
+                                val top = position.y - folderRowOrigin.y
+
+                                chipBounds[key] = Rect(
+                                    left = left,
+                                    top = top,
+                                    right = left + coordinates.size.width,
+                                    bottom = top + coordinates.size.height
+                                )
+                            }
+                            .pointerInput(key) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        draggedChipKey = key
+                                        draggedChipShift = Offset.Zero
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        draggedChipShift += amount
+                                        autoScrollRow(key)
+                                        // Reorder while the finger is still down, so
+                                        // the chips behind visibly make room before
+                                        // the drop.
+                                        currentDropChip(key)
+                                    },
+                                    onDragEnd = {
+                                        currentDropChip(key)
+                                        draggedChipKey = null
+                                        draggedChipShift = Offset.Zero
+                                    },
+                                    onDragCancel = {
+                                        draggedChipKey = null
+                                        draggedChipShift = Offset.Zero
+                                    }
+                                )
+                            }
+
                         folderPages.forEach { page ->
                             when (page) {
                                 HomePage.All -> HomeTab(
-                                    modifier = chipModifier,
+                                    modifier = chipModifierFor(page.orderKey()),
                                     selected = if (isUsingNativeFolders) {
                                         selectedNativeFolder == null
                                     } else {
@@ -503,7 +690,7 @@ fun HomeScreen(
                                         ?: return@forEach
 
                                     NativeFolderTab(
-                                        modifier = chipModifier,
+                                        modifier = chipModifierFor(page.orderKey()),
                                         selected = selectedNativeFolder?.key == folder.key,
                                         folder = folder.folder,
                                         account = folder.account,
@@ -517,7 +704,7 @@ fun HomeScreen(
                                 }
 
                                 is HomePage.Tab -> HomeTab(
-                                    modifier = chipModifier,
+                                    modifier = chipModifierFor(page.orderKey()),
                                     selected = selectedTab == page.index,
                                     label = page.chipTitle(folders),
                                     icon = when (page.index) {
@@ -646,6 +833,12 @@ private fun DialogList(
     onOpenDialog: (AccountDialogEntry) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Several accounts can each have a "Saved messages" chat. Without a badge
+    // the rows are indistinguishable, so every one of them shows its account.
+    val showSavedMessagesAccountBadge = remember(entries) {
+        entries.count { entry -> entry.dialog.isSavedMessages } > 1
+    }
+
     LazyColumn(modifier = modifier) {
         items(
             items = entries,
@@ -658,6 +851,7 @@ private fun DialogList(
                 isSelected = entry.account.id == selectedDialogAccountId &&
                     entry.dialog.providerDialogId == selectedDialogProviderDialogId,
                 folderId = folderId,
+                showSavedMessagesAccountBadge = showSavedMessagesAccountBadge,
                 onClick = { onOpenDialog(entry) }
             )
         }
@@ -709,7 +903,7 @@ private fun entriesForPage(
                         entry.account.id == folder.account.id &&
                             folderId in entry.dialog.folderIds
                     }
-                    .sortedWith(dialogComparator(folderId)) to folderId
+                    .let { filtered -> sortDialogs(filtered, folderId) } to folderId
             }
         }
 
@@ -724,13 +918,10 @@ private fun entriesForPage(
                     TAB_BOTS -> entry.dialog.kind == DialogKind.Bot
                     else -> true
                 }
-            } to null
+            }
+            .let { filtered -> sortDialogs(filtered, null) } to null
 
-        HomePage.All, null -> if (isUsingNativeFolders) {
-            entries.sortedWith(dialogComparator(null)) to null
-        } else {
-            entries to null
-        }
+        HomePage.All, null -> sortDialogs(entries, null) to null
     }
 }
 
@@ -927,14 +1118,22 @@ private fun DialogItem(
     entry: AccountDialogEntry,
     isSelected: Boolean,
     folderId: Int?,
+    showSavedMessagesAccountBadge: Boolean,
     onClick: () -> Unit
 ) {
     val dialog = entry.dialog
     val isPinned = dialog.isPinnedIn(folderId)
+
+    // The same chat can be open on more than one account (and every account
+    // has its own "Saved messages"). Such rows carry the account avatar on the
+    // corner of the chat avatar so the copies stay distinguishable.
+    val showAccountAvatarBadge = entry.showAccountBadge ||
+        (dialog.isSavedMessages && showSavedMessagesAccountBadge)
     val scope = rememberCoroutineScope()
     val session = remember(dialog.accountId) { ApiManager.session(dialog.accountId) }
     var menuExpanded by remember(dialog.providerDialogId) { mutableStateOf(false) }
     var confirmDelete by remember(dialog.providerDialogId) { mutableStateOf(false) }
+    var showMainWebApp by remember(dialog.providerDialogId) { mutableStateOf(false) }
 
     Box {
         Surface(
@@ -966,11 +1165,34 @@ private fun DialogItem(
                     )
                 }
 
-                if (dialog.statusText == "online" && dialog.kind != DialogKind.Bot) {
+                if (showAccountAvatarBadge) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .offset(x = 4.dp, y = 4.dp)
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(1.5.dp)
+                    ) {
+                        AvatarImage(
+                            avatar = entry.account.avatar
+                                ?: Avatar.fromName(entry.account.displayName),
+                            size = 15.dp
+                        )
+                    }
+                }
+
+                if (dialog.statusText == "online" && dialog.kind != DialogKind.Bot) {
+                    // The online dot sits just left of the account badge (with
+                    // a small gap) instead of covering it.
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(
+                                x = if (showAccountAvatarBadge) (-18).dp else 4.dp,
+                                y = 4.dp
+                            )
                             .size(16.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.background)
@@ -1002,6 +1224,15 @@ private fun DialogItem(
                         overflow = TextOverflow.Ellipsis
                     )
 
+                    if (dialog.isVerified) {
+                        Icon(
+                            modifier = Modifier.size(15.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                            imageVector = verified_icon,
+                            contentDescription = "Verified"
+                        )
+                    }
+
                     dialog.emojiStatusId?.let { emojiId ->
                         EmojiStatusIcon(
                             emojiId = emojiId,
@@ -1010,9 +1241,6 @@ private fun DialogItem(
                         )
                     }
 
-                    if (entry.showAccountBadge) {
-                        AccountBadge(entry)
-                    }
                 }
 
                 Row(
@@ -1113,6 +1341,18 @@ private fun DialogItem(
                     }
                 }
 
+                if (dialog.kind == DialogKind.Bot && dialog.hasMainWebApp) {
+                    TextButton(
+                        modifier = Modifier.heightIn(min = 24.dp),
+                        onClick = { showMainWebApp = true }
+                    ) {
+                        Text(
+                            text = "Open",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+
                 if (isPinned) {
                     Icon(
                         modifier = Modifier.size(16.dp),
@@ -1178,6 +1418,15 @@ private fun DialogItem(
         }
     }
 
+    if (showMainWebApp && session != null) {
+        MainMiniAppDialog(
+            session = session,
+            providerDialogId = dialog.providerDialogId,
+            title = dialog.title,
+            onDismiss = { showMainWebApp = false }
+        )
+    }
+
     if (confirmDelete) {
         val isSharedChat = dialog.kind == DialogKind.Group ||
             dialog.kind == DialogKind.Channel
@@ -1219,31 +1468,6 @@ private fun DialogItem(
     }
 }
 
-@Composable
-private fun AccountBadge(entry: AccountDialogEntry) {
-    val label = entry.account.nickname?.let { "@$it" }
-        ?: entry.account.displayName
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AvatarImage(
-            avatar = entry.account.avatar
-                ?: Avatar.fromName(entry.account.displayName),
-            size = 16.dp
-        )
-
-//        Text(
-//            style = MaterialTheme.typography.labelSmall,
-//            color = MaterialTheme.colorScheme.secondary,
-//            text = label,
-//            maxLines = 1,
-//            overflow = TextOverflow.Ellipsis
-//        )
-    }
-}
-
 private fun Dialog.isPinnedIn(folderId: Int?): Boolean {
     if (folderId == null) return isPinned
 
@@ -1260,13 +1484,34 @@ private fun Dialog.orderIn(folderId: Int?): Long {
     }?.order ?: 0L
 }
 
-private fun dialogComparator(folderId: Int?): Comparator<AccountDialogEntry> {
-    return compareByDescending<AccountDialogEntry> {
-        it.dialog.isPinnedIn(folderId)
-    }
-        .thenByDescending { it.dialog.orderIn(folderId) }
-        .thenByDescending { it.dialog.timestamp }
-        .thenBy { it.dialog.title.lowercase() }
+private fun AccountDialogEntry.key(): String = "${account.id}:${dialog.providerDialogId}"
+
+/**
+ * Pinned chats stay on top in their provider pin order, and every unpinned
+ * chat is mixed across accounts by its last message time. `Dialog.order`
+ * itself cannot be compared across providers: TDLib uses a huge int64 sort
+ * key while MAX stores the last event time there.
+ */
+private fun sortDialogs(
+    entries: List<AccountDialogEntry>,
+    folderId: Int?
+): List<AccountDialogEntry> {
+    val pinRanks = entries
+        .filter { entry -> entry.dialog.isPinnedIn(folderId) }
+        .groupBy { entry -> entry.account.id }
+        .flatMap { (_, pinned) ->
+            pinned
+                .sortedByDescending { entry -> entry.dialog.orderIn(folderId) }
+                .mapIndexed { index, entry -> entry.key() to index }
+        }
+        .toMap()
+
+    return entries.sortedWith(
+        compareByDescending<AccountDialogEntry> { entry -> entry.dialog.isPinnedIn(folderId) }
+            .thenBy { entry -> pinRanks[entry.key()] ?: 0 }
+            .thenByDescending { entry -> entry.dialog.timestamp }
+            .thenBy { entry -> entry.dialog.title.lowercase() }
+    )
 }
 
 @Composable

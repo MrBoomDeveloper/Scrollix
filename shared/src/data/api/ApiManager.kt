@@ -10,6 +10,9 @@ import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.PostSearchPage
+import com.mrboomdev.scrollix.data.model.PostSearchQuota
+import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.DialogAggregator
 import com.mrboomdev.scrollix.data.provider.MessengerProvider
@@ -102,9 +105,31 @@ object ApiManager {
             }
         }
 
+        // The cached list is seeded before any session starts, so the home
+        // screen has every dialog (avatar, title, last message, unread count)
+        // on the first frame instead of an empty list plus a spinner.
         appScope.launch {
+            restoreCachedDialogs()
             startAccounts()
         }
+    }
+
+    /** Restores the persisted dialog list of every account. */
+    private suspend fun restoreCachedDialogs() {
+        val accounts = accountStore?.state?.value?.accounts ?: return
+
+        val restored = accounts.associate { account ->
+            account.id to CacheStore.loadDialogs(account.id)
+        }.filterValues { dialogs -> dialogs.isNotEmpty() }
+
+        if (restored.isEmpty()) return
+
+        _dialogsByAccount.update { current ->
+            // Anything a session already produced wins over the cached copy.
+            restored + current
+        }
+
+        recomputeDialogs()
     }
 
     fun session(accountId: String): AccountSession? {
@@ -286,17 +311,23 @@ object ApiManager {
         )
     }
 
-    /** Server side chat search across every signed in account. */
+    /**
+     * Chat search across every signed in account: first the chats already on
+     * the account, then public chats the account has not joined yet. Public
+     * results come from one account because they are the same for every
+     * account, while private chats stay account specific.
+     */
     suspend fun searchChats(
         query: String,
-        limit: Int = 50
+        limit: Int = 50,
+        publicKind: PublicChatSearchKind = PublicChatSearchKind.Any
     ): List<AccountDialogEntry> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
 
         val accounts = accountStore?.state?.value?.accounts ?: _accountState.value.accounts
 
-        return _sessions.value.entries.flatMap { (accountId, session) ->
+        val ownEntries = _sessions.value.entries.flatMap { (accountId, session) ->
             val account = accounts.firstOrNull { it.id == accountId }
                 ?: return@flatMap emptyList()
 
@@ -305,6 +336,106 @@ object ApiManager {
                 .map { dialog ->
                     AccountDialogEntry(account = account, dialog = dialog)
                 }
+        }
+
+        val publicEntries = searchPublicChatsOnce(trimmed, limit, publicKind)
+
+        return (ownEntries + publicEntries).distinctBy { entry ->
+            "${entry.account.id}:${entry.dialog.providerDialogId}"
+        }
+    }
+
+    private suspend fun searchPublicChatsOnce(
+        query: String,
+        limit: Int,
+        kind: PublicChatSearchKind
+    ): List<AccountDialogEntry> {
+        for ((account, session) in orderedSessions()) {
+            val dialogs = session.searchPublicChats(query, limit, kind)
+                .getOrDefault(emptyList())
+
+            if (dialogs.isNotEmpty()) {
+                return dialogs.map { dialog ->
+                    AccountDialogEntry(account = account, dialog = dialog)
+                }
+            }
+        }
+
+        return emptyList()
+    }
+
+    /**
+     * One page of the provider's global public post search. The page is fetched
+     * with a single account, so the free search quota shown by the UI always
+     * belongs to the same account that spends it.
+     */
+    suspend fun searchPublicPosts(
+        query: String,
+        offset: String = "",
+        limit: Int = 30
+    ): Result<PostSearchPage> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return Result.success(PostSearchPage())
+
+        var unsupported: Throwable? = null
+
+        for ((_, session) in orderedSessions()) {
+            val result = session.searchPublicPosts(
+                query = trimmed,
+                offset = offset,
+                limit = limit
+            )
+
+            if (result.isSuccess) return result
+
+            val error = result.exceptionOrNull()
+            if (error !is UnsupportedOperationException) {
+                return Result.failure(error ?: IllegalStateException("Post search failed"))
+            }
+
+            unsupported = error
+        }
+
+        return Result.failure(
+            unsupported ?: UnsupportedOperationException("Post search is not supported")
+        )
+    }
+
+    suspend fun loadPublicPostSearchQuota(query: String): Result<PostSearchQuota> {
+        var unsupported: Throwable? = null
+
+        for ((_, session) in orderedSessions()) {
+            val result = session.loadPublicPostSearchQuota(query)
+            if (result.isSuccess) return result
+
+            val error = result.exceptionOrNull()
+            if (error !is UnsupportedOperationException) {
+                return Result.failure(error ?: IllegalStateException("Quota is unavailable"))
+            }
+
+            unsupported = error
+        }
+
+        return Result.failure(
+            unsupported ?: UnsupportedOperationException("Quota is unavailable")
+        )
+    }
+
+    /** The active account comes first because it owns the search quota. */
+    private fun orderedSessions(): List<Pair<AccountRecord, AccountSession>> {
+        val accounts = accountStore?.state?.value?.accounts ?: _accountState.value.accounts
+        val activeId = accountStore?.state?.value?.activeAccountId
+            ?: _accountState.value.activeAccountId
+
+        val sessions = _sessions.value
+        val orderedIds = listOfNotNull(activeId) +
+            sessions.keys.filterNot { id -> id == activeId }
+
+        return orderedIds.mapNotNull { accountId ->
+            val account = accounts.firstOrNull { it.id == accountId }
+                ?: return@mapNotNull null
+            val session = sessions[accountId] ?: return@mapNotNull null
+            account to session
         }
     }
 
@@ -408,15 +539,15 @@ object ApiManager {
                         }
                     }
 
+                    // Pending means "added but never authenticated". It is
+                    // set when the account is added and cleared on Ready.
+                    // Re-marking an established account as pending here made
+                    // a later Login Back call cancelPendingAccount() delete
+                    // the account and its stored session just because it
+                    // failed to load or was temporarily disconnected.
                     is AuthState.Challenge,
                     is AuthState.Error,
-                    is AuthState.Closed -> {
-                        if (!account.isPending) {
-                            store.updateAccount(accountId) {
-                                it.copy(isPending = true)
-                            }
-                        }
-                    }
+                    is AuthState.Closed -> Unit
 
                     is AuthState.Initializing -> Unit
                 }
@@ -441,6 +572,16 @@ object ApiManager {
         appScope.launch {
             session.dialogs.collect { dialogs ->
                 if (_sessions.value[accountId] !== session) return@collect
+
+                // Sessions start with an empty flow. Replacing the cached list
+                // with it made the chat list blink empty until the provider
+                // finished loading; the real list replaces it when it arrives.
+                if (dialogs.isEmpty() && _dialogsByAccount.value[accountId]
+                        .orEmpty().isNotEmpty()
+                ) {
+                    return@collect
+                }
+
                 _dialogsByAccount.update { it + (accountId to dialogs) }
                 recomputeDialogs()
             }

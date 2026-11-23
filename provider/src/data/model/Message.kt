@@ -86,6 +86,12 @@ data class MessageMedia(
     val stickerEmoji: String? = null,
     /** Whether the sticker should be drawn in the theme's primary color. */
     val needsRepainting: Boolean = false,
+    /**
+     * Lottie JSON URL of an animated sticker from providers that ship their
+     * stickers as Lottie animations (MAX). When set, the sticker is rendered
+     * from this animation instead of the static preview image.
+     */
+    val lottieUrl: String? = null,
     /** Alternative encodings of a video, best last. */
     val videoQualities: List<MessageVideoQuality> = emptyList()
 )
@@ -149,6 +155,38 @@ data class MessageReply(
     val senderName: String? = null,
     val text: String = "",
     val media: MessageMedia? = null
+)
+
+/** A provider message thread, with the chat that actually holds the replies. */
+data class ChatMessageThread(
+    val chatId: String,
+    val messageThreadId: Long,
+    val messages: List<ChatMessage> = emptyList(),
+    val replyCount: Int = 0,
+    val unreadCount: Int = 0
+)
+
+/**
+ * One inline keyboard button of a message. A web app button is opened inside
+ * the messenger instead of the system browser, so it keeps its init data and
+ * can talk back to the app.
+ */
+@Serializable
+data class MessageButton(
+    val text: String,
+    /** Plain link button (`http` or `tg` URL). */
+    val url: String? = null,
+    /** URL to pass to the provider's "open web app" call. */
+    val webAppUrl: String? = null,
+    /** Sender of the message: the bot that owns the web app. */
+    val botUserId: Long? = null
+)
+
+/** A mini app the provider agreed to launch, with the URL to render. */
+data class WebAppLaunch(
+    val id: Long,
+    val url: String,
+    val requireSameOrigin: Boolean = false
 )
 
 /** A local attachment waiting in the composer before it is sent. */
@@ -277,9 +315,20 @@ data class ChatMessage(
     val linkPreview: MessageLinkPreview? = null,
     val location: MessageLocationInfo? = null,
     val replyTo: MessageReply? = null,
+    /** Forum topic id of the message; 0 when it is not in a topic. */
+    val messageThreadId: Long = 0,
+    /** Number of replies in the message's thread, when the provider knows. */
+    val replyCount: Int = 0,
+    /** Inline keyboard rows, already filtered to supported button types. */
+    val keyboard: List<List<MessageButton>> = emptyList(),
     val reactions: List<MessageReactionInfo> = emptyList(),
     val viewCount: Int = 0,
     val shareCount: Int = 0,
+    /** Whether this account may delete the message (own or moderated). */
+    val canBeDeleted: Boolean = true,
+    /** Whether the delete reaches every participant, not only this account. */
+    val canBeDeletedForEveryone: Boolean = true,
+    val canBeForwarded: Boolean = true,
     val sendState: MessageSendState = MessageSendState.Sent,
     val isRead: Boolean = false
 ) {

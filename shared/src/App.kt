@@ -67,6 +67,7 @@ import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.qr_code_scanner_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
+import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
 import com.mrboomdev.scrollix.ui.components.QrScannerDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
@@ -142,6 +143,8 @@ fun App() {
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
     val pendingDeepLink by DeepLinkHandler.pending.collectAsState()
+    val pendingChatOpen by ChatOpenHandler.pending.collectAsState()
+    val backRequests by BackNavigation.requests.collectAsState()
     val currentRoute = backStack.lastOrNull()
     val uriHandler = LocalUriHandler.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -179,12 +182,18 @@ fun App() {
 
                 if (previous == null || unread <= previous) return@forEach
 
+                // Saved Messages only ever receive messages the user sent, so
+                // they never warrant a notification.
+                if (dialog.isSavedMessages) return@forEach
+
                 val open = selectedDialog.value
                 val isOpen = open != null &&
                     open.accountId == entry.account.id &&
                     open.providerDialogId == dialog.providerDialogId
 
-                if (isOpen) return@forEach
+                // Keep the open chat silent only while its conversation is
+                // actually visible; in the background every chat notifies.
+                if (isOpen && isAppInForeground()) return@forEach
 
                 // Server-side notification settings win: a muted scope or a
                 // muted chat must not raise an OS notification.
@@ -205,10 +214,29 @@ fun App() {
 
                 showDesktopNotification(
                     title = dialog.title,
-                    body = dialog.preview.ifBlank { "New message" }
+                    body = dialog.preview.ifBlank { "New message" },
+                    accountId = entry.account.id,
+                    providerDialogId = dialog.providerDialogId
                 )
             }
         }
+    }
+
+    LaunchedEffect(pendingChatOpen, accountState.accounts) {
+        val request = pendingChatOpen ?: return@LaunchedEffect
+
+        // Accounts load asynchronously; keep the request until its account is
+        // known instead of navigating to a chat that has no session yet.
+        if (accountState.accounts.none { it.id == request.accountId }) {
+            return@LaunchedEffect
+        }
+
+        ChatOpenHandler.consume()
+        selectedDialog.value = null
+        backStack += Route.Dialog(
+            accountId = request.accountId,
+            providerDialogId = request.providerDialogId
+        )
     }
 
     LaunchedEffect(
@@ -302,6 +330,21 @@ fun App() {
         }
     }
     
+    // Desktop Escape (published by the entry point) behaves like a back
+    // press: overlays close first, then the navigation stack pops.
+    LaunchedEffect(backRequests) {
+        if (backRequests == 0L) return@LaunchedEffect
+
+        when {
+            MediaViewer.isShowing -> MediaViewer.close()
+            stickerSetOverlay != null -> stickerSetOverlay = null
+            showQrScanner -> showQrScanner = false
+
+            backStack.size > 1 -> backStack.removeAt(backStack.lastIndex)
+            else -> selectedDialog.value = null
+        }
+    }
+
     val showNavigation = remember(currentRoute, layoutInfo.isTwoPane) {
         if(!layoutInfo.isTwoPane && currentRoute is Route.Dialog) {
             return@remember false
@@ -319,8 +362,9 @@ fun App() {
                 icon = if(isHomeTab) home_icon_filled else home_icon,
                 title = "Home",
                 onClick = {
-                    selectedDialog.value = null
-                    
+                    // Keep the wide-layout chat selection when switching back
+                    // from Search/other tabs, so the right pane does not go
+                    // blank just because the Home tab was tapped.
                     backStack.clearExcept {
                         it is Route.Home 
                     }

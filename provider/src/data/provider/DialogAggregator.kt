@@ -38,7 +38,9 @@ object DialogAggregator {
                 compareByDescending<AccountDialogEntry> {
                     if (it.dialog.isPinned) 1 else 0
                 }
-                    .thenByDescending { it.dialog.order }
+                    // `order` is provider-specific (TDLib uses a huge sort key,
+                    // MAX stores the last event time), so mixed account lists
+                    // have to compare the shared last message timestamp.
                     .thenByDescending { it.dialog.timestamp }
                     .thenBy { it.dialog.title.lowercase() }
             )

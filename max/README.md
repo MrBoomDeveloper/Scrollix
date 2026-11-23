@@ -48,7 +48,10 @@ Nothing sent to the server identifies Scrollix.
    The response contains `trackId`, `codeLength` and `blockingDuration`; there is
    no `token` field.
 3. `CODE_ENTER` (18) with `{token: trackId, verifyCode, authTokenType: "CHECK_CODE"}`.
-   Success returns `tokenAttrs.LOGIN.token`.
+   Success returns `tokenAttrs.LOGIN.token`. A protected account instead answers
+   with `passwordChallenge {trackId, hint?}`, which is finished with
+   `PASSWORD_CHECK` (115) `{trackId, password}` and returns the same login
+   token; an unknown number answers with `tokenAttrs.REGISTER.token`.
 4. `LOGIN` (19) with the access token, `chatsCount`/`chatsSync` 100. The
    response carries `profile.contact`, `chats` and `users`.
 
@@ -73,14 +76,25 @@ device id and user id are stored in
 
 ## Implemented
 
-- SMS sign-in, resend, the VK not-a-robot captcha step when MAX asks for it
-  (Android), token restore, logout, automatic reconnect.
+- SMS sign-in, resend, the VK not-a-robot captcha step when MAX asks for it,
+  the password confirmation some accounts require after the code, token
+  restore, logout, automatic reconnect.
 - Chat list from LOGIN and `GET_CHATS` (53), with avatars downloaded through
   `fetchUrlBytes`.
 - Message history with timestamp pagination (`GET_HISTORY` 49,
   `GET_MESSAGE` 71), live new/edit/delete/read/typing/reaction pushes.
-- Sending text (64), editing (67), local delete (66), read marks (50),
-  reactions (178/179), chat pin/mute operations (77), chat subscribe (75).
+- Sending text (64) and replies (`link.type: REPLY`), editing (67), deleting
+  for everyone (66), forwarding as a content copy, pinning (55), read marks
+  (50), reactions (178/179), chat pin/mute operations (77), chat subscribe
+  (75).
+- Native MAX sticker packs: ASSETS_UPDATE (27) and ASSETS_GET (26) fill the
+  picker, ASSETS_ADD (29) toggles favourites, and a pack sticker is sent by
+  its server id. Lottie stickers animate in chat from their `lottieUrl`.
+- Sticker import from other providers. A sticker without a MAX sticker id is
+  re-uploaded as a MAX photo, and an animated TGS/WebM sticker is prerendered
+  into a transparent animated GIF (`renderStickerAnimationGif` in `shared`)
+  before upload. Animated photos carry `isGif`, and animations uploaded as
+  video are offered as `GIF` attachments so MAX animates them in place.
 - Profiles for users, groups and channels, including members and the own
   profile. Usernames and mention avatars resolve from the signed-in snapshot.
 - Chat and global message search (73/60), chat search, shared-media tabs
@@ -92,13 +106,13 @@ device id and user id are stored in
   multipart POST, `NOTIF_ATTACH` (136), then `MSG_SEND` with a `FILE` attach,
   but the module does not perform uploads yet. `sendFile`/`sendFiles` return an
   explicit error.
-- QR sign-in (288/289) and the additional password confirmation some accounts
-  require after `CODE_ENTER`.
-- Stickers, animations, polls, forwarding, pinned messages, per-chat mute
-  state loading and server-side drafts. These return unsupported errors or
-  empty results.
-- Deleting for everyone. `MSG_DELETE` with `forMe=false` can cascade after a
-  `CHAT_ACTIVITY` (92) watermark on the server, so deletes stay local-only.
+- QR sign-in (288/289) and registration (the `REGISTER` token flow) for
+  phone numbers that do not have a MAX account yet.
+- Per-chat mute state loading and server-side drafts.
+- Deleting for everyone is sent as `forMe=false`, with a per-account delete as
+  the fallback when the server refuses it. The documented cascade needs a
+  `CHAT_ACTIVITY` (92) watermark immediately before the delete; this client
+  never sends 92 (reads use CHAT_READ, 50).
 - Media whose attachment has no direct HTTP URL (some photos only carry
   `photoId`/`token`); those render as a placeholder.
 

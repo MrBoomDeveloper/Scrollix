@@ -171,10 +171,17 @@ private fun AuthChallengeContent(
     }
 
     // Telegram blocks code requests for a while if they are repeated too
-    // often, which looks like the code never arrives. Keep resending behind a
-    // short cooldown so that cannot happen.
-    var resendCooldown by remember(challenge.id) {
-        mutableStateOf(if (challenge.id == "code") CodeResendDelaySeconds else 0)
+    // often, which looks like the code never arrives. The server tells TDLib
+    // exactly when a resend is allowed (`codeInfo.timeout`); a hardcoded
+    // cooldown kept the only working recovery — asking for the code again so
+    // it goes out as an SMS — locked for a minute even when it was allowed
+    // immediately.
+    val resendDelay = challenge.resendAfterSeconds ?: CodeResendDelaySeconds
+
+    var resendCooldown by remember(challenge.id, resendDelay) {
+        mutableStateOf(
+            if (challenge.id == "code" || challenge.id == "email_code") resendDelay else 0
+        )
     }
     LaunchedEffect(resendCooldown) {
         if (resendCooldown > 0) {
@@ -291,6 +298,14 @@ private fun AuthChallengeContent(
                 text = when {
                     pendingAction == AuthAction.ResendCode ->
                         "Requesting a new code…"
+
+                    // The provider only lists ResendCode when the server has
+                    // another delivery channel. Without it the button is absent
+                    // and pointing at it would be a dead end.
+                    challenge.actions.none { it is AuthAction.ResendCode } ->
+                        "Telegram has no other delivery method for this code. Terminate any " +
+                            "former Scrollix session in Telegram → Settings → Devices so it " +
+                            "is sent by SMS, or use QR login from a signed-in phone."
 
                     resendCooldown > 0 ->
                         "Waiting for the code. You can request a new one in ${resendCooldown}s."

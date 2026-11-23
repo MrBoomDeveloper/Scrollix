@@ -1,6 +1,8 @@
 package com.mrboomdev.scrollix.data.api
 
 import com.mrboomdev.scrollix.data.max.network.MaxApiException
+import com.mrboomdev.scrollix.data.max.network.MaxConnectionClosedException
+import com.mrboomdev.scrollix.data.max.network.MaxUploadUserAgent
 import com.mrboomdev.scrollix.data.max.network.MaxPush
 import com.mrboomdev.scrollix.data.max.network.MaxRpc
 import com.mrboomdev.scrollix.data.max.network.array
@@ -40,6 +42,7 @@ import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.model.StickerPack
@@ -50,10 +53,14 @@ import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.MessageHistoryController
 import com.mrboomdev.scrollix.data.provider.MessagePage
 import com.mrboomdev.scrollix.data.provider.MessagePageLoader
+import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
 import com.mrboomdev.scrollix.data.max.network.uploadMaxFile
+import com.mrboomdev.scrollix.data.max.network.uploadMaxRaw
+import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.fetchUrlBytes
 import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.media.renderStickerAnimationGif
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,14 +75,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -84,6 +95,8 @@ import kotlin.random.Random
 
 // The current web client (web.max.ru bundle) connects to this host; the old
 // ws-api.oneme.ru accepts TCP but never answers the WebSocket upgrade.
+private const val SavedDialogWelcomeKey = "welcome.saved.dialog.message"
+
 private const val MaxWebSocketUrl = "wss://api.oneme.ru/websocket"
 private const val MaxOrigin = "https://web.max.ru"
 private const val MaxConnectTimeoutMillis = 60_000L
@@ -98,15 +111,11 @@ private const val MaxScreen = "1920x1080 1.0x"
 private const val MaxTimezone = "Europe/Moscow"
 private const val SyntheticStickerPackId = Long.MIN_VALUE + 4096
 private const val SyntheticStickerPackTitle = "MAX stickers"
-// Matches the browser user agent of the real MAX web client; nothing here
-// names Scrollix.
-private const val MaxUserAgent =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
 
 private const val PhoneChallengeId = "phone"
 private const val CodeChallengeId = "code"
 private const val CaptchaChallengeId = "max-captcha"
+private const val PasswordChallengeId = "max-password"
 
 // CAPTCHA_SESSION (web client opcode 224): creates the VK not-a-robot check and
 // answers with the widget link that has to be solved before AUTH_REQUEST.
@@ -120,7 +129,9 @@ internal data class MaxUser(
     val pictureUrl: String?,
     val username: String?,
     val phone: String?,
-    val description: String?
+    val description: String?,
+    val isVerified: Boolean = false,
+    val isServiceAccount: Boolean = false
 )
 
 internal data class MaxPollOption(
@@ -173,6 +184,10 @@ internal data class MaxAttach(
     val width: Int,
     val height: Int,
     val durationSeconds: Int,
+    val isGif: Boolean = false,
+    val stickerId: Long? = null,
+    val setId: Long? = null,
+    val lottieUrl: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val livePeriodSeconds: Int = 0,
@@ -217,7 +232,29 @@ internal data class MaxMessage(
     val reactions: List<MessageReactionInfo>,
     val views: Int,
     val forwardedFromName: String?,
+    val replyTo: MessageReply?,
     val isService: Boolean
+)
+
+/** An image payload MAX accepts as a photo, with its upload metadata. */
+private data class MaxImageUpload(
+    val extension: String,
+    val contentType: String
+)
+
+/** Where an upload request wants the bytes, with the ids the attach needs. */
+private data class MaxUploadTarget(
+    val url: String,
+    val token: String?,
+    val id: Long? = null,
+    /** `FILE_UPLOAD` ids are UUID strings, not numbers. */
+    val fileKey: String? = null
+)
+
+/** A photo prepared by `IMAGE_UPLOAD_URL` (80), ready to be attached. */
+private data class MaxPhotoUpload(
+    val token: String?,
+    val photoId: Long?
 )
 
 internal data class MaxChat(
@@ -227,13 +264,19 @@ internal data class MaxChat(
     val description: String?,
     val status: String?,
     val ownerId: Long,
+    val adminIds: Set<Long> = emptySet(),
     val participantIds: List<Long>,
     val participantsCount: Int?,
     val pictureUrl: String?,
     val lastMessage: MaxMessage?,
     val unread: Int,
     val lastEventTime: Long,
-    val pinnedMessageId: Long?
+    val pinnedMessageId: Long?,
+    val isVerified: Boolean = false,
+    /** Channels may forbid copying their posts to other chats. */
+    val canCopyMessages: Boolean = true,
+    /** The chat lets every member pin (channel `ALL_CAN_PIN_MESSAGE`). */
+    val allCanPinMessages: Boolean = false
 )
 
 private data class StoredMaxSession(
@@ -257,6 +300,128 @@ internal data class MaxCodeRequest(
 internal fun parseCaptchaLink(response: JsonElement?): String? {
     val root = response as? JsonObject ?: return null
     return root.string("link")?.takeIf { it.startsWith("http") }
+}
+
+/**
+ * MAX contacts carry the avatar as `baseUrl`/`baseRawUrl` and the phone as a
+ * bare international number (`{country}{subscriber}`); the older
+ * `picture`/`phones` shapes are kept as a fallback.
+ */
+internal fun parseMaxUser(objectValue: JsonObject): MaxUser? {
+    val id = objectValue.long("id") ?: return null
+
+    val phone = objectValue.long("phone")
+        ?.takeIf { it > 0L }
+        ?.let { number -> formatPhoneNumber("+$number") }
+        ?: objectValue.array("phones").objects().firstOrNull()?.string("number")
+
+    return MaxUser(
+        id = id,
+        name = maxContactName(objectValue),
+        pictureUrl = objectValue.string("baseRawUrl")
+            ?: objectValue.string("baseUrl")
+            ?: objectValue.obj("picture")?.string("url"),
+        username = maxUsernameOf(objectValue),
+        phone = phone,
+        description = objectValue.string("about") ?: objectValue.string("description"),
+        isVerified = maxVerifiedFlag(objectValue),
+        isServiceAccount = objectValue.bool("isServiceAccount") == true
+    )
+}
+
+/**
+ * MAX exposes the handle as `username` on some payloads and only as a profile
+ * `link` (`https://max.ru/u/<handle>`) on others. Showing the raw link where
+ * the UI prints `@handle` reads wrong, so the handle is extracted.
+ */
+internal fun maxUsernameOf(objectValue: JsonObject): String? {
+    val raw = objectValue.string("username") ?: objectValue.string("link") ?: return null
+
+    return normalizeMaxUsername(raw)
+}
+
+internal fun normalizeMaxUsername(raw: String): String? {
+    val trimmed = raw.trim().removePrefix("@").trim()
+    if (trimmed.isEmpty()) return null
+
+    if (!trimmed.startsWith("http", ignoreCase = true)) return trimmed
+
+    return trimmed.substringAfterLast('/')
+        .substringBefore('?')
+        .takeIf { it.isNotBlank() }
+}
+
+/** MAX flags official channels and accounts with `isVerified`/`verified`. */
+internal fun maxVerifiedFlag(objectValue: JsonObject): Boolean {
+    return objectValue.bool("isVerified") == true ||
+        objectValue.bool("verified") == true ||
+        objectValue.bool("is_verified") == true
+}
+
+/**
+ * Names come as `{type: ONEME|CUSTOM, name?, firstName?, lastName?}` entries.
+ * The display name joins the first and last name with a space, preferring the
+ * ONEME entry; an explicit `name` wins when the server filled it in.
+ */
+internal fun maxContactName(objectValue: JsonObject): String {
+    val names = objectValue.array("names").objects()
+    val preferred = names.firstOrNull { it.string("type") == "ONEME" }
+        ?: names.firstOrNull()
+
+    // `name` is often only the first name, so the first and last name are
+    // joined first and `name` is just a fallback.
+    fun fullNameOf(entry: JsonObject?): String? {
+        entry ?: return null
+
+        return listOfNotNull(
+            entry.string("firstName"),
+            entry.string("lastName")
+        ).joinToString(" ").ifBlank { entry.string("name") }
+    }
+
+    return fullNameOf(preferred)
+        ?: objectValue.string("name")
+        ?: objectValue.string("title")
+        ?: fullNameOf(objectValue)
+        ?: names.firstNotNullOfOrNull(::fullNameOf)
+        ?: "MAX user"
+}
+
+/** What CODE_ENTER (18) replied: a session, an extra password step, or nothing usable. */
+internal sealed interface MaxCodeEntryResult {
+    data class LoggedIn(val token: String) : MaxCodeEntryResult
+    data class PasswordRequired(val trackId: String, val hint: String?) : MaxCodeEntryResult
+    data class RegistrationRequired(val token: String) : MaxCodeEntryResult
+    data class Rejected(val message: String?) : MaxCodeEntryResult
+}
+
+/**
+ * CODE_ENTER answers with `tokenAttrs.LOGIN.token` for a finished sign-in. A
+ * protected account instead gets a `passwordChallenge` that has to be solved
+ * with `PASSWORD_CHECK` (115), and an unknown number gets a `REGISTER` token
+ * for the profile-creation step. Reading only the login token made protected
+ * accounts look like the code was rejected.
+ */
+internal fun parseCodeEntry(response: JsonElement?): MaxCodeEntryResult {
+    val root = response as? JsonObject ?: return MaxCodeEntryResult.Rejected(null)
+    val tokenAttrs = root.obj("tokenAttrs")
+
+    tokenAttrs?.obj("LOGIN")?.string("token")?.let { token ->
+        return MaxCodeEntryResult.LoggedIn(token)
+    }
+
+    val challenge = root.obj("passwordChallenge")
+    val trackId = challenge?.string("trackId")
+
+    if (trackId != null) {
+        return MaxCodeEntryResult.PasswordRequired(trackId, challenge.string("hint"))
+    }
+
+    tokenAttrs?.obj("REGISTER")?.string("token")?.let { token ->
+        return MaxCodeEntryResult.RegistrationRequired(token)
+    }
+
+    return MaxCodeEntryResult.Rejected(root.string("localizedMessage"))
 }
 
 internal fun parseMaxCodeRequest(response: JsonElement?): MaxCodeRequest? {
@@ -326,21 +491,35 @@ class MaxSession(
     private val messageTimes = mutableMapOf<Long, Long>()
 
     private val avatarBytes = mutableMapOf<String, ByteArray>()
+    private val maxStickerPacks = mutableMapOf<Long, StickerSetInfo>()
     private val mediaIdsByUrl = mutableMapOf<String, Int>()
     private val mediaUrlsById = mutableMapOf<Int, String>()
     private val mediaMemory = mutableMapOf<Int, ByteArray>()
 
     private var rpc: MaxRpc? = null
+    private val connectMutex = Mutex()
     private var pushJob: Job? = null
     private var monitorJob: Job? = null
+    private var dialogsSaveJob: Job? = null
 
     private var started = false
+    /** True after the first chat-list sync, so later refreshes stay silent. */
+    private var dialogsLoaded = false
     private var closed = false
     private var reconnectAttempts = 0
     private var token: String? = null
     private var deviceId: String = ""
+
+    /**
+     * LOGIN returns the newest page of chats plus `chatMarker`, the timestamp
+     * from which GET_CHATS pages through the rest. Without it the chat list
+     * only contains the few chats LOGIN happened to include.
+     */
+    private var chatMarker: Long = 0L
     private var meId: Long = 0
     private var verifyToken: String? = null
+    private var passwordTrackId: String? = null
+    private var passwordHint: String? = null
     private var phoneNumber: String? = null
     private var pendingCodeType: String = "START_AUTH"
     private var codeLength = 6
@@ -367,6 +546,13 @@ class MaxSession(
                 _authState.value = AuthState.Challenge(phoneChallenge())
                 return
             }
+
+            // Restore the chat list from the previous run before the network
+            // answers, so the home screen is populated immediately.
+            runCatching { CacheStore.loadDialogs(accountId) }
+                .getOrNull()
+                ?.takeIf { cached -> cached.isNotEmpty() && _dialogs.value.isEmpty() }
+                ?.let { cached -> _dialogs.value = cached }
 
             // A watchdog keeps the login screen from sitting on "Connecting"
             // forever when the transport stops answering.
@@ -399,6 +585,7 @@ class MaxSession(
         when (challenge.id) {
             PhoneChallengeId -> requestCode(values["phone"].orEmpty(), "START_AUTH")
             CodeChallengeId -> submitCode(values["code"].orEmpty())
+            PasswordChallengeId -> submitPassword(values["password"].orEmpty())
             CaptchaChallengeId -> submitCaptcha(values[AuthCaptchaValueId].orEmpty())
         }
     }
@@ -597,29 +784,106 @@ class MaxSession(
             )
 
             val root = response?.jsonObject ?: error("MAX did not answer the code check")
-            val accessToken = root.obj("tokenAttrs")?.obj("LOGIN")?.string("token")
 
-            if (accessToken.isNullOrBlank()) {
-                val needsPassword = root.obj("tokenAttrs")?.keys?.any { it != "LOGIN" } == true
-                val message = if (needsPassword) {
-                    "This MAX account asks for an additional password, which is not supported yet"
-                } else {
-                    root.string("localizedMessage") ?: "MAX rejected the confirmation code"
+            when (val result = parseCodeEntry(root)) {
+                is MaxCodeEntryResult.LoggedIn -> {
+                    verifyToken = null
+                    phoneNumber = null
+                    connect(result.token)
                 }
 
-                _authState.value = AuthState.Challenge(codeChallenge(message))
-                return
-            }
+                is MaxCodeEntryResult.PasswordRequired -> {
+                    passwordTrackId = result.trackId
+                    passwordHint = result.hint
+                    _authState.value = AuthState.Challenge(passwordChallenge())
+                }
 
-            verifyToken = null
-            phoneNumber = null
-            connect(accessToken)
+                is MaxCodeEntryResult.RegistrationRequired -> {
+                    _authState.value = AuthState.Challenge(
+                        codeChallenge(
+                            root.string("localizedMessage")
+                                ?: "MAX treats this phone number as a new account, and creating an " +
+                                "account from Scrollix is not supported yet"
+                        )
+                    )
+                }
+
+                is MaxCodeEntryResult.Rejected -> {
+                    _authState.value = AuthState.Challenge(
+                        codeChallenge(
+                            result.message ?: "MAX did not accept the confirmation code"
+                        )
+                    )
+                }
+            }
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
             _authState.value = AuthState.Challenge(
                 codeChallenge(describeAuthFailure(exception, "Could not verify the code"))
             )
+        }
+    }
+
+    /**
+     * PASSWORD_CHECK (115) finishes the sign-in of an account protected with a
+     * password. The web client calls it with the `trackId` from the
+     * `passwordChallenge` and answers with the same `tokenAttrs.LOGIN.token`
+     * shape as CODE_ENTER.
+     */
+    private suspend fun submitPassword(password: String) {
+        val trackId = passwordTrackId
+
+        if (trackId == null) {
+            _authState.value = AuthState.Challenge(phoneChallenge())
+            return
+        }
+
+        if (password.isBlank()) {
+            updateChallenge { it.copy(error = "Enter the MAX account password") }
+            return
+        }
+
+        updateChallenge { it.copy(isSubmitting = true, error = null) }
+
+        try {
+            val active = rpc ?: ensureAuthRpc()
+            val response = active.request(
+                opcode = 115,
+                payload = buildJsonObject {
+                    put("trackId", trackId)
+                    put("password", password)
+                }
+            )
+
+            val root = response?.jsonObject ?: error("MAX did not answer the password check")
+            val accessToken = root.obj("tokenAttrs")?.obj("LOGIN")?.string("token")
+
+            if (accessToken.isNullOrBlank()) {
+                updateChallenge {
+                    it.copy(
+                        isSubmitting = false,
+                        error = root.string("localizedMessage")
+                            ?: "MAX rejected the password"
+                    )
+                }
+                return
+            }
+
+            passwordTrackId = null
+            passwordHint = null
+            verifyToken = null
+            phoneNumber = null
+            connect(accessToken)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            updateChallenge {
+                it.copy(
+                    isSubmitting = false,
+                    error = describeAuthFailure(exception, "Could not verify the password")
+                )
+            }
         }
     }
 
@@ -675,7 +939,7 @@ class MaxSession(
                 url = MaxWebSocketUrl,
                 headers = mapOf(
                     "Origin" to MaxOrigin,
-                    "User-Agent" to MaxUserAgent
+                    "User-Agent" to MaxUploadUserAgent
                 )
             )
         )
@@ -708,7 +972,9 @@ class MaxSession(
         put("token", token)
         put("interactive", true)
         put("chatsCount", 100)
-        put("chatsSync", 100)
+        // These are sync watermarks of a local cache; a fresh client has none,
+        // so the server sends everything instead of skipping the chat list.
+        put("chatsSync", 0)
         put("contactsSync", 0)
         put("presenceSync", 0)
         put("draftsSync", 0)
@@ -736,11 +1002,19 @@ class MaxSession(
             )
         }
 
-        root.array("users")?.objects()?.forEach { user ->
-            parseUser(user)?.let { users[it.id] = it }
+        // LOGIN carries user profiles under `contacts` (the web client syncs
+        // them straight into its contacts store); `users` is accepted too for
+        // older responses. Both use the same contact shape.
+        listOf("contacts", "users").forEach { key ->
+            root.array(key)?.objects()?.forEach { user ->
+                parseUser(user)?.let { parsedUser -> users[parsedUser.id] = parsedUser }
+            }
         }
 
         root.array("chats")?.objects()?.forEach(::mergeChat)
+        // `time` is the same kind of server timestamp and is a valid start
+        // marker when the response did not carry one.
+        chatMarker = root.long("chatMarker") ?: root.long("time") ?: 0L
 
         reconnectAttempts = 0
         persistSession(token)
@@ -777,6 +1051,30 @@ class MaxSession(
                 )
             ),
             actions = listOf(AuthAction.ResendCode),
+            error = error
+        )
+    }
+
+    private fun passwordChallenge(error: String? = null): AuthChallenge {
+        val hint = passwordHint?.takeIf { it.isNotBlank() }
+
+        return AuthChallenge(
+            id = PasswordChallengeId,
+            title = "Enter your password",
+            description = buildString {
+                append("MAX protects this account with a password. Enter it to finish signing in.")
+
+                if (hint != null) {
+                    append(" Hint: $hint")
+                }
+            },
+            fields = listOf(
+                AuthField(
+                    id = "password",
+                    label = "Password",
+                    type = AuthFieldType.Password
+                )
+            ),
             error = error
         )
     }
@@ -852,13 +1150,91 @@ class MaxSession(
         return histories.value[providerDialogId]
     }
 
+    /**
+     * Chat requests can arrive while the socket is being re-established (the
+     * chat list stays usable). Reconnect on demand instead of failing with
+     * "MAX is not connected".
+     */
+    private suspend fun requireRpc(): MaxRpc {
+        rpc?.takeIf(MaxRpc::isAlive)?.let { return it }
+
+        val currentToken = token
+            ?: error("MAX is not connected")
+
+        return connectMutex.withLock {
+            rpc?.takeIf(MaxRpc::isAlive) ?: run {
+                rpc?.let { stale ->
+                    rpc = null
+                    runCatching { stale.close() }
+                }
+
+                connect(currentToken)
+                rpc ?: error("MAX is not connected")
+            }
+        }
+    }
+
+    /**
+     * Drops a transport that already failed, so the next attempt dials a fresh
+     * socket instead of writing into the dead one again.
+     */
+    private suspend fun discardRpc(dead: MaxRpc) {
+        connectMutex.withLock {
+            if (rpc === dead) rpc = null
+        }
+
+        runCatching { dead.close() }
+    }
+
+    /**
+     * Runs a request on a live socket and resends it after reconnecting when
+     * MAX closed the connection underneath us. MAX drops idle sockets without
+     * a close frame, so the loss only shows up on the next write ("Broken
+     * pipe"); resending turns that into a working send. Repeating a write is
+     * safe because MSG_SEND carries a `cid` MAX deduplicates.
+     */
+    private suspend fun <T> onLiveConnection(block: suspend (MaxRpc) -> T): T {
+        if (closed) throw MaxConnectionClosedException("session was closed")
+
+        var lastFailure: MaxConnectionClosedException? = null
+
+        repeat(3) { attempt ->
+            if (attempt > 0) delay(300L * attempt)
+
+            val active = try {
+                requireRpc()
+            } catch (exception: MaxConnectionClosedException) {
+                lastFailure = exception
+                return@repeat
+            }
+
+            try {
+                return block(active)
+            } catch (exception: TimeoutCancellationException) {
+                // The socket never answered. Drop it so the next request starts
+                // on a fresh connection instead of timing out again.
+                discardRpc(active)
+                throw exception
+            } catch (exception: MaxConnectionClosedException) {
+                lastFailure = exception
+                discardRpc(active)
+            }
+        }
+
+        throw lastFailure ?: MaxConnectionClosedException("connection is not available")
+    }
+
+    /** Requests that must survive a socket MAX closed while nobody wrote. */
+    private suspend fun requestOnLiveConnection(
+        opcode: Int,
+        payload: JsonObject
+    ): JsonElement? = onLiveConnection { active -> active.request(opcode, payload) }
+
     private suspend fun fetchHistory(
         chatId: Long,
         fromMessageId: Long,
         limit: Int
     ): List<ChatMessage> {
-        val active = rpc ?: error("MAX is not connected")
-
         val from = if (fromMessageId == 0L) {
             System.currentTimeMillis()
         } else {
@@ -869,7 +1245,7 @@ class MaxSession(
                 ?: return emptyList()
         }
 
-        val response = active.request(
+        val response = requestOnLiveConnection(
             opcode = 49,
             payload = buildJsonObject {
                 put("chatId", chatId)
@@ -962,25 +1338,33 @@ class MaxSession(
             return Result.failure(IllegalArgumentException("Message is empty"))
         }
 
-        val active = rpc ?: return Result.failure(IllegalStateException("MAX is not connected"))
-
-        return try {
-            val response = active.request(
-                opcode = 64,
-                payload = buildJsonObject {
-                    put("chatId", chatId)
-                    put("notify", true)
-                    put(
-                        "message",
-                        buildJsonObject {
-                            put("text", trimmed)
-                            put("cid", System.currentTimeMillis())
-                            put("elements", JsonArray(emptyList()))
-                            put("attaches", JsonArray(emptyList()))
-                        }
-                    )
+        val payload = buildJsonObject {
+            put("chatId", chatId)
+            put("notify", true)
+            put(
+                "message",
+                buildJsonObject {
+                    put("text", trimmed)
+                    put("cid", System.currentTimeMillis())
+                    put("elements", JsonArray(emptyList()))
+                    put("attaches", JsonArray(emptyList()))
+                    replyToMessageId?.let { id ->
+                        // MAX replies are a `link` of type REPLY carrying the
+                        // original message id.
+                        put(
+                            "link",
+                            buildJsonObject {
+                                put("type", "REPLY")
+                                put("mid", id.toString())
+                            }
+                        )
+                    }
                 }
             )
+        }
+
+        return try {
+            val response = requestOnLiveConnection(opcode = 64, payload = payload)
 
             val message = response?.obj("message")?.let { parseMessage(chatId, it) }
             if (message != null && message.id != 0L) {
@@ -1003,19 +1387,16 @@ class MaxSession(
     ): Result<Unit> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(IllegalArgumentException("Invalid MAX chat id"))
-        val active = rpc ?: return Result.failure(IllegalStateException("MAX is not connected"))
+        val payload = buildJsonObject {
+            put("chatId", chatId)
+            put("messageId", messageId.toString())
+            put("text", text)
+            put("elements", JsonArray(emptyList()))
+            put("attachments", JsonArray(emptyList()))
+        }
 
         return try {
-            val response = active.request(
-                opcode = 67,
-                payload = buildJsonObject {
-                    put("chatId", chatId)
-                    put("messageId", messageId.toString())
-                    put("text", text)
-                    put("elements", JsonArray(emptyList()))
-                    put("attachments", JsonArray(emptyList()))
-                }
-            )
+            val response = requestOnLiveConnection(opcode = 67, payload = payload)
 
             val message = response?.obj("message")?.let { parseMessage(chatId, it) }
             if (message != null && message.id != 0L) {
@@ -1041,39 +1422,103 @@ class MaxSession(
 
         if (messageIds.isEmpty()) return Result.success(Unit)
 
-        val active = rpc ?: return Result.failure(IllegalStateException("MAX is not connected"))
+        // Message ids travel as strings in some MAX clients and as numbers in
+        // others, and the server answers cmd=3 for the shape it does not
+        // expect. Both are tried so a delete is never lost to the encoding.
+        val idShapes = listOf(
+            messageIds.map { id -> JsonPrimitive(id.toString()) },
+            messageIds.map { id -> JsonPrimitive(id) }
+        )
+
+        var lastFailure: Throwable? = null
+
+        // Deleting is always meant for every participant, so forMe=false is
+        // tried first. MAX only cascades older messages when a CHAT_ACTIVITY
+        // (92) watermark was set right before the delete; this client never
+        // sends 92 (reads go through CHAT_READ, 50), so the delete is safe.
+        for (forMe in listOf(false, true)) {
+            for (ids in idShapes) {
+                val payload = buildJsonObject {
+                    put("chatId", chatId)
+                    put("messageIds", JsonArray(ids))
+                    put("forMe", forMe)
+                }
+
+                val failure = try {
+                    requestOnLiveConnection(opcode = 66, payload = payload)
+                    null
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    exception
+                }
+
+                if (failure == null) {
+                    removeDeletedLocally(providerDialogId, chatId, messageIds)
+                    return Result.success(Unit)
+                }
+
+                lastFailure = failure
+            }
+        }
+
+        return Result.failure(
+            lastFailure ?: Exception("MAX did not delete the message")
+        )
+    }
+
+    /**
+     * Removes a chat from the account. MAX deletes the whole chat with CHAT_DELETE
+     * (54); the local list is updated even when the server already dropped it.
+     */
+    override suspend fun deleteDialog(
+        providerDialogId: String,
+        revoke: Boolean
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid MAX chat id"))
 
         return try {
-            active.request(
-                opcode = 66,
+            requestOnLiveConnection(
+                opcode = 54,
                 payload = buildJsonObject {
                     put("chatId", chatId)
-                    put(
-                        "messageIds",
-                        buildJsonArray { messageIds.forEach { add(JsonPrimitive(it)) } }
-                    )
-                    // MAX has a server-side cascade bug for forMe=false after a
-                    // CHAT_ACTIVITY watermark, so deletes stay local-only here.
-                    put("forMe", true)
+                    put("forMe", !revoke)
                 }
             )
 
-            histories.value[providerDialogId]?.remove(messageIds.toSet())
-
-            val chat = chats[chatId]
-            val lastMessageId = chat?.lastMessage?.id
-
-            if (chat != null && lastMessageId != null && lastMessageId in messageIds) {
-                chats[chatId] = chat.copy(lastMessage = null)
-            }
-
+            chats.remove(chatId)
+            histories.update { entries -> entries - providerDialogId }
             emitDialogs()
             Result.success(Unit)
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
+            // The chat may already be gone on the server; dropping it locally
+            // still makes the delete button do what the user asked.
+            chats.remove(chatId)
+            histories.update { entries -> entries - providerDialogId }
+            emitDialogs()
             Result.failure(exception)
         }
+    }
+
+    /** Drops deleted ids from the window, the dialog preview and the badges. */
+    private fun removeDeletedLocally(
+        providerDialogId: String,
+        chatId: Long,
+        messageIds: LongArray
+    ) {
+        histories.value[providerDialogId]?.remove(messageIds.toSet())
+
+        val chat = chats[chatId]
+        val lastMessageId = chat?.lastMessage?.id
+
+        if (chat != null && lastMessageId != null && lastMessageId in messageIds) {
+            chats[chatId] = chat.copy(lastMessage = null)
+        }
+
+        emitDialogs()
     }
 
     override suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray) {
@@ -1116,32 +1561,58 @@ class MaxSession(
             ?: return Result.failure(IllegalArgumentException("Invalid MAX chat id"))
         val active = rpc ?: return Result.failure(IllegalStateException("MAX is not connected"))
 
-        return try {
-            val response = active.request(
-                opcode = 178,
-                payload = buildJsonObject {
-                    put("chatId", chatId)
-                    put("messageId", messageId.toString())
-                    put(
-                        "reaction",
-                        buildJsonObject {
-                            put("reactionType", "EMOJI")
-                            put("id", emoji)
-                        }
-                    )
-                }
-            )
-
-            response?.obj("reactionInfo")?.let { info ->
-                updateReactions(chatId, messageId, mapReactions(info))
+        // MAX accepted more than one reaction payload shape across its
+        // clients (`reactionType`/`id`, `type`/`emoji`, or a bare emoji).
+        // Trying them in turn keeps reactions working across deployments.
+        val shapes = listOf(
+            buildJsonObject {
+                put("chatId", chatId)
+                put("messageId", messageId.toString())
+                put(
+                    "reaction",
+                    buildJsonObject {
+                        put("reactionType", "EMOJI")
+                        put("id", emoji)
+                    }
+                )
+            },
+            buildJsonObject {
+                put("chatId", chatId)
+                put("messageId", messageId.toString())
+                put(
+                    "reaction",
+                    buildJsonObject {
+                        put("type", "EMOJI")
+                        put("emoji", emoji)
+                    }
+                )
+            },
+            buildJsonObject {
+                put("chatId", chatId)
+                put("messageId", messageId.toString())
+                put("reaction", emoji)
             }
+        )
 
-            Result.success(Unit)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: Exception) {
-            Result.failure(exception)
+        var lastFailure: Throwable? = null
+
+        shapes.forEach { payload ->
+            try {
+                val response = active.request(opcode = 178, payload = payload)
+
+                response?.obj("reactionInfo")?.let { info ->
+                    updateReactions(chatId, messageId, mapReactions(info))
+                }
+
+                return Result.success(Unit)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                lastFailure = exception
+            }
         }
+
+        return Result.failure(lastFailure ?: Exception("MAX rejected the reaction"))
     }
 
     override suspend fun removeMessageReaction(
@@ -1331,7 +1802,10 @@ class MaxSession(
                     username = user?.username,
                     phoneNumber = user?.phone,
                     bio = user?.description,
-                    kind = DialogKind.Direct
+                    kind = DialogKind.Direct,
+                    // MAX service accounts are the app's own notices and cannot
+                    // be blocked from a third-party client.
+                    canBlock = resolvedUserId != meId && user?.isServiceAccount != true
                 )
             )
         }
@@ -1731,25 +2205,22 @@ class MaxSession(
         text: String,
         attaches: JsonArray
     ): Result<MaxMessage?> {
-        val active = rpc ?: return Result.failure(IllegalStateException("MAX is not connected"))
-
-        return try {
-            val response = active.request(
-                opcode = 64,
-                payload = buildJsonObject {
-                    put("chatId", chatId)
-                    put("notify", true)
-                    put(
-                        "message",
-                        buildJsonObject {
-                            put("text", text)
-                            put("cid", System.currentTimeMillis())
-                            put("elements", JsonArray(emptyList()))
-                            put("attaches", attaches)
-                        }
-                    )
+        val payload = buildJsonObject {
+            put("chatId", chatId)
+            put("notify", true)
+            put(
+                "message",
+                buildJsonObject {
+                    put("text", text)
+                    put("cid", System.currentTimeMillis())
+                    put("elements", JsonArray(emptyList()))
+                    put("attaches", attaches)
                 }
             )
+        }
+
+        return try {
+            val response = requestOnLiveConnection(opcode = 64, payload = payload)
 
             val message = response?.obj("message")?.let { parseMessage(chatId, it) }
             if (message != null && message.id != 0L) {
@@ -1797,49 +2268,292 @@ class MaxSession(
         }
     }
 
+    /**
+     * MAX has no usable forward opcode (`MSG_FWD` 68 is rejected and
+     * `FORWARD_MESSAGE` 70 only accepts text), so a forward is reproduced as a
+     * copy: the text and every attachment are loaded and sent again. Stickers
+     * that came from a MAX pack keep their server ids, so they still arrive as
+     * native stickers rather than re-uploaded images.
+     */
     override suspend fun forwardMessages(
         providerDialogId: String,
         messageIds: LongArray,
         targetDialogId: String
-    ): Result<Unit> = unsupported("Forwarding")
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid MAX chat id"))
+        val targetChatId = targetDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid MAX target chat id"))
+
+        if (messageIds.isEmpty()) return Result.success(Unit)
+
+        return try {
+            val response = requestOnLiveConnection(
+                opcode = 71,
+                payload = buildJsonObject {
+                    put("chatId", chatId)
+                    put(
+                        "messageIds",
+                        buildJsonArray {
+                            messageIds.forEach { id -> add(JsonPrimitive(id.toString())) }
+                        }
+                    )
+                }
+            )
+
+            val messages = response?.array("messages").objects()
+                .map { parseMessage(chatId, it) }
+                .filter { it.id != 0L }
+                .sortedBy { it.time }
+
+            if (messages.isEmpty()) {
+                return Result.failure(Exception("The forwarded message could not be loaded"))
+            }
+
+            var failure: Throwable? = null
+
+            messages.forEach { message ->
+                forwardCopy(targetChatId, message).onFailure { error ->
+                    if (failure == null) failure = error
+                }
+            }
+
+            failure?.let { error -> Result.failure(error) } ?: Result.success(Unit)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    private suspend fun forwardCopy(targetChatId: Long, message: MaxMessage): Result<Unit> {
+        var failure: Throwable? = null
+
+        if (message.text.isNotBlank()) {
+            sendText(targetChatId, message.text).onFailure { error -> failure = error }
+        }
+
+        message.attaches.forEach { attach ->
+            forwardAttach(targetChatId, attach).onFailure { error ->
+                if (failure == null) failure = error
+            }
+        }
+
+        return failure?.let { error -> Result.failure(error) } ?: Result.success(Unit)
+    }
+
+    private suspend fun sendText(chatId: Long, text: String): Result<Unit> {
+        return sendAttachments(
+            chatId = chatId,
+            text = text,
+            attaches = JsonArray(emptyList())
+        ).map { }
+    }
+
+    private suspend fun forwardAttach(targetChatId: Long, attach: MaxAttach): Result<Unit> {
+        val type = attach.type.uppercase()
+
+        if (type == "STICKER") {
+            val stickerId = attach.stickerId
+            val setId = attach.setId
+
+            if (stickerId != null && setId != null) {
+                return sendAttachments(
+                    chatId = targetChatId,
+                    text = "",
+                    attaches = buildJsonArray {
+                        add(
+                            buildJsonObject {
+                                put("_type", "STICKER")
+                                put("stickerType", "STATIC")
+                                put("setId", setId)
+                                put("stickerId", stickerId)
+                            }
+                        )
+                    }
+                ).map { }
+            }
+        }
+
+        // A sticker without server ids is copied as its image.
+        if (type == "STICKER") return forwardAttachFile(targetChatId, attach)
+
+        return when (type) {
+            "PHOTO", "GIF", "VIDEO", "FILE", "UNSUPPORTED" ->
+                forwardAttachFile(targetChatId, attach)
+
+            else -> Result.success(Unit)
+        }
+    }
+
+    private suspend fun forwardAttachFile(
+        targetChatId: Long,
+        attach: MaxAttach
+    ): Result<Unit> {
+        val url = attach.url
+            ?: return Result.failure(Exception("The attachment has no downloadable URL"))
+        val bytes = fetchUrlBytes(url)
+            ?: return Result.failure(Exception("Could not download the attachment"))
+
+        if (bytes.isEmpty()) {
+            return Result.failure(Exception("The attachment is empty"))
+        }
+
+        val type = attach.type.uppercase()
+        val image = sniffImage(bytes)
+        val fileName = attach.fileName ?: defaultFileName(url, attach.mimeType)
+        val extension = fileName.substringAfterLast('.', "bin")
+
+        if (image != null && type != "FILE" && type != "VIDEO") {
+            val photo = sendPhotoBytes(
+                chatId = targetChatId,
+                bytes = bytes,
+                fileName = fileName,
+                image = image,
+                isGif = type == "GIF" || attach.isGif
+            )
+
+            if (photo.isSuccess) return photo
+        }
+
+        if (type == "VIDEO" || type == "GIF" || looksLikeMp4(bytes)) {
+            val video = sendVideoBytes(
+                chatId = targetChatId,
+                bytes = bytes,
+                width = attach.width,
+                height = attach.height,
+                durationSeconds = attach.durationSeconds,
+                asGif = type == "GIF" || attach.isGif
+            )
+
+            if (video.isSuccess) return video
+        }
+
+        return sendFileAttach(
+            chatId = targetChatId,
+            bytes = bytes,
+            fileName = fileName,
+            extension = extension,
+            contentType = attach.mimeType ?: image?.contentType ?: "application/octet-stream"
+        )
+    }
+
+    private fun defaultFileName(url: String, mimeType: String?): String {
+        val extension = when {
+            mimeType?.contains("jpeg") == true -> "jpg"
+            mimeType?.contains("png") == true -> "png"
+            mimeType?.contains("webp") == true -> "webp"
+            mimeType?.contains("gif") == true -> "gif"
+            mimeType?.contains("mp4") == true -> "mp4"
+            mimeType?.contains("webm") == true -> "webm"
+            else -> url.substringBefore('?').substringAfterLast('.', "bin")
+                .takeIf { it.length in 1..5 } ?: "bin"
+        }
+
+        return "attachment.$extension"
+    }
 
     override suspend fun setMessagePinned(
         providerDialogId: String,
         messageId: Long,
         isPinned: Boolean
-    ): Result<Unit> = unsupported("Pinned messages")
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid MAX chat id"))
+
+        return try {
+            // MAX pins through CHAT_SETTINGS (55): an id pins, an empty string
+            // clears the pin.
+            requestOnLiveConnection(
+                opcode = 55,
+                payload = buildJsonObject {
+                    put("chatId", chatId)
+                    put("pinMessageId", if (isPinned) messageId.toString() else "")
+                }
+            )
+
+            chats[chatId]?.let { chat ->
+                chats[chatId] = chat.copy(
+                    pinnedMessageId = messageId.takeIf { isPinned }
+                )
+            }
+
+            emitDialogs()
+            Result.success(Unit)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
 
     override suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo> {
-        if (setId != SyntheticStickerPackId) {
-            return Result.failure(IllegalArgumentException("Unknown MAX sticker pack"))
+        if (setId == SyntheticStickerPackId) {
+            return Result.success(
+                StickerSetInfo(
+                    id = SyntheticStickerPackId,
+                    title = SyntheticStickerPackTitle,
+                    name = "max",
+                    isInstalled = true,
+                    stickers = collectedStickerMedia()
+                )
+            )
         }
 
-        return Result.success(
-            StickerSetInfo(
-                id = SyntheticStickerPackId,
-                title = SyntheticStickerPackTitle,
-                name = "max",
-                isInstalled = true,
-                stickers = collectedStickerMedia()
-            )
-        )
+        loadMaxStickerSets()[setId]?.let { return Result.success(it) }
+
+        return Result.failure(IllegalArgumentException("Unknown MAX sticker pack"))
     }
 
     override suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit> {
-        return if (setId == SyntheticStickerPackId) {
+        if (setId == SyntheticStickerPackId) return Result.success(Unit)
+
+        return try {
+            // ASSETS_ADD (29) toggles a pack in the account's favourites.
+            requestOnLiveConnection(
+                opcode = 29,
+                payload = buildJsonObject {
+                    put(
+                        "type",
+                        if (installed) "FAVORITE_STICKER_SET" else "UNFAVORITE_STICKER_SET"
+                    )
+                    put("id", setId)
+                }
+            )
+
+            maxStickerPacks[setId]?.let { pack ->
+                maxStickerPacks[setId] = pack.copy(isInstalled = installed)
+            }
+
             Result.success(Unit)
-        } else {
-            unsupported("Sticker packs")
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
         }
     }
 
     /**
-     * MAX has no sticker catalog, so the stickers this account received are
-     * exposed as a synthetic pack. That makes them available to other
-     * providers through the cross-provider sticker picker.
+     * MAX publishes its sticker catalogue through ASSETS_UPDATE (27) and
+     * ASSETS_GET (26). Packs that arrive without sticker objects are skipped,
+     * and the stickers this account has already received stay available as a
+     * synthetic pack so the cross-provider picker keeps working offline.
      */
     override suspend fun loadStickerPacks(kind: StickerPackKind): Result<List<StickerPack>> {
         if (kind != StickerPackKind.Sticker) return Result.success(emptyList())
+
+        val packs = loadMaxStickerSets().values
+            .filter { pack -> pack.stickers.isNotEmpty() }
+            .map { pack ->
+                StickerPack(
+                    id = pack.id,
+                    title = pack.title,
+                    isInstalled = pack.isInstalled,
+                    thumbnailFileId = pack.stickers.firstOrNull()?.previewFileId
+                )
+            }
+
+        if (packs.isNotEmpty()) return Result.success(packs)
 
         val stickers = collectedStickerMedia()
         if (stickers.isEmpty()) return Result.success(emptyList())
@@ -1853,6 +2567,163 @@ class MaxSession(
                     thumbnailFileId = stickers.firstOrNull()?.previewFileId
                 )
             )
+        )
+    }
+
+    private suspend fun loadMaxStickerSets(force: Boolean = false): Map<Long, StickerSetInfo> {
+        if (!force && maxStickerPacks.isNotEmpty()) return maxStickerPacks
+
+        return try {
+            val media = mutableMapOf<Long, MutableList<MessageMedia>>()
+            val titles = mutableMapOf<Long, String>()
+
+            // MAX uses both singular and plural asset type names depending on
+            // the deployment; request both so a pack list is never empty just
+            // because of the label.
+            listOf("STICKER", "STICKERS").forEach { assetType ->
+                requestOnLiveConnection(
+                    opcode = 27,
+                    payload = buildJsonObject {
+                        put("type", assetType)
+                        put("sync", 0)
+                    }
+                )?.let { root -> collectStickerSets(root, media, titles) }
+            }
+
+            // The catalogue is published across several sections; walk each
+            // one until it stops returning new pages.
+            listOf(
+                "NEW_STICKER_SETS",
+                "STICKER_SETS",
+                "MY_STICKER_SETS",
+                "FAVORITE_STICKER_SETS"
+            ).forEach { section ->
+                var from = 0
+
+                repeat(4) {
+                    val page = requestOnLiveConnection(
+                        opcode = 26,
+                        payload = buildJsonObject {
+                            put("sectionId", section)
+                            put("from", from)
+                            put("count", 100)
+                        }
+                    )
+
+                    page?.let { root -> collectStickerSets(root, media, titles) }
+
+                    val marker = page?.long("marker") ?: 0
+                    if (marker <= 0 || marker.toInt() == from) return@repeat
+                    from = marker.toInt()
+                }
+            }
+
+            maxStickerPacks.clear()
+
+            media.forEach { (setId, rawStickers) ->
+                val stickers = rawStickers
+                    .filter { sticker -> sticker.stickerId != null }
+                    .distinctBy { sticker -> sticker.stickerId }
+
+                if (stickers.isNotEmpty()) {
+                    maxStickerPacks[setId] = StickerSetInfo(
+                        id = setId,
+                        title = titles[setId] ?: "$SyntheticStickerPackTitle #$setId",
+                        name = "max-$setId",
+                        isInstalled = true,
+                        stickers = stickers
+                    )
+                }
+            }
+
+            maxStickerPacks
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            maxStickerPacks
+        }
+    }
+
+    /** Walks a sticker-catalogue response and keeps every set that has images. */
+    private fun collectStickerSets(
+        element: JsonElement?,
+        media: MutableMap<Long, MutableList<MessageMedia>>,
+        titles: MutableMap<Long, String>
+    ) {
+        when (element) {
+            is JsonArray -> element.forEach { item ->
+                collectStickerSets(item, media, titles)
+            }
+
+            is JsonObject -> {
+                // Some MAX responses put the set metadata in `set` and the
+                // sticker list in `stickers`; both are accepted here.
+                val setObject = element.obj("set")
+                val rawStickers = element.array("stickers")?.objects()
+                    ?: setObject?.array("stickers")?.objects()
+
+                if (rawStickers != null) {
+                    val setId = rawStickers.firstNotNullOfOrNull { sticker -> sticker.long("setId") }
+                        ?: setObject?.long("id")
+                        ?: element.long("setId")
+                        ?: element.long("id")
+
+                    if (setId != null) {
+                        titles.putIfAbsent(
+                            setId,
+                            element.string("title") ?: element.string("name")
+                                ?: "$SyntheticStickerPackTitle #$setId"
+                        )
+
+                        val stickers = media.getOrPut(setId) { mutableListOf() }
+                        rawStickers.forEach { sticker ->
+                            parseStickerMedia(sticker, setId)?.let(stickers::add)
+                        }
+                    }
+                }
+
+                element.values.forEach { value ->
+                    collectStickerSets(value, media, titles)
+                }
+            }
+
+            else -> Unit
+        }
+    }
+
+    private fun parseStickerMedia(objectValue: JsonObject, setId: Long): MessageMedia? {
+        val stickerId = objectValue.long("id") ?: return null
+        val url = listOf("url", "iconUrl", "imageUrl", "baseUrl")
+            .firstNotNullOfOrNull { key ->
+                objectValue.string(key)?.takeIf { it.startsWith("http") }
+            }
+            ?: objectValue.obj("photo")?.string("url")?.takeIf { it.startsWith("http") }
+            ?: objectValue.obj("sticker")?.string("url")?.takeIf { it.startsWith("http") }
+        val lottieUrl = objectValue.string("lottiePlayUrl")
+            ?: objectValue.string("lottieUrl")
+            ?: objectValue.obj("sticker")?.string("lottieUrl")
+
+        if (url == null && lottieUrl == null) return null
+
+        val fileId = url?.let(::mediaIdForUrl)
+        val emoji = (objectValue.array("tags")?.firstOrNull() as? JsonPrimitive)?.content
+
+        return MessageMedia(
+            kind = MessageMediaKind.Sticker,
+            previewFileId = fileId,
+            previewUniqueId = url,
+            fileId = fileId,
+            fileUniqueId = url,
+            stickerFileId = fileId,
+            stickerUniqueId = url,
+            stickerFormat = MessageStickerFormat.Webp,
+            // Packs may nest the set id inside the sticker entry.
+            stickerSetId = objectValue.long("setId") ?: setId,
+            stickerId = stickerId,
+            stickerEmoji = emoji,
+            lottieUrl = lottieUrl,
+            width = objectValue.int("width") ?: objectValue.obj("photo")?.int("width") ?: 0,
+            height = objectValue.int("height") ?: objectValue.obj("photo")?.int("height") ?: 0
         )
     }
 
@@ -1887,6 +2758,31 @@ class MaxSession(
         providerDialogId: String,
         sticker: MessageMedia
     ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid MAX chat id"))
+        val stickerId = sticker.stickerId
+
+        // A sticker from a MAX pack goes out natively: MAX only needs its own
+        // sticker id, so the animation and attribution stay intact.
+        if (stickerId != null) {
+            val native = sendAttachments(
+                chatId = chatId,
+                text = "",
+                attaches = buildJsonArray {
+                    add(
+                        buildJsonObject {
+                            put("_type", "STICKER")
+                            put("stickerId", stickerId)
+                        }
+                    )
+                }
+            )
+
+            // A server id the pack no longer accepts falls back to uploading
+            // the sticker image, so the sticker still reaches the chat.
+            if (native.isSuccess) return native.map { }
+        }
+
         val bytes = loadMediaBytes(
             fileId = sticker.stickerFileId ?: sticker.fileId,
             uniqueId = sticker.stickerUniqueId ?: sticker.fileUniqueId
@@ -1902,10 +2798,12 @@ class MaxSession(
     }
 
     /**
-     * MAX has no pack system, so a sticker imported from another provider is
-     * re-uploaded as a MAX photo. Only static WebP stickers can be converted
-     * without a server-side image pipeline; animated TGS/WebM stickers are
-     * rejected instead of being sent as broken attachments.
+     * A sticker imported from another provider has no MAX sticker id, so it
+     * becomes a MAX photo. Any static image
+     * Telegram hands us (WebP, PNG, JPEG, GIF) is uploaded as it is; animated
+     * TGS/WebM stickers are prerendered to a transparent animated GIF first,
+     * which MAX renders as an animated photo (its SDK models those as
+     * `photo.isGif`).
      */
     override suspend fun sendStickerBytes(
         providerDialogId: String,
@@ -1921,20 +2819,264 @@ class MaxSession(
             return Result.failure(IllegalArgumentException("Sticker is empty"))
         }
 
-        if (format != MessageStickerFormat.Webp) {
-            return Result.failure(
+        val image = sniffImage(bytes)
+
+        val upload = if (image != null) {
+            bytes to image
+        } else {
+            // TGS (gzip) and WebM are not images, so they have to be
+            // rasterized before MAX can display them.
+            val gif = renderStickerAnimationGif(
+                bytes = bytes,
+                format = format,
+                width = width,
+                height = height
+            ) ?: return Result.failure(
                 UnsupportedOperationException(
-                    "MAX can only import static WebP stickers; animated stickers need conversion"
+                    "This sticker could not be converted for MAX"
                 )
             )
+
+            gif to MaxImageUpload("gif", "image/gif")
         }
 
-        val token = uploadPhotoToken(bytes, "webp", "image/webp")
-            ?: return Result.failure(Exception("Could not upload the sticker to MAX"))
+        val fileName = "sticker.${upload.second.extension}"
+        val photo = sendPhotoBytes(
+            chatId = chatId,
+            bytes = upload.first,
+            fileName = fileName,
+            image = upload.second,
+            isGif = upload.second.extension == "gif"
+        )
+
+        if (photo.isSuccess) return photo
+
+        // MAX does not take every sticker image through the photo pipeline, so
+        // fall back to the documented file attachment instead of dropping it.
+        return sendFileAttach(
+            chatId = chatId,
+            bytes = upload.first,
+            fileName = fileName,
+            extension = upload.second.extension,
+            contentType = upload.second.contentType
+        )
+    }
+
+    /**
+     * Sends an animation that came from another provider. A GIF or WebP
+     * animation becomes an animated MAX photo; a video animation (Telegram
+     * stores saved GIFs as MP4) goes through MAX's video upload.
+     */
+    override suspend fun sendAnimationBytes(
+        providerDialogId: String,
+        bytes: ByteArray,
+        mimeType: String?,
+        width: Int,
+        height: Int,
+        durationSeconds: Int
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid MAX chat id"))
+
+        if (bytes.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Animation is empty"))
+        }
+
+        val image = sniffImage(bytes)
+        val extension = image?.extension ?: "gif"
+        val fileName = "animation.$extension"
+
+        if (image != null) {
+            // `isGif` is what makes MAX render the photo as an animation
+            // instead of a still picture.
+            val photo = sendPhotoBytes(chatId, bytes, fileName, image, isGif = true)
+
+            if (photo.isSuccess) return photo
+        }
+
+        if (mimeType?.startsWith("video/") == true || looksLikeMp4(bytes)) {
+            val video = sendVideoBytes(
+                chatId = chatId,
+                bytes = bytes,
+                width = width,
+                height = height,
+                durationSeconds = durationSeconds,
+                asGif = true
+            )
+
+            if (video.isSuccess) return video
+        }
+
+        // A GIF MAX refuses as a photo or video still goes out as a file.
+        return sendFileAttach(
+            chatId = chatId,
+            bytes = bytes,
+            fileName = fileName,
+            extension = extension,
+            contentType = image?.contentType ?: mimeType ?: "image/gif"
+        )
+    }
+
+    override suspend fun sendAnimation(
+        providerDialogId: String,
+        animation: MessageMedia
+    ): Result<Unit> {
+        val bytes = loadMediaBytes(
+            fileId = animation.fileId,
+            uniqueId = animation.fileUniqueId
+        ) ?: return Result.failure(Exception("Could not load the GIF"))
+
+        return sendAnimationBytes(
+            providerDialogId = providerDialogId,
+            bytes = bytes,
+            mimeType = animation.mimeType,
+            width = animation.width,
+            height = animation.height,
+            durationSeconds = animation.durationSeconds
+        )
+    }
+
+    private suspend fun sendPhotoBytes(
+        chatId: Long,
+        bytes: ByteArray,
+        fileName: String,
+        image: MaxImageUpload,
+        isGif: Boolean = false
+    ): Result<Unit> {
+        val upload = uploadPhoto(bytes, fileName, image.contentType)
+            ?: return Result.failure(Exception("Could not upload the image to MAX"))
+
+        return sendPhotoAttach(chatId, upload, isGif)
+    }
+
+    /**
+     * The photo attach shape differs between MAX builds. Every accepted shape
+     * is tried in turn (an accepted send stops the loop), because a rejected
+     * shape makes the whole message fail and nothing shows up in the chat.
+     */
+    private suspend fun sendPhotoAttach(
+        chatId: Long,
+        upload: MaxPhotoUpload,
+        isGif: Boolean = false
+    ): Result<Unit> {
+        val attempts = buildList {
+            upload.token?.let { token ->
+                add(
+                    buildJsonObject {
+                        put("_type", "PHOTO")
+                        put("photoToken", token)
+                        if (isGif) put("isGif", true)
+                    }
+                )
+
+                add(
+                    buildJsonObject {
+                        put("_type", "PHOTO")
+                        if (isGif) put("isGif", true)
+                        put(
+                            "photo",
+                            buildJsonObject {
+                                if (isGif) put("isGif", true)
+                                put(
+                                    "photos",
+                                    buildJsonObject {
+                                        put(
+                                            "0",
+                                            buildJsonObject { put("token", token) }
+                                        )
+                                    }
+                                )
+                            }
+                        )
+                    }
+                )
+            }
+
+            upload.photoId?.let { photoId ->
+                add(
+                    buildJsonObject {
+                        put("_type", "PHOTO")
+                        put("photoId", photoId)
+                        if (isGif) put("isGif", true)
+                    }
+                )
+            }
+        }
+
+        if (attempts.isEmpty()) {
+            return Result.failure(Exception("MAX did not return a photo token"))
+        }
+
+        var failure: Throwable? = null
+
+        for (attach in attempts) {
+            val result = sendAttachments(
+                chatId = chatId,
+                text = "",
+                attaches = buildJsonArray { add(attach) }
+            ).map { }
+
+            if (result.isSuccess) return result
+
+            failure = result.exceptionOrNull()
+        }
+
+        return Result.failure(failure ?: Exception("MAX did not accept the photo"))
+    }
+
+    /**
+     * The attachment flow the MAX clients use: `FILE_UPLOAD` (87) → HTTP
+     * upload → `NOTIF_ATTACH` (136) → `MSG_SEND` with a `FILE` attach. It takes
+     * any bytes, so a sticker or GIF the photo pipeline refuses still lands in
+     * the chat instead of silently disappearing.
+     */
+    private suspend fun sendFileAttach(
+        chatId: Long,
+        bytes: ByteArray,
+        fileName: String,
+        extension: String,
+        contentType: String
+    ): Result<Unit> {
+        val response = runCatching {
+            requireRpc().request(
+                opcode = 87,
+                payload = buildJsonObject {
+                    put("name", fileName)
+                    put("size", bytes.size)
+                    put("ext", extension)
+                    put("count", 1)
+                }
+            )
+        }.getOrNull() ?: return Result.failure(Exception("MAX did not accept the upload"))
+
+        val target = mediaUploadTarget(response, idKeys = emptySet())
+            ?: return Result.failure(Exception("MAX did not return an upload URL"))
+
+        val body = uploadMaxFile(target.url, fileName, bytes, contentType)
+            ?: return Result.failure(Exception("Could not upload the file to MAX"))
+
+        val uploaded = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
+        val info = uploaded?.obj("info")
+
+        val fileKey = uploaded?.string("fileId")
+            ?: info?.string("fileId")
+            ?: uploaded?.array("info")?.objects()?.firstOrNull()?.string("fileId")
+            ?: target.fileKey
+            ?: return Result.failure(Exception("MAX did not return a file id"))
+
+        val token = uploaded?.string("token")
+            ?: info?.string("token")
+            ?: uploaded?.array("info")?.objects()?.firstOrNull()?.string("token")
+            ?: target.token
+
+        awaitAttachReady()
 
         val attach = buildJsonObject {
-            put("_type", "PHOTO")
-            put("photoToken", token)
+            put("_type", "FILE")
+            put("fileId", fileKey)
+            token?.let { value -> put("token", value) }
+            put("name", fileName)
+            put("size", bytes.size)
         }
 
         return sendAttachments(
@@ -1944,42 +3086,248 @@ class MaxSession(
         ).map { }
     }
 
-    private suspend fun uploadPhotoToken(
-        bytes: ByteArray,
-        extension: String,
-        contentType: String
-    ): String? {
-        val active = rpc ?: return null
+    /**
+     * A file may only be attached after MAX confirms the upload with
+     * `NOTIF_ATTACH` (136). The wait is best-effort: a send without the push is
+     * still attempted after the timeout, so a missing notification cannot make
+     * a sticker send hang forever.
+     */
+    private suspend fun awaitAttachReady(timeoutMillis: Long = 8_000) {
+        val active = rpc ?: return
 
+        runCatching {
+            withTimeoutOrNull(timeoutMillis) {
+                active.pushes.first { push -> push.opcode == 136 }
+            }
+        }
+    }
+
+    /**
+     * `IMAGE_UPLOAD_URL` (80) answers with the upload URL; its query carries
+     * the photo ids the server fills in after the POST, and the upload body
+     * carries the token and ids MAX uses across its media endpoints.
+     */
+    private suspend fun uploadPhoto(
+        bytes: ByteArray,
+        fileName: String,
+        contentType: String
+    ): MaxPhotoUpload? {
         val response = runCatching {
-            active.request(
+            requireRpc().request(
                 opcode = 80,
-                payload = buildJsonObject {
-                    put("count", 1)
-                    put("type", 0)
-                    put("uploaderType", 0)
-                    put("profile", false)
-                }
+                payload = buildJsonObject { put("count", 1) }
             )
         }.getOrNull() ?: return null
 
-        val url = response.string("url") ?: return null
-        val body = uploadMaxFile(url, "sticker.$extension", bytes, contentType) ?: return null
-        val root = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
+        val target = mediaUploadTarget(
+            response = response,
+            idKeys = setOf("photoId", "id")
+        ) ?: return null
+
+        val body = uploadMaxFile(target.url, fileName, bytes, contentType)
             ?: return null
 
-        return root.obj("photos")
-            ?.values
-            ?.firstOrNull()
-            ?.jsonObject
-            ?.string("token")
-            ?: root.string("token")
+        val root = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
+
+        awaitAttachReady()
+
+        val upload = MaxPhotoUpload(
+            token = photoTokenOf(root) ?: photoTokenOf(response) ?: target.token,
+            photoId = root?.long("photoId")
+                ?: root?.obj("photo")?.long("photoId")
+                ?: target.id
+                ?: photoIdFromUrl(target.url)
+        )
+
+        if (upload.token == null && upload.photoId == null) return null
+
+        return upload
     }
 
-    override suspend fun sendAnimation(
-        providerDialogId: String,
-        animation: MessageMedia
-    ): Result<Unit> = unsupported("Animations")
+    /** `photoIds` in the upload URL point at the photos the POST fills in. */
+    private fun photoIdFromUrl(url: String): Long? {
+        val value = url.substringAfter("photoIds=", "").substringBefore('&')
+
+        return value.split(',', '%', ';')
+            .firstNotNullOfOrNull { part -> part.toLongOrNull() }
+    }
+
+    /** Uploads an MP4 as a MAX video attachment (opcode 82). */
+    private suspend fun sendVideoBytes(
+        chatId: Long,
+        bytes: ByteArray,
+        width: Int,
+        height: Int,
+        durationSeconds: Int,
+        asGif: Boolean = false
+    ): Result<Unit> {
+        val response = runCatching {
+            requireRpc().request(
+                opcode = 82,
+                payload = buildJsonObject {
+                    put("chatId", chatId)
+                    put("count", 1)
+                }
+            )
+        }.getOrNull()
+            ?: return Result.failure(Exception("MAX did not accept the video upload"))
+
+        val target = mediaUploadTarget(
+            response = response,
+            idKeys = setOf("videoId", "id")
+        ) ?: return Result.failure(Exception("MAX did not return a video upload URL"))
+
+        val videoId = target.id
+            ?: return Result.failure(Exception("MAX did not return a video id"))
+
+        uploadMaxRaw(target.url, bytes, "video/mp4")
+            ?: return Result.failure(Exception("Could not upload the GIF to MAX"))
+
+        awaitAttachReady()
+
+        fun videoAttach(type: String, gif: Boolean) = buildJsonObject {
+            put("_type", type)
+            put("videoId", videoId)
+            target.token?.let { token -> put("token", token) }
+
+            if (gif) put("isGif", true)
+            if (width > 0) put("width", width)
+            if (height > 0) put("height", height)
+
+            // MAX expects video durations in milliseconds.
+            if (durationSeconds > 0) put("duration", durationSeconds * 1000L)
+        }
+
+        // A GIF is offered as a GIF attach first, so MAX animates it in place
+        // instead of rendering a video bubble. Older builds only know VIDEO;
+        // the `isGif` flag keeps the animation in that shape as well.
+        val attaches = if (asGif) {
+            listOf(
+                videoAttach("GIF", true),
+                videoAttach("VIDEO", true),
+                videoAttach("VIDEO", false)
+            )
+        } else {
+            listOf(videoAttach("VIDEO", false))
+        }
+
+        var lastFailure: Throwable? = null
+
+        for (attach in attaches) {
+            val result = sendAttachments(
+                chatId = chatId,
+                text = "",
+                attaches = buildJsonArray { add(attach) }
+            ).map { }
+
+            if (result.isSuccess) return result
+            lastFailure = result.exceptionOrNull()
+        }
+
+        return Result.failure(
+            lastFailure ?: Exception("MAX did not accept the video")
+        )
+    }
+
+    private fun photoTokenOf(response: JsonElement?): String? {
+        val root = response?.jsonObject ?: return null
+
+        root.string("token")?.let { return it }
+        root.string("photoToken")?.let { return it }
+
+        root.obj("photo")?.let { photo ->
+            (photo.string("token") ?: photo.string("photoToken"))?.let { return it }
+        }
+
+        val info = root.array("info")?.objects().orEmpty() +
+            listOfNotNull(root.obj("info"))
+
+        info.firstNotNullOfOrNull { entry ->
+            entry.string("token") ?: entry.string("photoToken")
+        }?.let { return it }
+
+        val photos = root.array("photos")?.objects().orEmpty() +
+            root.obj("photos")
+                ?.values
+                ?.mapNotNull { value -> value as? JsonObject }
+                .orEmpty()
+
+        return photos.firstNotNullOfOrNull { entry ->
+            entry.string("token") ?: entry.string("photoToken")
+        }
+    }
+
+    private fun mediaUploadTarget(
+        response: JsonElement?,
+        idKeys: Set<String>
+    ): MaxUploadTarget? {
+        val root = response?.jsonObject ?: return null
+
+        val candidates = buildList {
+            add(root)
+            root.obj("photo")?.let(::add)
+            root.obj("info")?.let(::add)
+            root.array("info")?.objects()?.let(::addAll)
+            root.array("photos")?.objects()?.let(::addAll)
+            root.obj("photos")?.values?.forEach { value ->
+                (value as? JsonObject)?.let(::add)
+            }
+        }
+
+        return candidates.firstNotNullOfOrNull { candidate ->
+            val url = candidate.string("url")?.takeIf { it.startsWith("http") }
+                ?: return@firstNotNullOfOrNull null
+
+            var id: Long? = null
+            for (key in idKeys) {
+                id = candidate.long(key)
+                if (id != null) break
+            }
+
+            MaxUploadTarget(
+                url = url,
+                token = candidate.string("token") ?: candidate.string("photoToken"),
+                id = id,
+                fileKey = candidate.string("fileId")
+            )
+        }
+    }
+
+    /** Detects the static image formats MAX accepts as a photo. */
+    private fun sniffImage(bytes: ByteArray): MaxImageUpload? {
+        fun matches(vararg values: Int): Boolean {
+            if (bytes.size < values.size) return false
+
+            return values.indices.all { index ->
+                (bytes[index].toInt() and 0xFF) == values[index]
+            }
+        }
+
+        return when {
+            matches(0x89, 0x50, 0x4E, 0x47) -> MaxImageUpload("png", "image/png")
+            matches(0xFF, 0xD8, 0xFF) -> MaxImageUpload("jpg", "image/jpeg")
+            matches(0x47, 0x49, 0x46, 0x38) -> MaxImageUpload("gif", "image/gif")
+
+            bytes.size > 12 &&
+                bytes.decodeToString(0, 4) == "RIFF" &&
+                bytes.decodeToString(8, 12) == "WEBP" ->
+                MaxImageUpload("webp", "image/webp")
+
+            else -> null
+        }
+    }
+
+    /** An MP4/MOV container, which MAX takes through the video upload. */
+    private fun looksLikeMp4(bytes: ByteArray): Boolean {
+        if (bytes.size < 12) return false
+        if (bytes.decodeToString(4, 8) != "ftyp") return false
+
+        val brand = bytes.decodeToString(8, 12)
+        return brand.startsWith("isom") ||
+            brand.startsWith("mp4") ||
+            brand.startsWith("M4V") ||
+            brand.startsWith("qt")
+    }
 
     private fun unsupported(feature: String): Result<Unit> {
         return Result.failure(UnsupportedOperationException("$feature are not supported by the MAX client"))
@@ -2134,22 +3482,79 @@ class MaxSession(
 
     private suspend fun refreshDialogs() {
         val active = rpc ?: return
-        _isLoadingDialogs.value = true
+
+        // The indicator means "the first chat list is still syncing". Later
+        // refreshes (reconnects, background syncs) used to flip it on again,
+        // which left the list spinning, so only the first load reports.
+        val reportLoading = !dialogsLoaded
+        if (reportLoading) _isLoadingDialogs.value = true
 
         try {
-            val response = active.request(
-                opcode = 53,
-                payload = buildJsonObject {
-                    put("count", 100)
-                    put("marker", System.currentTimeMillis())
-                }
-            )
+            // The web client repeats GET_CHATS with the marker returned by the
+            // previous page until it becomes 0. The marker is a server
+            // timestamp from LOGIN, not a local clock value.
+            var marker = chatMarker
+            var pages = 0
 
-            response?.array("chats")?.objects()?.forEach(::mergeChat)
+            while (marker != 0L && pages < 100) {
+                val response = active.request(
+                    opcode = 53,
+                    payload = buildJsonObject { put("marker", marker) }
+                )
+
+                response?.array("chats")?.objects()?.forEach(::mergeChat)
+
+                val next = response?.long("marker") ?: 0L
+                if (next == marker) break
+
+                marker = next
+                pages++
+            }
+
+            chatMarker = 0L
+            fetchMissingChatUsers(active)
             prefetchAvatars()
+            refreshOwnProfileAvatar()
             emitDialogs()
+            dialogsLoaded = true
         } finally {
-            _isLoadingDialogs.value = false
+            if (reportLoading) _isLoadingDialogs.value = false
+        }
+    }
+
+    /**
+     * DIALOG chats carry no `title`; their display name is the peer contact.
+     * LOGIN only returns a handful of contacts, so peers that are not in that
+     * snapshot have to be requested explicitly or the row stays nameless.
+     */
+    private suspend fun fetchMissingChatUsers(active: MaxRpc) {
+        val missing = chats.values
+            .asSequence()
+            .filter { chat -> chat.type == "DIALOG" && chat.id != 0L }
+            .mapNotNull { chat -> chat.participantIds.firstOrNull { id -> id != meId } }
+            .filter { id -> id !in users }
+            .distinct()
+            .take(300)
+            .toList()
+
+        if (missing.isEmpty()) return
+
+        for (chunk in missing.chunked(100)) {
+            val response = runCatching {
+                active.request(
+                    opcode = 32,
+                    payload = buildJsonObject {
+                        put(
+                            "contactIds",
+                            buildJsonArray { chunk.forEach { id -> add(JsonPrimitive(id)) } }
+                        )
+                    }
+                )
+            }.getOrNull() ?: continue
+
+            response.array("contacts")?.objects()?.forEach { contact ->
+                parseUser(contact)?.let { user -> users[user.id] = user }
+            }
         }
     }
 
@@ -2164,6 +3569,11 @@ class MaxSession(
             pictureUrl = parsed.pictureUrl ?: previous?.pictureUrl,
             participantsCount = parsed.participantsCount ?: previous?.participantsCount,
             participantIds = parsed.participantIds.ifEmpty { previous?.participantIds.orEmpty() },
+            adminIds = parsed.adminIds.ifEmpty { previous?.adminIds.orEmpty() },
+            isVerified = parsed.isVerified || previous?.isVerified == true,
+            canCopyMessages = parsed.canCopyMessages && previous?.canCopyMessages != false,
+            allCanPinMessages = parsed.allCanPinMessages ||
+                previous?.allCanPinMessages == true,
             lastMessage = parsed.lastMessage ?: previous?.lastMessage,
             unread = if (objectValue.long("newMessages") != null) parsed.unread else previous?.unread ?: 0,
             lastEventTime = maxOf(parsed.lastEventTime, previous?.lastEventTime ?: 0L)
@@ -2173,11 +3583,13 @@ class MaxSession(
     private fun parseChat(objectValue: JsonObject): MaxChat {
         val id = objectValue.long("id") ?: 0
         val type = objectValue.string("type") ?: "DIALOG"
-        val participants = objectValue.obj("participants")?.keys
+        val participantsObject = objectValue.obj("participants")
+        val participants = participantsObject?.keys
             ?.mapNotNull { key -> key.toLongOrNull() }
             .orEmpty()
 
         val lastMessageObject = objectValue.obj("lastMessage")
+        val options = objectValue.obj("options")
 
         return MaxChat(
             id = id,
@@ -2186,6 +3598,10 @@ class MaxSession(
             description = objectValue.string("description"),
             status = objectValue.string("status"),
             ownerId = objectValue.long("owner") ?: 0,
+            adminIds = objectValue.array("admins")
+                ?.mapNotNull { it.asLongOrNull() }
+                ?.toSet()
+                .orEmpty(),
             participantIds = participants,
             participantsCount = objectValue.int("participantsCount"),
             pictureUrl = objectValue.obj("picture")?.string("url")
@@ -2197,23 +3613,54 @@ class MaxSession(
                 ?: objectValue.long("modified")
                 ?: objectValue.long("createdTime")
                 ?: 0,
-            pinnedMessageId = objectValue.obj("pinnedMessage")?.long("id")
+            pinnedMessageId = objectValue.obj("pinnedMessage")?.long("id"),
+            isVerified = maxVerifiedFlag(objectValue),
+            canCopyMessages = options?.bool("MESSAGE_COPY_NOT_ALLOWED") != true,
+            allCanPinMessages = options?.bool("ALL_CAN_PIN_MESSAGE") == true
         )
+    }
+
+    /**
+     * The profile was built before its avatar bytes were prefetched, so the
+     * Accounts list kept showing initials for the signed-in user.
+     */
+    private fun refreshOwnProfileAvatar() {
+        val me = users[meId] ?: return
+        val current = _profile.value ?: return
+
+        _profile.value = current.copy(avatar = avatarFor(me.name, me.pictureUrl))
     }
 
     private fun emitDialogs() {
         val typingState = typing.value
 
-        _dialogs.value = chats.values
+        val sortedChats = chats.values
             .filter { chat -> chat.status != "REMOVED" }
             .sortedByDescending { chat -> chat.lastMessage?.time ?: chat.lastEventTime }
-            .map { chat -> toDialog(chat, typingState[chat.id]) }
+
+        _dialogs.value = sortedChats.map { chat -> toDialog(chat, typingState[chat.id]) }
+
+        // The full list (avatar, title, last message, time, unread count) is
+        // persisted after a short pause so bursts of updates write once.
+        dialogsSaveJob?.cancel()
+        dialogsSaveJob = scope.launch {
+            delay(1_500)
+
+            val dialogs = _dialogs.value
+            if (dialogs.isNotEmpty()) {
+                CacheStore.saveDialogs(accountId, dialogs)
+            }
+        }
     }
 
     private fun toDialog(chat: MaxChat, typingText: String?): Dialog {
-        val title = chat.title
-            ?: chat.peerUser()?.name
-            ?: "MAX chat ${chat.id}"
+        val title = if (chat.id == 0L) {
+            "Saved Messages"
+        } else {
+            chat.title
+                ?: chat.peerUser()?.name
+                ?: "MAX chat ${chat.id}"
+        }
 
         val lastMessage = chat.lastMessage
         val media = lastMessage?.attaches?.firstOrNull()?.let(::toMedia)
@@ -2228,6 +3675,9 @@ class MaxSession(
             title = title,
             statusText = chat.participantsCount?.takeIf { chat.type != "DIALOG" }
                 ?.let { count -> "$count members" },
+            // A direct chat can offer the call action when MAX exposes the
+            // peer's phone number.
+            phoneNumber = peer?.phone,
             typingText = typingText,
             preview = lastMessage?.let(::previewText).orEmpty(),
             lastMessageMedia = media,
@@ -2237,8 +3687,21 @@ class MaxSession(
             unreadCount = chat.unread,
             memberCount = chat.participantsCount,
             pinnedMessageId = chat.pinnedMessageId,
-            canSendMessages = chat.type != "CHANNEL",
+            // MAX does not expose posting rights for channels; the composer
+            // stays available for every chat the account still belongs to and
+            // the server reports a failure if posting is not allowed.
+            canSendMessages = chat.status != "REMOVED",
+            canPinMessages = meId != 0L && (
+                meId == chat.ownerId ||
+                    meId in chat.adminIds ||
+                    chat.allCanPinMessages
+            ),
+            canDeleteMessages = chat.type != "DIALOG" && meId != 0L && (
+                meId == chat.ownerId || meId in chat.adminIds
+            ),
             isPinned = chat.id in pinnedChats,
+            isSavedMessages = chat.id == 0L,
+            isVerified = chat.isVerified || peer?.isVerified == true,
             order = lastMessage?.time ?: chat.lastEventTime,
             avatar = avatarFor(title, chat.pictureUrl ?: peer?.pictureUrl)
         )
@@ -2288,40 +3751,32 @@ class MaxSession(
 
     // -------------------------------------------------------------- mapping --
 
-    private fun parseUser(objectValue: JsonObject): MaxUser? {
-        val id = objectValue.long("id") ?: return null
-
-        return MaxUser(
-            id = id,
-            name = contactName(objectValue),
-            pictureUrl = objectValue.obj("picture")?.string("url"),
-            username = objectValue.string("username") ?: objectValue.string("link"),
-            phone = objectValue.array("phones").objects().firstOrNull()?.string("number"),
-            description = objectValue.string("about") ?: objectValue.string("description")
-        )
-    }
-
-    private fun contactName(objectValue: JsonObject): String {
-        val names = objectValue.array("names").objects()
-        val fullName = names.firstOrNull { it.string("type") == "FULL_NAME" }?.string("name")
-        val anyName = names.firstOrNull()?.string("name")
-
-        return objectValue.string("name")
-            ?: objectValue.string("title")
-            ?: objectValue.string("firstName")?.let { first ->
-                listOfNotNull(first, objectValue.string("lastName")).joinToString(" ")
-            }
-            ?: fullName
-            ?: anyName
-            ?: "MAX user"
-    }
+    private fun parseUser(objectValue: JsonObject): MaxUser? = parseMaxUser(objectValue)
 
     private fun parseMessage(chatId: Long, objectValue: JsonObject): MaxMessage {
-        val link = objectValue.obj("link")?.takeIf { it.string("type") == "FORWARD" }
+        val rawLink = objectValue.obj("link")
+        val link = rawLink?.takeIf { it.string("type") == "FORWARD" }
         val forwards = link?.string("chatName")
+        // Replies are a link of type REPLY carrying the original message id.
+        val reply = rawLink?.takeIf { it.string("type") == "REPLY" }?.let { value ->
+            val replyId = value.long("mid")
+                ?: value.obj("message")?.long("id")
+                ?: return@let null
 
-        val text = objectValue.string("text").orEmpty().ifBlank {
+            MessageReply(
+                messageId = replyId,
+                text = value.obj("message")?.string("text").orEmpty()
+            )
+        }
+
+        val rawText = objectValue.string("text").orEmpty().ifBlank {
             link?.obj("message")?.string("text").orEmpty()
+        }
+        val isWelcome = rawText.trim() == SavedDialogWelcomeKey
+        val text = if (isWelcome) {
+            "Welcome to Saved Messages. Messages you send here are visible only to you."
+        } else {
+            rawText
         }
 
         val attaches = objectValue.array("attaches").objects().map(::parseAttach)
@@ -2335,7 +3790,8 @@ class MaxSession(
             reactions = mapReactions(objectValue.obj("reactionInfo")),
             views = objectValue.obj("stats")?.int("views") ?: 0,
             forwardedFromName = forwards,
-            isService = attaches.any { it.type.equals("CONTROL", true) }
+            replyTo = reply,
+            isService = isWelcome || attaches.any { it.type.equals("CONTROL", true) }
         )
     }
 
@@ -2353,6 +3809,8 @@ class MaxSession(
         val livePeriod = objectValue.long("livePeriod")
             ?: objectValue.obj("location")?.long("livePeriod")
             ?: 0
+        val photo = objectValue.obj("photo")
+        val sticker = objectValue.obj("sticker")
 
         return MaxAttach(
             type = type,
@@ -2367,6 +3825,25 @@ class MaxSession(
             width = objectValue.int("width") ?: 0,
             height = objectValue.int("height") ?: 0,
             durationSeconds = ((objectValue.long("duration") ?: 0) / 1000).toInt(),
+            // MAX models an animated image as a photo with the `isGif` flag,
+            // but some clients only send the file as `FILE`/`PHOTO` with a
+            // GIF mime type or `.gif` name. Both shapes must stay animated.
+            isGif = objectValue.bool("isGif") == true ||
+                objectValue.bool("gif") == true ||
+                photo?.bool("isGif") == true ||
+                type.equals("GIF", ignoreCase = true) ||
+                (objectValue.string("mimeType") ?: objectValue.string("mime"))
+                    ?.startsWith("image/gif", ignoreCase = true) == true ||
+                (objectValue.string("name") ?: objectValue.string("fileName"))
+                    ?.endsWith(".gif", ignoreCase = true) == true ||
+                url?.substringBefore('?')?.endsWith(".gif", ignoreCase = true) == true,
+            stickerId = objectValue.long("stickerId") ?: sticker?.long("id"),
+            setId = objectValue.long("setId") ?: sticker?.long("setId"),
+            // MAX ships most stickers as Lottie animations; the static `url`
+            // only carries the first frame.
+            lottieUrl = objectValue.string("lottiePlayUrl")
+                ?: objectValue.string("lottieUrl")
+                ?: sticker?.string("lottieUrl"),
             latitude = latitude,
             longitude = longitude,
             // MAX sends the live period in milliseconds; small values are
@@ -2419,6 +3896,14 @@ class MaxSession(
         val user = message.senderId?.let(users::get)
         val chat = chats[chatId]
         val chatTitle = chat?.title ?: chat?.peerUser()?.name
+        val isOwn = message.senderId != null && message.senderId == meId
+        // MAX has no per-message rights: the author may delete a message and a
+        // chat owner or admin moderates the rest. Channels expose no admin
+        // list, so only authored posts are deletable there.
+        val canModerate = chat != null && meId != 0L && (
+            meId == chat.ownerId || meId in chat.adminIds
+        )
+        val canDelete = isOwn || canModerate
 
         return ChatMessage(
             providerId = MaxProvider.id,
@@ -2430,11 +3915,21 @@ class MaxSession(
                 ?: chat?.let { avatarFor(chatTitle ?: "MAX chat", it.pictureUrl) },
             senderId = message.senderId ?: 0,
             forwardedFromName = message.forwardedFromName,
+            replyTo = message.replyTo,
             text = message.text,
             timestamp = message.time,
-            isOutgoing = message.senderId != null && message.senderId == meId,
+            isOutgoing = isOwn,
             isService = message.isService,
+            canBeDeleted = canDelete,
+            canBeDeletedForEveryone = canDelete,
+            canBeForwarded = chat?.canCopyMessages != false,
             media = message.attaches.firstOrNull()?.let(::toMedia),
+            // MAX delivers every attachment of one message in the same
+            // `attaches` array. Mapping only the first one turned media
+            // galleries into single images; the full list drives the album
+            // grid and the fullscreen viewer.
+            mediaItems = message.attaches.mapNotNull(::toMedia),
+            mediaAlbumId = message.id.takeIf { message.attaches.size > 1 },
             poll = message.attaches.firstNotNullOfOrNull { attach -> attach.toPollInfo() },
             location = message.attaches.firstNotNullOfOrNull { attach -> attach.toLocationInfo() },
             reactions = message.reactions,
@@ -2444,11 +3939,24 @@ class MaxSession(
     }
 
     private fun toMedia(attach: MaxAttach): MessageMedia? {
+        val isGif = attach.isGif ||
+            attach.mimeType?.startsWith("image/gif", ignoreCase = true) == true ||
+            attach.fileName?.endsWith(".gif", ignoreCase = true) == true ||
+            attach.url?.substringBefore('?')?.endsWith(".gif", ignoreCase = true) == true
+
         val kind = when (attach.type.uppercase()) {
-            "PHOTO" -> MessageMediaKind.Photo
-            "VIDEO" -> MessageMediaKind.Video
+            // A GIF that MAX stores as a photo still has to animate in chat.
+            "PHOTO" -> if (isGif) MessageMediaKind.Animation else MessageMediaKind.Photo
+            "VIDEO" -> if (isGif) {
+                MessageMediaKind.Animation
+            } else {
+                MessageMediaKind.Video
+            }
             "AUDIO", "UNSUPPORTED" -> MessageMediaKind.VoiceNote
-            "FILE" -> MessageMediaKind.File
+            // MAX usually wraps GIFs in a FILE attachment (sometimes naming
+            // it `sticker.gif`), which used to render as a downloadable
+            // binary instead of an autoplaying animation.
+            "FILE" -> if (isGif) MessageMediaKind.Animation else MessageMediaKind.File
             "STICKER" -> MessageMediaKind.Sticker
             "GIF" -> MessageMediaKind.Animation
             else -> return null
@@ -2476,6 +3984,7 @@ class MaxSession(
             stickerFileId = fileId.takeIf { kind == MessageMediaKind.Sticker },
             stickerUniqueId = url.takeIf { kind == MessageMediaKind.Sticker },
             stickerFormat = stickerFormat,
+            lottieUrl = attach.lottieUrl,
             fileName = attach.fileName,
             mimeType = attach.mimeType,
             size = attach.size,
@@ -2593,8 +4102,13 @@ class MaxSession(
             reconnectAttempts++
             delay(2_000L * reconnectAttempts)
 
-            runCatching { connect(token!!) }
-                .onFailure { exception ->
+            runCatching {
+                connectMutex.withLock {
+                    // A request that hit the dead socket reconnects on demand;
+                    // do not replace that fresh connection after the backoff.
+                    if (rpc == null) connect(token!!)
+                }
+            }.onFailure { exception ->
                     _authState.value = AuthState.Error(
                         "Could not reconnect to MAX: ${exception.message ?: "unknown error"}"
                     )
@@ -2625,6 +4139,7 @@ class MaxSession(
         if (closed) return
 
         closed = true
+        _isLoadingDialogs.value = false
         closeRpc()
         scope.cancel()
         _authState.value = AuthState.Closed

@@ -13,11 +13,16 @@ import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageDraft
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
+import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
+import com.mrboomdev.scrollix.data.model.PostSearchPage
+import com.mrboomdev.scrollix.data.model.PostSearchQuota
+import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
+import com.mrboomdev.scrollix.data.model.WebAppLaunch
 import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
@@ -108,6 +113,28 @@ interface AccountSession {
      * Returns null when nothing is cached under that id.
      */
     suspend fun loadCachedMedia(remoteUniqueId: String): ByteArray? = null
+    /**
+     * Loads the replies of a message thread. For channel comments the replies
+     * live in a different chat, which [ChatMessageThread.chatId] exposes.
+     */
+    suspend fun loadMessageThread(
+        providerDialogId: String,
+        messageId: Long,
+        limit: Int = 100
+    ): Result<com.mrboomdev.scrollix.data.model.ChatMessageThread> = Result.failure(
+        UnsupportedOperationException("Message threads are not supported")
+    )
+
+    /** Sends a reply into the thread rooted at [rootMessageId]. */
+    suspend fun sendMessageToThread(
+        threadChatId: String,
+        rootMessageId: Long,
+        text: String,
+        customEmojis: List<CustomEmojiSpan> = emptyList()
+    ): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Message threads are not supported")
+    )
+
     suspend fun sendMessage(
         providerDialogId: String,
         text: String,
@@ -240,6 +267,23 @@ interface AccountSession {
     suspend fun setUserBlocked(userId: Long, blocked: Boolean): Result<Unit> =
         Result.failure(UnsupportedOperationException("Blocking users is not supported"))
 
+    /**
+     * Adds a user to the account's contact list, or renames an existing entry.
+     * [firstName] and [lastName] replace the stored name.
+     */
+    suspend fun addContact(
+        userId: Long,
+        firstName: String,
+        lastName: String
+    ): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Managing contacts is not supported")
+    )
+
+    /** Removes a user from the account's contact list. */
+    suspend fun removeContact(userId: Long): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Managing contacts is not supported")
+    )
+
     suspend fun loadUserProfile(
         providerDialogId: String,
         userId: Long? = null
@@ -267,6 +311,37 @@ interface AccountSession {
         query: String,
         limit: Int = 50
     ): Result<List<Dialog>>
+
+    /**
+     * Searches public chats the account has not joined yet. [kind] narrows the
+     * server filter so the channels and bots tabs can reuse this call.
+     */
+    suspend fun searchPublicChats(
+        query: String,
+        limit: Int = 50,
+        kind: PublicChatSearchKind = PublicChatSearchKind.Any
+    ): Result<List<Dialog>> = Result.success(emptyList())
+
+    /**
+     * One page of the messenger's global public post search. Providers without
+     * a public post index keep the default failure. Results usually cost one
+     * free query per page, so callers must only invoke this for a user action.
+     */
+    suspend fun searchPublicPosts(
+        query: String,
+        offset: String = "",
+        limit: Int = 30,
+        starCount: Long = 0
+    ): Result<PostSearchPage> = Result.failure(
+        UnsupportedOperationException("Public post search is not supported by this provider")
+    )
+
+    /** Free public post search quota for [query], when the provider exposes it. */
+    suspend fun loadPublicPostSearchQuota(query: String): Result<PostSearchQuota> =
+        Result.failure(
+            UnsupportedOperationException("Public post search is not supported by this provider")
+        )
+
     suspend fun loadMessage(
         providerDialogId: String,
         messageId: Long
@@ -292,6 +367,26 @@ interface AccountSession {
     /** All profile photos of a user, newest first. */
     suspend fun loadProfilePhotos(userId: Long): Result<List<MessageMedia>> =
         Result.success(emptyList())
+
+    /**
+     * Resolves a bot mini app button through the provider and returns the URL
+     * to render. Providers without mini apps keep the default failure.
+     */
+    suspend fun openWebApp(
+        providerDialogId: String,
+        button: MessageButton
+    ): Result<WebAppLaunch> = Result.failure(
+        UnsupportedOperationException("Mini apps are not supported by this provider")
+    )
+
+    /** Opens the main mini app of a bot chat, when the bot exposes one. */
+    suspend fun openMainWebApp(providerDialogId: String): Result<WebAppLaunch> =
+        Result.failure(
+            UnsupportedOperationException("Main mini apps are not supported by this provider")
+        )
+
+    /** Tells the provider that a mini app closed. */
+    suspend fun closeWebApp(launchId: Long) = Unit
 
     /** One page of a media kind sent in a dialog, newest first. */
     suspend fun loadSharedMedia(
@@ -353,6 +448,22 @@ interface AccountSession {
     )
 
     suspend fun sendAnimation(providerDialogId: String, animation: MessageMedia): Result<Unit>
+
+    /**
+     * Sends an animation that came from another provider as raw bytes.
+     * Providers convert it into their own attachment format, because animation
+     * file ids are not portable between messengers.
+     */
+    suspend fun sendAnimationBytes(
+        providerDialogId: String,
+        bytes: ByteArray,
+        mimeType: String?,
+        width: Int,
+        height: Int,
+        durationSeconds: Int
+    ): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Cross-provider animations are not supported")
+    )
     suspend fun editMessage(
         providerDialogId: String,
         messageId: Long,

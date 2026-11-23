@@ -175,16 +175,40 @@ fun rememberAppEntryProvider(
         }
 
         entry<Route.Search> { route ->
+            val isTwoPane = isTwoPaneLayout()
+            val currentSelection by selectedDialog
+
             SearchScreen(
                 initialQuery = route.query,
                 onBack = {
                     backStack.removeLastOrNull()
                 },
                 onOpenDialog = { accountId, providerDialogId, messageId ->
-                    backStack += Route.Dialog(
+                    val target = Route.Dialog(
                         accountId = accountId,
                         providerDialogId = providerDialogId,
                         messageId = messageId
+                    )
+
+                    // On a wide layout Search already shows its own chat pane;
+                    // keep the Search tab open and update the shared selection
+                    // instead of stacking a Dialog route over it.
+                    if (isTwoPane) {
+                        onSelectDialog(target)
+                    } else {
+                        backStack += target
+                    }
+                },
+                selectedDialogAccountId = currentSelection?.accountId,
+                selectedDialogProviderDialogId = currentSelection?.providerDialogId,
+                selectedDialogMessageId = currentSelection?.messageId,
+                onSelectDialog = { accountId, providerDialogId, messageId ->
+                    onSelectDialog(
+                        Route.Dialog(
+                            accountId = accountId,
+                            providerDialogId = providerDialogId,
+                            messageId = messageId
+                        )
                     )
                 },
                 onOpenProfile = { accountId, providerDialogId ->

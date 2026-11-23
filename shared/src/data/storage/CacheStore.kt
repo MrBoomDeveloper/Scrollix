@@ -41,7 +41,6 @@ object CacheStore {
             val payload = dao.dialogs(accountId) ?: return emptyList()
 
             json.decodeFromString(ListSerializer(Dialog.serializer()), payload)
-                .map { dialog -> dialog.copy(avatar = dialog.avatar?.copy(image = null)) }
         } catch (exception: Exception) {
             // A row written by an older build can be unreadable. Drop it so the
             // next save replaces it instead of failing on every startup.
@@ -55,14 +54,12 @@ object CacheStore {
         if (dialogs.isEmpty()) return
 
         runCatching {
-            // A typing hint is transient, and avatar bytes are deliberately
-            // not cached: TDLib file ids are not stable enough across restarts
-            // to trust stored image bytes, so avatars are reloaded live.
+            // A typing hint is transient. The avatar bytes are stored with the
+            // row so the whole list (avatar, title, preview, time, unread
+            // count) can be drawn on the next launch before any provider has
+            // connected.
             val cached = dialogs.map { dialog ->
-                dialog.copy(
-                    typingText = null,
-                    avatar = dialog.avatar?.copy(image = null)
-                )
+                dialog.copy(typingText = null)
             }
 
             dao.putDialogs(

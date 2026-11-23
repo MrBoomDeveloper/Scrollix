@@ -20,12 +20,14 @@ import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.model.DialogFolderPosition
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageDraft
 import com.mrboomdev.scrollix.data.model.MessageLinkPreview
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageVideoQuality
+import com.mrboomdev.scrollix.data.model.WebAppLaunch
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
@@ -36,6 +38,9 @@ import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
+import com.mrboomdev.scrollix.data.model.PostSearchPage
+import com.mrboomdev.scrollix.data.model.PostSearchQuota
+import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
 import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageRichTextStyle
 import com.mrboomdev.scrollix.data.model.MessageSendState
@@ -49,6 +54,7 @@ import dev.g000sha256.tdl.dto.InputPollOption
 import dev.g000sha256.tdl.dto.InputPollTypeRegular
 import dev.g000sha256.tdl.dto.InputVideoNote
 import dev.g000sha256.tdl.dto.InputVoiceNote
+import dev.g000sha256.tdl.dto.PhoneNumberAuthenticationSettings
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.PersonalChannel
 import com.mrboomdev.scrollix.data.model.ProfileTrack
@@ -70,7 +76,8 @@ import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.generated.BuildConfig
-import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.tdlibDeviceModel
+import com.mrboomdev.scrollix.tdlibSystemVersion
 import com.mrboomdev.scrollix.toJsonStringByReflection
 import dev.g000sha256.tdl.TdlClient
 import dev.g000sha256.tdl.TdlResult
@@ -184,6 +191,8 @@ class TelegramSession(
     private val _requestedUsers = MutableStateFlow<Set<Long>>(emptySet())
     private val _memberCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val _requestedMemberCounts = MutableStateFlow<Set<String>>(emptySet())
+    private val _verifiedSupergroups = MutableStateFlow<Set<Long>>(emptySet())
+    private val _requestedVerifiedSupergroups = MutableStateFlow<Set<Long>>(emptySet())
     private val _pinnedMessageIds = MutableStateFlow<Map<Long, Long>>(emptyMap())
 
     private var started = false
@@ -400,6 +409,57 @@ class TelegramSession(
         }
 
         return loadFile(fileId)
+    }
+
+    override suspend fun loadMessageThread(
+        providerDialogId: String,
+        messageId: Long,
+        limit: Int
+    ): Result<com.mrboomdev.scrollix.data.model.ChatMessageThread> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            when (val result = client.getMessageThread(chatId, messageId)) {
+                is TdlResult.Success -> {
+                    val info = result.result
+
+                    Result.success(
+                        com.mrboomdev.scrollix.data.model.ChatMessageThread(
+                            chatId = info.chatId.toString(),
+                            messageThreadId = info.messageThreadId,
+                            messages = info.messages
+                                .map(::mapMessage)
+                                .sortedBy { message -> message.messageId },
+                            replyCount = info.replyInfo?.replyCount ?: 0,
+                            unreadCount = info.unreadMessageCount
+                        )
+                    )
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun sendMessageToThread(
+        threadChatId: String,
+        rootMessageId: Long,
+        text: String,
+        customEmojis: List<CustomEmojiSpan>
+    ): Result<Unit> {
+        // Channel comments live in the discussion chat, so the caller passes
+        // that chat id; replying to the root is what creates/continues a thread.
+        return sendMessage(
+            providerDialogId = threadChatId,
+            text = text,
+            replyToMessageId = rootMessageId,
+            customEmojis = customEmojis
+        )
     }
 
     override suspend fun sendMessage(
@@ -1092,6 +1152,55 @@ class TelegramSession(
         }
     }
 
+    override suspend fun addContact(
+        userId: Long,
+        firstName: String,
+        lastName: String
+    ): Result<Unit> {
+        return try {
+            // TDLib adds a user to the contact list through an imported
+            // contact, which is keyed by the phone number when the profile
+            // exposes one. Without it the name is still stored locally.
+            val phoneNumber = _users.value[userId]?.phoneNumber.orEmpty()
+
+            when (
+                val result = client.addContact(
+                    userId = userId,
+                    contact = dev.g000sha256.tdl.dto.ImportedContact(
+                        phoneNumber = phoneNumber,
+                        firstName = firstName,
+                        lastName = lastName,
+                        note = dev.g000sha256.tdl.dto.FormattedText(
+                            text = "",
+                            entities = emptyArray()
+                        )
+                    ),
+                    sharePhoneNumber = false
+                )
+            ) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun removeContact(userId: Long): Result<Unit> {
+        return try {
+            when (val result = client.removeContacts(longArrayOf(userId))) {
+                is TdlResult.Success -> Result.success(Unit)
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun setUserBlocked(userId: Long, blocked: Boolean): Result<Unit> {
         return try {
             when (val result = client.setMessageSenderBlockList(
@@ -1250,7 +1359,11 @@ class TelegramSession(
                     },
                     commonGroups = loadCommonGroups(resolvedUserId),
                     tracks = loadProfileTracks(resolvedUserId),
-                    isBlocked = fullInfo?.blockList != null
+                    isBlocked = fullInfo?.blockList != null,
+                    // Telegram support/service accounts cannot be blocked.
+                    canBlock = !user.isSupport && resolvedUserId != currentUserId,
+                    isContact = user.isContact,
+                    canManageContacts = true
                 )
             )
         } catch (exception: CancellationException) {
@@ -1731,6 +1844,141 @@ class TelegramSession(
         }
     }
 
+    override suspend fun searchPublicChats(
+        query: String,
+        limit: Int,
+        kind: PublicChatSearchKind
+    ): Result<List<Dialog>> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return Result.success(emptyList())
+
+        return try {
+            val filter = when (kind) {
+                PublicChatSearchKind.Any -> null
+                PublicChatSearchKind.Channels -> SearchChatTypeFilterChannel()
+                PublicChatSearchKind.Bots -> SearchChatTypeFilterBot()
+            }
+
+            val chatIds = when (val result = client.searchPublicChats(
+                query = trimmed,
+                typeFilter = filter
+            )) {
+                is TdlResult.Success -> result.result.chatIds
+                    .take(limit.coerceIn(1, 100))
+                    .toList()
+
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val chats = chatIds.mapNotNull { chatId ->
+                when (val result = client.getChat(chatId)) {
+                    is TdlResult.Success -> result.result
+                    is TdlResult.Failure -> null
+                }
+            }
+
+            chats.forEach(::upsertChat)
+
+            // Bots are private chats, so the dialog kind can only be resolved
+            // as a bot once TDLib has loaded the user behind the chat.
+            if (kind == PublicChatSearchKind.Bots) {
+                chats.mapNotNull { chat -> (chat.type as? ChatTypePrivate)?.userId }
+                    .distinct()
+                    .filterNot { userId -> _users.value.containsKey(userId) }
+                    .forEach { userId ->
+                        when (val result = client.getUser(userId)) {
+                            is TdlResult.Success -> _users.update {
+                                it + (userId to result.result)
+                            }
+
+                            is TdlResult.Failure -> Unit
+                        }
+                    }
+            }
+
+            Result.success(
+                chats.mapNotNull { chat ->
+                    _chats.value[chat.id]?.let { entry -> toDialog(entry, null) }
+                }
+            )
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun searchPublicPosts(
+        query: String,
+        offset: String,
+        limit: Int,
+        starCount: Long
+    ): Result<PostSearchPage> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return Result.success(PostSearchPage())
+
+        return try {
+            val page = when (val result = client.searchPublicPosts(
+                query = trimmed,
+                offset = offset,
+                limit = limit.coerceIn(1, 100),
+                starCount = starCount
+            )) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val messages = page.messages.map(::mapMessage)
+            val chatIds = messages.map { message -> message.providerDialogId.toLong() }.distinct()
+
+            chatIds.forEach { chatId ->
+                when (val chat = client.getChat(chatId)) {
+                    is TdlResult.Success -> upsertChat(chat.result)
+                    is TdlResult.Failure -> Unit
+                }
+            }
+
+            Result.success(
+                PostSearchPage(
+                    messages = messages,
+                    dialogs = chatIds.mapNotNull { chatId ->
+                        _chats.value[chatId]?.let { entry -> toDialog(entry, null) }
+                    },
+                    nextOffset = page.nextOffset,
+                    quota = page.searchLimits?.toQuota(),
+                    areLimitsExceeded = page.areLimitsExceeded
+                )
+            )
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadPublicPostSearchQuota(query: String): Result<PostSearchQuota> {
+        return try {
+            when (val result = client.getPublicPostSearchLimits(query.trim())) {
+                is TdlResult.Success -> Result.success(result.result.toQuota())
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    private fun PublicPostSearchLimits.toQuota(): PostSearchQuota {
+        return PostSearchQuota(
+            dailyFreeQueryCount = dailyFreeQueryCount,
+            remainingFreeQueryCount = remainingFreeQueryCount,
+            nextFreeQueryIn = nextFreeQueryIn,
+            starCount = starCount,
+            isCurrentQueryFree = isCurrentQueryFree
+        )
+    }
+
     override suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray) {
         val chatId = providerDialogId.toLongOrNull() ?: return
         if (messageIds.isEmpty()) return
@@ -2058,7 +2306,23 @@ class TelegramSession(
                         return
                     }
 
-                    client.setAuthenticationPhoneNumber(phoneNumber = phoneNumber)
+                    // A missed-call code is visible in the phone's call log
+                    // even when this app runs on a desktop, so allowing it
+                    // gives the server a channel the user can actually read.
+                    // Flash calls need call-log access we don't have, so they
+                    // stay disabled.
+                    client.setAuthenticationPhoneNumber(
+                        phoneNumber = phoneNumber,
+                        settings = PhoneNumberAuthenticationSettings(
+                            allowFlashCall = true,
+                            allowMissedCall = true,
+                            isCurrentPhoneNumber = true,
+                            hasUnknownPhoneNumber = false,
+                            allowSmsRetrieverApi = true,
+                            firebaseAuthenticationSettings = FirebaseAuthenticationSettingsAndroid(),
+                            authenticationTokens = emptyArray()
+                        )
+                    )
                 }
 
                 "code" -> client.checkAuthenticationCode(
@@ -2588,7 +2852,7 @@ class TelegramSession(
                         "accounts/$accountId/tdlib/files"
                     )
 
-                    when (val result = client.setTdlibParameters(
+                    val parametersResult = client.setTdlibParameters(
                         useTestDc = false,
                         databaseDirectory = databaseDirectory,
                         filesDirectory = filesDirectory,
@@ -2600,13 +2864,35 @@ class TelegramSession(
                         apiId = BuildConfig.TELEGRAM_API_ID,
                         apiHash = BuildConfig.TELEGRAM_API_HASH,
                         systemLanguageCode = "en",
-                        deviceModel = "Scrollix",
-                        systemVersion = getPlatform().name,
-                        applicationVersion = "1.0.0"
-                    )) {
+                        deviceModel = tdlibDeviceModel(),
+                        systemVersion = tdlibSystemVersion(),
+                        applicationVersion = "13.1.1"
+                    )
+
+                    // A second Scrollix process (or a stale hot-reload
+                    // session) can hold the TDLib database lock. This used to
+                    // retry in a per-run directory, which "fixed" the lock by
+                    // opening a second TDLib database and therefore a second
+                    // server session. Telegram then delivers login codes into
+                    // that orphaned session instead of sending an SMS, and the
+                    // user can never read them. Refuse to fork the database
+                    // and say what is actually wrong.
+                    if (parametersResult is TdlResult.Failure &&
+                        parametersResult.message.contains("lock", ignoreCase = true)
+                    ) {
+                        setError(
+                            "Another Scrollix instance is already using this account's " +
+                                "database. Close the other window or process and start again. " +
+                                "Opening a second database would create a duplicate Telegram " +
+                                "session that receives login codes you can never read."
+                        )
+                        return@withLock
+                    }
+
+                    when (parametersResult) {
                         is TdlResult.Success -> Unit
                         is TdlResult.Failure -> setError(
-                            "Failed to configure TDLib: ${result.message}"
+                            "Failed to configure TDLib: ${parametersResult.message}"
                         )
                     }
                 }
@@ -2638,6 +2924,11 @@ class TelegramSession(
                             id = "code",
                             title = "Enter the code",
                             description = codeDeliveryDescription(state),
+                            // Only a code with a known next delivery method can
+                            // be resent. TDLib rejects the call otherwise with
+                            // "Authentication code can't be resent".
+                            resendAfterSeconds = state.codeInfo.nextType
+                                ?.let { state.codeInfo.timeout.coerceAtLeast(0) },
                             fields = listOf(
                                 AuthField(
                                     id = "code",
@@ -2645,11 +2936,13 @@ class TelegramSession(
                                     type = AuthFieldType.Code
                                 )
                             ),
-                            actions = listOf(
-                                AuthAction.Submit,
-                                AuthAction.ResendCode,
-                                AuthAction.UseQrCode
-                            )
+                            actions = buildList {
+                                add(AuthAction.Submit)
+                                if (state.codeInfo.nextType != null) {
+                                    add(AuthAction.ResendCode)
+                                }
+                                add(AuthAction.UseQrCode)
+                            }
                         )
                     )
                 }
@@ -2703,6 +2996,8 @@ class TelegramSession(
                             id = "email_code",
                             title = "Enter the email code",
                             description = "We sent a code to ${state.codeInfo.emailAddressPattern}.",
+                            // Email code info carries no resend timeout, so the
+                            // screen keeps its own cooldown for this challenge.
                             fields = listOf(
                                 AuthField(
                                     id = "code",
@@ -2809,8 +3104,14 @@ class TelegramSession(
 
         val base = when (codeInfo.type) {
             is AuthenticationCodeTypeTelegramMessage -> {
-                "Telegram sent the code to your Telegram app on another device. " +
-                    "Open Telegram there to view it. If you can't access that device, use QR code login."
+                // TDLib reports this type even when nothing is delivered, and
+                // the server may refuse to switch to SMS (nextType == null).
+                // A stale Scrollix/desktop session is the usual reason it is
+                // chosen, so point at the place that can clear it.
+                "Telegram sent the code to a Telegram session that is already signed in " +
+                    "to this account. If no former Scrollix session is still in use, " +
+                    "terminate it in Telegram → Settings → Devices so the code is sent " +
+                    "by SMS instead. Otherwise log in with the QR code."
             }
 
             is AuthenticationCodeTypeSms -> {
@@ -2836,7 +3137,11 @@ class TelegramSession(
 
             is AuthenticationCodeTypeFirebaseAndroid,
             is AuthenticationCodeTypeFirebaseIos -> {
-                "Telegram sent the code through Firebase. Check the notification on this device."
+                // Firebase delivery is configured only in the official apps and
+                // Scrollix never receives that push, so promising a notification
+                // would leave the user waiting for something that cannot arrive.
+                "Telegram tried to deliver the code through Firebase, which this app " +
+                    "can't receive. Tap Resend code to get it by SMS or a phone call instead."
             }
 
             is AuthenticationCodeTypeSmsWord -> {
@@ -2918,6 +3223,11 @@ class TelegramSession(
 
             raw.contains("PHONE_CODE_EXPIRED") ->
                 "The verification code expired. Request a new one."
+
+            raw.contains("Authentication code can't be resent") ||
+                raw.contains("PHONE_CODE_CANT_BE_RESENT") ->
+                "Telegram has no other way to deliver this code. Log in with the QR " +
+                    "code from a phone that is already signed in to this account."
 
             raw.contains("API_ID_INVALID") || raw.contains("API_ID_PUBLISHED_FLOOD") ->
                 "Telegram rejected this app's API credentials (${raw.take(120)}). " +
@@ -3117,9 +3427,19 @@ class TelegramSession(
                     text = reply.quote?.text?.text.orEmpty()
                 )
             },
+            // This TDLib build does not expose the topic id on Message; the
+            // thread id comes from MessageThreadInfo when a thread is opened.
+            replyCount = message.interactionInfo?.replyInfo?.replyCount ?: 0,
+            keyboard = mapKeyboard(message.replyMarkup, message.senderId),
             reactions = mapReactions(message.interactionInfo),
             viewCount = message.interactionInfo?.viewCount ?: 0,
             shareCount = message.interactionInfo?.forwardCount ?: 0,
+            // This TDLib build exposes chat permissions instead of per-message
+            // rights: the author deletes own messages, moderators delete any,
+            // and protected content disables forwarding for everyone.
+            canBeDeleted = message.isOutgoing,
+            canBeDeletedForEveryone = message.isOutgoing,
+            canBeForwarded = message.canBeSaved,
             sendState = when (message.sendingState) {
                 is MessageSendingStatePending -> MessageSendState.Sending
                 is MessageSendingStateFailed -> MessageSendState.Failed
@@ -3129,6 +3449,40 @@ class TelegramSession(
                 _chats.value[message.chatId]?.lastReadOutboxMessageId ?: 0L
             )
         )
+    }
+
+    /**
+     * Inline keyboards are kept for the button types this client can open:
+     * plain links and bot mini apps. Callback and payment buttons are skipped
+     * until they are implemented instead of rendering dead buttons.
+     */
+    private fun mapKeyboard(
+        markup: ReplyMarkup?,
+        senderId: MessageSender
+    ): List<List<MessageButton>> {
+        val inline = markup as? ReplyMarkupInlineKeyboard ?: return emptyList()
+        val botUserId = (senderId as? MessageSenderUser)?.userId
+
+        return inline.rows
+            .map { row ->
+                row.mapNotNull { button ->
+                    when (val type = button.type) {
+                        is InlineKeyboardButtonTypeUrl -> MessageButton(
+                            text = button.text,
+                            url = type.url
+                        )
+
+                        is InlineKeyboardButtonTypeWebApp -> MessageButton(
+                            text = button.text,
+                            webAppUrl = type.url,
+                            botUserId = botUserId
+                        )
+
+                        else -> null
+                    }
+                }
+            }
+            .filter { row -> row.isNotEmpty() }
     }
 
     /** Resolves the chat or user a forwarded message originally came from. */
@@ -4536,6 +4890,129 @@ class TelegramSession(
         return avatars
     }
 
+    override suspend fun openWebApp(
+        providerDialogId: String,
+        button: MessageButton
+    ): Result<WebAppLaunch> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+        val url = button.webAppUrl
+            ?: return Result.failure(IllegalArgumentException("Not a web app button"))
+        val botUserId = button.botUserId
+            ?: return Result.failure(IllegalStateException("The bot behind the button is unknown"))
+
+        return try {
+            when (val result = client.openWebApp(
+                chatId = chatId,
+                botUserId = botUserId,
+                url = url,
+                topicId = null,
+                replyTo = null,
+                parameters = webAppOpenParameters()
+            )) {
+                is TdlResult.Success -> Result.success(
+                    WebAppLaunch(
+                        id = result.result.launchId,
+                        url = result.result.url.url,
+                        requireSameOrigin = result.result.url.requireSameOrigin
+                    )
+                )
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun openMainWebApp(providerDialogId: String): Result<WebAppLaunch> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val chat = when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val botUserId = (chat.type as? ChatTypePrivate)?.userId
+                ?: return Result.failure(IllegalStateException("The chat is not a bot"))
+
+            val parameters = webAppOpenParameters()
+
+            // An empty URL asks TDLib for the bot's main mini app. When that
+            // is unavailable, the resolved main app URL can still be rendered.
+            when (val result = client.openWebApp(
+                chatId = chatId,
+                botUserId = botUserId,
+                url = "",
+                topicId = null,
+                replyTo = null,
+                parameters = parameters
+            )) {
+                is TdlResult.Success -> Result.success(
+                    WebAppLaunch(
+                        id = result.result.launchId,
+                        url = result.result.url.url,
+                        requireSameOrigin = result.result.url.requireSameOrigin
+                    )
+                )
+
+                is TdlResult.Failure -> when (val fallback = client.getMainWebApp(
+                    chatId = chatId,
+                    botUserId = botUserId,
+                    startParameter = "",
+                    parameters = parameters
+                )) {
+                    is TdlResult.Success -> Result.success(
+                        WebAppLaunch(
+                            id = 0,
+                            url = fallback.result.url.url,
+                            requireSameOrigin = fallback.result.url.requireSameOrigin
+                        )
+                    )
+
+                    is TdlResult.Failure -> Result.failure(Exception(result.message))
+                }
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun closeWebApp(launchId: Long) {
+        if (launchId <= 0) return
+        runCatching { client.closeWebApp(launchId) }
+    }
+
+    private fun webAppOpenParameters(): WebAppOpenParameters {
+        return WebAppOpenParameters(
+            theme = ThemeParameters(
+                backgroundColor = 0xFFFFFFFF.toInt(),
+                secondaryBackgroundColor = 0xFFF1F1F1.toInt(),
+                headerBackgroundColor = 0xFFFFFFFF.toInt(),
+                bottomBarBackgroundColor = 0xFFFFFFFF.toInt(),
+                sectionBackgroundColor = 0xFFFFFFFF.toInt(),
+                sectionSeparatorColor = 0xFFE3E3E3.toInt(),
+                textColor = 0xFF1A1A1A.toInt(),
+                accentTextColor = 0xFF2481CC.toInt(),
+                sectionHeaderTextColor = 0xFF2481CC.toInt(),
+                subtitleTextColor = 0xFF999999.toInt(),
+                destructiveTextColor = 0xFFD14E4E.toInt(),
+                hintColor = 0xFF999999.toInt(),
+                linkColor = 0xFF2481CC.toInt(),
+                buttonColor = 0xFF50A8EB.toInt(),
+                buttonTextColor = 0xFFFFFFFF.toInt()
+            ),
+            applicationName = "Scrollix",
+            mode = WebAppOpenModeFullSize()
+        )
+    }
+
     override suspend fun loadProfilePhotos(userId: Long): Result<List<MessageMedia>> {
         return try {
             val photos = when (val result = client.getUserProfilePhotos(
@@ -4992,6 +5469,70 @@ class TelegramSession(
                 caption = null,
                 showCaptionAboveMedia = false,
                 hasSpoiler = false
+            )
+        )
+    }
+
+    /**
+     * Sends a GIF that came from another provider. The bytes are stored as a
+     * local file, which TDLib uploads as an animation; a file that Telegram
+     * rejects as an animation still goes out as a document.
+     */
+    override suspend fun sendAnimationBytes(
+        providerDialogId: String,
+        bytes: ByteArray,
+        mimeType: String?,
+        width: Int,
+        height: Int,
+        durationSeconds: Int
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        if (bytes.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Animation is empty"))
+        }
+
+        val extension = when {
+            mimeType?.contains("gif", ignoreCase = true) == true -> "gif"
+            mimeType?.contains("webp", ignoreCase = true) == true -> "webp"
+            else -> "mp4"
+        }
+
+        val path = "animations/imported/${bytes.contentHashCode()}-${bytes.size}.$extension"
+        runCatching { storage.writeBytes(path, bytes) }
+            .getOrElse { return Result.failure(it) }
+
+        val absolutePath = storage.absolutePath(path)
+
+        val animation = sendContent(
+            chatId = chatId,
+            content = InputMessageAnimation(
+                animation = InputAnimation(
+                    animation = InputFileLocal(absolutePath),
+                    thumbnail = null,
+                    duration = durationSeconds,
+                    width = width.coerceAtLeast(1),
+                    height = height.coerceAtLeast(1),
+                    addedStickerFileIds = intArrayOf()
+                ),
+                caption = null,
+                showCaptionAboveMedia = false,
+                hasSpoiler = false
+            )
+        )
+
+        if (animation.isSuccess) return animation
+
+        return sendContent(
+            chatId = chatId,
+            content = InputMessageDocument(
+                document = InputDocument(
+                    document = InputFileLocal(absolutePath),
+                    thumbnail = null,
+                    disableContentTypeDetection = false
+                ),
+                caption = null
             )
         )
     }
@@ -5704,6 +6245,42 @@ class TelegramSession(
         }
     }
 
+    /**
+     * Verification is a property of the `supergroup` object, not of the chat
+     * entry, so a channel's mark has to be fetched once and cached.
+     */
+    private fun requestSupergroupVerification(supergroupId: Long) {
+        if (supergroupId in _verifiedSupergroups.value) return
+
+        var shouldLoad = false
+        _requestedVerifiedSupergroups.update { requested ->
+            if (supergroupId in requested) {
+                requested
+            } else {
+                shouldLoad = true
+                requested + supergroupId
+            }
+        }
+
+        if (!shouldLoad) return
+
+        scope.launch {
+            when (val result = client.getSupergroup(supergroupId)) {
+                is TdlResult.Success -> {
+                    if (result.result.verificationStatus?.isVerified == true) {
+                        _verifiedSupergroups.update { it + supergroupId }
+                        emitDialogs()
+                    }
+                }
+
+                // Not remembered as requested, so a later emit can retry.
+                is TdlResult.Failure -> _requestedVerifiedSupergroups.update {
+                    it - supergroupId
+                }
+            }
+        }
+    }
+
     private fun requestUser(userId: Long) {
         if (_users.value.containsKey(userId)) return
 
@@ -5738,7 +6315,12 @@ class TelegramSession(
 
         when (val type = chat.type) {
             is ChatTypePrivate -> requestUser(type.userId)
-            is ChatTypeSupergroup, is ChatTypeBasicGroup -> requestMemberCount(chat)
+            is ChatTypeSupergroup -> {
+                requestMemberCount(chat)
+                requestSupergroupVerification(type.supergroupId)
+            }
+
+            is ChatTypeBasicGroup -> requestMemberCount(chat)
             else -> Unit
         }
 
@@ -5878,12 +6460,33 @@ class TelegramSession(
     }
 
     private fun emitDialogs() {
-        val users = _users.value
-
         val dialogs = _chats.value.values.mapNotNull { entry ->
             val mainPosition = entry.positions.firstOrNull {
                 it.list is ChatListMain && it.order != 0L
             } ?: return@mapNotNull null
+
+            toDialog(entry, mainPosition)
+        }.sortedWith(dialogOrder)
+
+        // While the first sync is still running, keep the cached snapshot in
+        // front of whatever TDLib has delivered so far, otherwise the list
+        // visibly fills in chat by chat after every restart.
+        // Until the first full sync finishes, every partial emit is merged over
+        // the cached snapshot instead of replacing it, otherwise the list is
+        // wiped and then visibly fills in chat by chat.
+        _dialogs.value = if (!dialogsSynced && restoredDialogs.isNotEmpty()) {
+            mergeDialogs(restoredDialogs, dialogs)
+        } else {
+            dialogs
+        }
+    }
+
+    /**
+     * Builds the UI dialog for a chat. [mainPosition] is null for public chats
+     * which are not in the chat list yet; those keep neutral ordering fields.
+     */
+    private fun toDialog(entry: ChatEntry, mainPosition: ChatPosition?): Dialog {
+        val users = _users.value
 
             val privateUserId = (entry.type as? ChatTypePrivate)?.userId
             val isSavedMessages = privateUserId != null && privateUserId == currentUserId
@@ -5929,7 +6532,7 @@ class TelegramSession(
                 ?: user?.profilePhoto?.minithumbnail?.data
             val lastMessage = entry.lastMessage
 
-            Dialog(
+            return Dialog(
                 providerId = providerId,
                 accountId = accountId,
                 providerDialogId = entry.chatId.toString(),
@@ -5937,6 +6540,9 @@ class TelegramSession(
                 kind = kind,
                 title = if (isSavedMessages) "Saved Messages" else entry.title,
                 statusText = if (isSavedMessages) null else user?.let(::userStatusText),
+                // Only direct chats with a known phone number offer the call
+                // action; bots, groups and phone-less contacts hide it.
+                phoneNumber = user?.phoneNumber?.ifBlank { null },
                 typingText = if (isSavedMessages) null else entry.typingText,
                 emojiStatusId = if (isSavedMessages) {
                     null
@@ -5959,11 +6565,23 @@ class TelegramSession(
                 unreadCount = entry.unreadCount,
                 memberCount = _memberCounts.value[identity.remoteId]?.takeIf { it > 0 },
                 pinnedMessageId = _pinnedMessageIds.value[entry.chatId]?.takeIf { it > 0 },
-                canSendMessages = entry.permissions.canSendBasicMessages,
-                isPinned = mainPosition.isPinned,
+            canSendMessages = entry.permissions.canSendBasicMessages,
+            canPinMessages = entry.permissions.canPinMessages,
+            // Only moderators may delete someone else's message; every
+            // account may delete its own.
+            canDeleteMessages = entry.type !is ChatTypePrivate &&
+                entry.permissions.canChangeInfo,
+            isPinned = mainPosition?.isPinned == true,
                 isMarkedAsUnread = entry.isMarkedAsUnread,
+                isVerified = when (val type = entry.type) {
+                    is ChatTypePrivate -> user?.verificationStatus?.isVerified == true
+                    is ChatTypeSupergroup -> type.supergroupId in _verifiedSupergroups.value
+                    else -> false
+                },
+                hasMainWebApp = entry.type is ChatTypePrivate &&
+                    (user?.type as? UserTypeBot)?.hasMainWebApp == true,
                 isSavedMessages = isSavedMessages,
-                order = mainPosition.order,
+                order = mainPosition?.order ?: 0,
                 folderIds = entry.positions.mapNotNull { position ->
                     (position.list as? ChatListFolder)?.chatFolderId
                 }.toSet(),
@@ -5990,19 +6608,6 @@ class TelegramSession(
                     } ?: Avatar.fromName(entry.title)
                 }
             )
-        }.sortedWith(dialogOrder)
-
-        // While the first sync is still running, keep the cached snapshot in
-        // front of whatever TDLib has delivered so far, otherwise the list
-        // visibly fills in chat by chat after every restart.
-        // Until the first full sync finishes, every partial emit is merged over
-        // the cached snapshot instead of replacing it, otherwise the list is
-        // wiped and then visibly fills in chat by chat.
-        _dialogs.value = if (!dialogsSynced && restoredDialogs.isNotEmpty()) {
-            mergeDialogs(restoredDialogs, dialogs)
-        } else {
-            dialogs
-        }
     }
 
     private fun mergeDialogs(restored: List<Dialog>, loaded: List<Dialog>): List<Dialog> {
