@@ -15,13 +15,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -46,13 +50,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.mrboomdev.scrollix.data.AppMode
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.NotificationException
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.StickerPackKind
@@ -64,13 +74,17 @@ import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
 import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
+import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.EmojiCatalog
 import com.mrboomdev.scrollix.ui.components.EmojiPicker
 import com.mrboomdev.scrollix.ui.components.ReorderDialog
 import com.mrboomdev.scrollix.ui.components.ReorderItem
 import com.mrboomdev.scrollix.ui.components.orderedStickerPacks
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
+import com.mrboomdev.scrollix.getPlatform
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
+import com.mrboomdev.scrollix.ui.icons.link_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -286,6 +300,16 @@ private fun SettingsCategoryContent(
                     checked = settings.singleRowFilters,
                     onCheckedChange = { value ->
                         AppSettingsStore.update { it.copy(singleRowFilters = value) }
+                    }
+                )
+
+                SettingsSwitch(
+                    title = "Merge duplicate chats",
+                    description = "Show the same chat from several accounts as one " +
+                        "row with all account avatars and pick the account on tap.",
+                    checked = settings.mergeDuplicateDialogs,
+                    onCheckedChange = { value ->
+                        AppSettingsStore.update { it.copy(mergeDuplicateDialogs = value) }
                     }
                 )
 
@@ -561,19 +585,219 @@ private fun SettingsCategoryContent(
                 }
             }
 
-            SettingsCategory.About -> {
+            SettingsCategory.About -> SettingsAboutContent()
+        }
+    }
+}
+
+private const val ScrollixGitHubUrl = "https://github.com/MrBoomDeveloper/Scrollix"
+
+private val AboutStack = listOf(
+    "Kotlin Multiplatform",
+    "Compose Multiplatform",
+    "TDLib",
+    "Material 3"
+)
+
+/**
+ * The About page: a branded hero card, a link to the source repository and a
+ * few facts about this install. It is laid out with Material 3 cards, tonal
+ * surfaces and pill-shaped labels so it feels at home in the rest of Settings.
+ */
+@Composable
+private fun SettingsAboutContent() {
+    val uriHandler = LocalUriHandler.current
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.tertiary
+                        )
+                    )
+                )
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        modifier = Modifier.size(30.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        imageVector = chat_bubble_icon,
+                        contentDescription = null
+                    )
+                }
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Scrollix",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+
+                    Text(
+                        text = "A multi-provider messenger",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                    )
+                }
+            }
+
+            Text(
+                text = "Scrollix brings Telegram, MAX and VK into one native-feeling app " +
+                    "for Android and desktop. One Compose Multiplatform UI, a shared " +
+                    "multi-account chat list, server-side folders, topics, media " +
+                    "galleries, and settings that stay in sync with your accounts.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.92f)
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                for (label in AboutStack) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f)
+                    ) {
+                        Text(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            text = label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .clickable { uriHandler.openUri(ScrollixGitHubUrl) },
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                    imageVector = link_icon,
+                    contentDescription = null
+                )
+            }
+
+            Column(Modifier.weight(1f)) {
                 Text(
-                    text = "Scrollix",
-                    style = MaterialTheme.typography.titleMedium
+                    text = "Source code on GitHub",
+                    style = MaterialTheme.typography.titleSmall
                 )
 
                 Text(
-                    text = "Telegram client built with Compose Multiplatform.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary
+                    text = "github.com/MrBoomDeveloper/Scrollix",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+
+            OutlinedButton(onClick = { uriHandler.openUri(ScrollixGitHubUrl) }) {
+                Text("Open")
+            }
         }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            AboutFact(label = "Platform", value = getPlatform().name)
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+
+            AboutFact(
+                label = "Edition",
+                value = if (AppMode.isTestServerMode) "Test server" else "Production"
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+
+            AboutFact(label = "Storage profile", value = AppMode.storageProfileName)
+        }
+    }
+
+    Text(
+        modifier = Modifier.padding(horizontal = 4.dp),
+        text = "Contributions, bug reports and feature requests are welcome on GitHub. " +
+            "Scrollix is an independent client and is not affiliated with Telegram, " +
+            "MAX or VK.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary
+    )
+}
+
+@Composable
+private fun AboutFact(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            modifier = Modifier.weight(1f),
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.secondary
+        )
+
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1169,9 +1393,85 @@ private fun AccountNotificationSettings(accountId: String, displayName: String) 
     var settings by remember(accountId) { mutableStateOf<NotificationSettings?>(null) }
     var busy by remember(accountId) { mutableStateOf(false) }
     var refreshKey by remember(accountId) { mutableStateOf(0) }
+    var exceptions by remember(accountId) {
+        mutableStateOf<Map<NotificationScope, List<NotificationException>>>(emptyMap())
+    }
+    var loadingExceptions by remember(accountId) {
+        mutableStateOf<Set<NotificationScope>>(emptySet())
+    }
+    var busyExceptionId by remember(accountId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(accountId, refreshKey) {
         settings = session?.loadNotificationSettings()?.getOrNull()
+    }
+
+    // Per-chat overrides are listed under the category they belong to, so the
+    // settings screen shows exactly which chats are excluded from the scope.
+    LaunchedEffect(accountId, settings) {
+        val currentSession = session ?: return@LaunchedEffect
+
+        NotificationScope.entries.forEach { scopeValue ->
+            if (scopeValue in exceptions) return@forEach
+
+            loadingExceptions = loadingExceptions + scopeValue
+
+            currentSession.loadNotificationExceptions(scopeValue).onSuccess { loaded ->
+                exceptions = exceptions + (scopeValue to loaded)
+            }
+
+            loadingExceptions = loadingExceptions - scopeValue
+        }
+    }
+
+    fun updateException(
+        providerDialogId: String,
+        transform: (NotificationException) -> NotificationException?
+    ) {
+        exceptions = exceptions.mapValues { (_, list) ->
+            list.mapNotNull { exception ->
+                if (exception.providerDialogId == providerDialogId) {
+                    transform(exception)
+                } else {
+                    exception
+                }
+            }
+        }
+    }
+
+    fun toggleException(exception: NotificationException, muted: Boolean) {
+        val currentSession = session ?: return
+        if (busyExceptionId != null) return
+
+        busyExceptionId = exception.providerDialogId
+
+        scope.launch {
+            currentSession.setDialogMuted(exception.providerDialogId, muted)
+                .onSuccess {
+                    updateException(exception.providerDialogId) { current ->
+                        current.copy(isMuted = muted)
+                    }
+                }
+
+            busyExceptionId = null
+        }
+    }
+
+    fun resetException(exception: NotificationException) {
+        val currentSession = session ?: return
+        if (busyExceptionId != null) return
+
+        busyExceptionId = exception.providerDialogId
+
+        scope.launch {
+            currentSession.resetDialogNotificationSettings(exception.providerDialogId)
+                .onSuccess {
+                    // Following the scope defaults again removes the chat from
+                    // the exceptions list instead of leaving a muted row.
+                    updateException(exception.providerDialogId) { null }
+                }
+
+            busyExceptionId = null
+        }
     }
 
     fun setScope(scopeValue: NotificationScope, muted: Boolean) {
@@ -1238,6 +1538,15 @@ private fun AccountNotificationSettings(accountId: String, displayName: String) 
             checked = loaded?.isMuted(notificationScope) != true,
             onCheckedChange = { enabled -> setScope(notificationScope, !enabled) }
         )
+
+        NotificationExceptionsList(
+            scope = notificationScope,
+            exceptions = exceptions[notificationScope].orEmpty(),
+            isLoading = notificationScope in loadingExceptions,
+            busyId = busyExceptionId,
+            onToggleMute = ::toggleException,
+            onReset = ::resetException
+        )
     }
 
     if (busy) {
@@ -1245,6 +1554,87 @@ private fun AccountNotificationSettings(accountId: String, displayName: String) 
     }
 
     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+}
+
+@Composable
+private fun NotificationExceptionsList(
+    scope: NotificationScope,
+    exceptions: List<NotificationException>,
+    isLoading: Boolean,
+    busyId: String?,
+    onToggleMute: (NotificationException, Boolean) -> Unit,
+    onReset: (NotificationException) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            modifier = Modifier.padding(top = 4.dp),
+            text = "${scope.title} exceptions",
+            style = MaterialTheme.typography.titleSmall
+        )
+
+        when {
+            isLoading && exceptions.isEmpty() -> Text(
+                text = "Loading exceptions...",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+
+            exceptions.isEmpty() -> Text(
+                text = "Every chat follows these settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+
+            else -> exceptions.forEach { exception ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AvatarImage(
+                        avatar = exception.avatar
+                            ?: Avatar.fromName(exception.title),
+                        size = 32.dp
+                    )
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = exception.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Text(
+                            text = if (exception.isMuted) {
+                                "Muted for this chat."
+                            } else {
+                                "Has its own alert settings."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    TextButton(
+                        enabled = busyId == null,
+                        onClick = { onReset(exception) }
+                    ) {
+                        Text("Reset")
+                    }
+
+                    Switch(
+                        checked = exception.isMuted,
+                        enabled = busyId == null,
+                        onCheckedChange = { muted -> onToggleMute(exception, muted) }
+                    )
+                }
+            }
+        }
+    }
 }
 
 private val HomeTabOptions = listOf(

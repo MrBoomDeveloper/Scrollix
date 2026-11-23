@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -80,6 +81,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SmallFloatingActionButton
@@ -88,7 +90,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -96,6 +100,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -140,6 +145,7 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
@@ -159,6 +165,7 @@ import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+import com.mrboomdev.scrollix.data.model.UndiscoveredMessagesMessageId
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.model.groupMessageAlbums
 import com.mrboomdev.scrollix.data.provider.AccountSession
@@ -184,12 +191,15 @@ import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MessageGallery
 import com.mrboomdev.scrollix.ui.components.MessageDatePill
+import com.mrboomdev.scrollix.ui.components.ForumTopicsDialog
 import com.mrboomdev.scrollix.ui.components.MessageThreadDialog
+import com.mrboomdev.scrollix.ui.components.VideoNotePreview
 import com.mrboomdev.scrollix.ui.components.MessageThreadRail
 import com.mrboomdev.scrollix.ui.components.SpoilerOverlay
 import com.mrboomdev.scrollix.ui.components.mediaSpoilerBlur
 import com.mrboomdev.scrollix.ui.components.MessageBubble
 import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
+import com.mrboomdev.scrollix.ui.components.PlatformBackHandler
 import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import com.mrboomdev.scrollix.ui.components.PickedFile
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
@@ -202,7 +212,9 @@ import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.openDialer
 import com.mrboomdev.scrollix.ui.icons.call_icon
 import com.mrboomdev.scrollix.ui.icons.mood_icon
+import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.verified_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
 import com.mrboomdev.scrollix.isTwoPaneLayout
@@ -212,6 +224,7 @@ import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -344,6 +357,11 @@ fun DialogScreen(
     }
 
     val dialogs by (session?.dialogs ?: fallbackDialogs).collectAsState()
+    val folders by ApiManager.folders.collectAsState()
+    val connectionFlow = remember(session) {
+        session?.isConnected ?: MutableStateFlow(true)
+    }
+    val isConnected by connectionFlow.collectAsState()
     val allSessions by ApiManager.sessions.collectAsState()
     val historyFlow = remember(session, providerDialogId) {
         session?.messageHistory(providerDialogId) ?: fallbackHistory
@@ -358,15 +376,65 @@ fun DialogScreen(
     }
     val pendingJobs = remember(providerDialogId) { mutableMapOf<Long, Job>() }
     var nextPendingMessageId by remember(providerDialogId) { mutableStateOf(-1L) }
-    val displayMessages = remember(messages, pendingMessages) {
-        (messages + pendingMessages).groupMessageAlbums()
+    // After a jump to the first message the window is split: the beginning is
+    // loaded, the previous window is retained as the far end, and one explicit
+    // undiscovered row marks the range that is still missing. Grouping each
+    // block separately keeps the placeholder exactly between them.
+    val gapMessage = remember(
+        messages,
+        history.newerMessages,
+        history.hasUnloadedGap
+    ) {
+        if (!history.hasUnloadedGap || history.newerMessages.isEmpty()) {
+            null
+        } else {
+            val headNewest = messages.lastOrNull()
+            val tailOldest = history.newerMessages.firstOrNull()
+
+            ChatMessage(
+                providerId = messages.firstOrNull()?.providerId ?: "",
+                accountId = accountId,
+                providerDialogId = providerDialogId,
+                messageId = UndiscoveredMessagesMessageId,
+                senderId = 0,
+                text = "",
+                timestamp = if (headNewest != null && tailOldest != null) {
+                    (headNewest.timestamp + tailOldest.timestamp) / 2
+                } else 0L,
+                isOutgoing = false,
+                isService = true
+            )
+        }
+    }
+    val displayMessages = remember(
+        messages,
+        pendingMessages,
+        history.newerMessages,
+        gapMessage
+    ) {
+        val head = messages.groupMessageAlbums()
+
+        // While the middle is undiscovered the far end is not rendered at
+        // all: the list ends at the placeholder, so a scroll can never jump
+        // over the unloaded range into messages that happen to be loaded.
+        // Filling the gap lazily merges the tail back in order.
+        if (gapMessage != null) {
+            head + gapMessage
+        } else {
+            head + (history.newerMessages + pendingMessages).groupMessageAlbums()
+        }
     }
     // Thread roots of the loaded window, shown on the rail at the right edge.
-    val threadRailItems = remember(messages) {
-        messages.filter { message -> message.replyCount > 0 }
+    val threadRailItems = remember(messages, history.newerMessages) {
+        (messages + history.newerMessages).filter { message -> message.replyCount > 0 }
     }
     // Reply lookups used to scan the whole window for every visible row.
-    val messagesById = remember(messages) { messages.associateBy { it.messageId } }
+    val messagesById = remember(messages, history.newerMessages) {
+        (messages + history.newerMessages).associateBy { it.messageId }
+    }
+    val gapRowId = gapMessage?.rowId
+    var isLoadingGap by remember(providerDialogId) { mutableStateOf(false) }
+    var showTopics by remember(providerDialogId) { mutableStateOf(false) }
     val dialog = dialogs.firstOrNull { it.providerDialogId == providerDialogId }
     val settings by AppSettingsStore.state.collectAsState()
     var appWallpaper by remember(settings.wallpaperUpdatedAt) {
@@ -478,6 +546,7 @@ fun DialogScreen(
     val mediaRecorder = rememberMediaRecorder()
     var videoMessageMode by remember(providerDialogId) { mutableStateOf(false) }
     var isRecording by remember(providerDialogId) { mutableStateOf(false) }
+    var recordingActive by remember(providerDialogId) { mutableStateOf(false) }
     var recordingKind by remember(providerDialogId) {
         mutableStateOf(MediaRecordingKind.Voice)
     }
@@ -488,12 +557,74 @@ fun DialogScreen(
     var isSendingRecording by remember(providerDialogId) { mutableStateOf(false) }
     var recordingError by remember(providerDialogId) { mutableStateOf<String?>(null) }
 
+    // Navigation is frozen for the whole recording: leaving the chat would
+    // release the recorder and silently drop the note being held.
+    LaunchedEffect(isRecording) {
+        DialogRecordingState.setRecording(isRecording)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { DialogRecordingState.setRecording(false) }
+    }
+
+    PlatformBackHandler(enabled = isRecording) {
+        // Consume back while a note is being recorded.
+    }
+
     fun stopRecording() {
         if (!isRecording) return
 
         isRecording = false
-        recordedMedia = mediaRecorder.stop()
+        recordedMedia = if (recordingActive) mediaRecorder.stop() else null
+        recordingActive = false
         recordingElapsedMs = 0L
+    }
+
+    fun cancelRecording() {
+        if (!isRecording) return
+
+        isRecording = false
+        recordingActive = false
+        mediaRecorder.cancel()
+        recordedMedia = null
+        recordingElapsedMs = 0L
+    }
+
+    fun beginRecording(kind: MediaRecordingKind) {
+        if (isRecording) return
+
+        recordingError = null
+        recordedMedia = null
+        recordingKind = kind
+        recordingStartedAt = System.currentTimeMillis()
+        recordingElapsedMs = 0L
+        isRecording = true
+    }
+
+    // Starting is deferred by a frame (and a short pause for video) so the
+    // circular preview has attached its surface before MediaRecorder prepares
+    // the camera. Without it the preview would stay black.
+    LaunchedEffect(isRecording, recordingKind) {
+        if (!isRecording || recordingActive) return@LaunchedEffect
+
+        if (recordingKind == MediaRecordingKind.VideoNote) {
+            withFrameNanos { }
+            delay(150L)
+            if (!isRecording) return@LaunchedEffect
+        }
+
+        recordingStartedAt = System.currentTimeMillis()
+        recordingElapsedMs = 0L
+        recordingActive = mediaRecorder.start(recordingKind)
+
+        if (!recordingActive) {
+            isRecording = false
+            recordingError = if (recordingKind == MediaRecordingKind.VideoNote) {
+                "Microphone or camera permission is required"
+            } else {
+                "Microphone permission is required"
+            }
+        }
     }
 
     LaunchedEffect(isRecording, recordingKind, recordingStartedAt) {
@@ -710,6 +841,10 @@ fun DialogScreen(
         trackPosition = searchQuery.text.isBlank(),
         loadOlder = {
             session?.loadOlderMessages(providerDialogId)
+                ?: Result.failure(IllegalStateException("Account session not found"))
+        },
+        loadBeginning = {
+            session?.jumpToBeginning(providerDialogId)
                 ?: Result.failure(IllegalStateException("Account session not found"))
         },
         loadUntilLoaded = { messageId ->
@@ -1171,21 +1306,91 @@ fun DialogScreen(
             target.canSendMessages && target.providerDialogId != providerDialogId
         }
 
-        Dialog(onDismissRequest = { forwardingMessageIds = null }) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 560.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Forward to",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+        // The picker mirrors the home tabs: native server folders when that
+        // setting is on, otherwise the built-in Direct/Groups/Channels/Bots
+        // tabs. Without them a long chat list hides most destinations.
+        val useNativeFolders = settings.useNativeFolders
+        val forwardFolderOptions = remember(
+            folders,
+            accountId,
+            useNativeFolders,
+            forwardTargets
+        ) {
+            if (useNativeFolders) {
+                buildList {
+                    add("all" to "All")
+                    folders
+                        .filter { folder ->
+                            folder.account.id == accountId &&
+                                forwardTargets.any { target ->
+                                    target.accountId == accountId &&
+                                        folder.folder.id in target.folderIds
+                                }
+                        }
+                        .forEach { folder ->
+                            add(folder.key to folder.folder.name)
+                        }
+                }
+            } else {
+                listOf(
+                    "all" to "All",
+                    "direct" to "DM",
+                    "groups" to "Groups",
+                    "channels" to "Channels",
+                    "bots" to "Bots"
+                )
+            }
+        }
+        var forwardFolderKey by remember(messageIds) { mutableStateOf("all") }
+        val filteredTargets = forwardTargets.filter { target ->
+            when {
+                forwardFolderKey == "all" -> true
+                useNativeFolders -> {
+                    val folder = folders.firstOrNull { it.key == forwardFolderKey }
+                        ?: return@filter true
+                    target.accountId == folder.account.id &&
+                        folder.folder.id in target.folderIds
+                }
+                forwardFolderKey == "direct" ->
+                    target.kind == DialogKind.Direct || target.kind == DialogKind.Secret
+                forwardFolderKey == "groups" -> target.kind == DialogKind.Group
+                forwardFolderKey == "channels" -> target.kind == DialogKind.Channel
+                forwardFolderKey == "bots" -> target.kind == DialogKind.Bot
+                else -> true
+            }
+        }
 
-                    if (forwardTargets.isEmpty()) {
+        AlertDialog(
+            onDismissRequest = { forwardingMessageIds = null },
+            containerColor = MaterialTheme.colorScheme.background,
+            title = { Text("Forward to") },
+            
+            confirmButton = {
+                TextButton(onClick = { forwardingMessageIds = null }) {
+                    Text("Cancel")
+                }
+            },
+
+            text = {
+                Column {
+                    if (forwardFolderOptions.size > 1) {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(count = forwardFolderOptions.size) { index ->
+                                val (key, label) = forwardFolderOptions[index]
+
+                                FilterChip(
+                                    selected = forwardFolderKey == key,
+                                    onClick = { forwardFolderKey = key },
+                                    label = { Text(label, maxLines = 1) }
+                                )
+                            }
+                        }
+                    }
+
+                    if(filteredTargets.isEmpty()) {
                         Text(
                             modifier = Modifier.padding(vertical = 24.dp),
                             text = "No chats to forward to",
@@ -1194,16 +1399,11 @@ fun DialogScreen(
                         )
                     } else {
                         LazyVerticalGrid(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 420.dp)
-                                .padding(top = 12.dp),
-                            columns = GridCells.Adaptive(minSize = 92.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            columns = GridCells.Adaptive(minSize = 92.dp)
                         ) {
-                            items(count = forwardTargets.size) { index ->
-                                val target = forwardTargets[index]
+                            items(count = filteredTargets.size) { index ->
+                                val target = filteredTargets[index]
 
                                 Column(
                                     modifier = Modifier
@@ -1216,7 +1416,7 @@ fun DialogScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    if (target.isSavedMessages) {
+                                    if(target.isSavedMessages) {
                                         SavedMessagesAvatar(size = 56.dp)
                                     } else {
                                         AvatarImage(
@@ -1236,23 +1436,15 @@ fun DialogScreen(
                             }
                         }
                     }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = { forwardingMessageIds = null }) {
-                            Text("Cancel")
-                        }
-                    }
                 }
             }
-        }
+        )
     }
 
     deleteConfirmationIds?.let { messageIds ->
         AlertDialog(
             onDismissRequest = { deleteConfirmationIds = null },
+            containerColor = MaterialTheme.colorScheme.background,
             title = {
                 Text(
                     if (messageIds.size == 1) {
@@ -1289,6 +1481,7 @@ fun DialogScreen(
     if (showUnpinConfirmation) {
         AlertDialog(
             onDismissRequest = { showUnpinConfirmation = false },
+            containerColor = MaterialTheme.colorScheme.background,
             text = { Text("Unpin this message?") },
             confirmButton = {
                 TextButton(
@@ -1412,6 +1605,46 @@ fun DialogScreen(
         )
     }
 
+    fun sendRecording(recording: RecordedMedia) {
+        val currentSession = session ?: return
+        if (isSendingRecording) return
+
+        isSendingRecording = true
+        recordingError = null
+
+        scope.launch {
+            val durationSeconds = (recording.durationMs / 1000L)
+                .toInt()
+                .coerceAtLeast(1)
+
+            val result = when (recording.kind) {
+                MediaRecordingKind.Voice -> currentSession.sendVoiceNote(
+                    providerDialogId = providerDialogId,
+                    path = recording.path,
+                    durationSeconds = durationSeconds
+                )
+
+                MediaRecordingKind.VideoNote -> currentSession.sendVideoNote(
+                    providerDialogId = providerDialogId,
+                    path = recording.path,
+                    durationSeconds = durationSeconds
+                )
+            }
+
+            isSendingRecording = false
+
+            result.onSuccess {
+                mediaRecorder.release(recording)
+                recordedMedia = null
+                scrollRequest = ScrollRequest.Latest
+            }.onFailure { failure ->
+                // Keep the review dialog open so the note can be retried.
+                recordingError = failure.message ?: "Failed to send the recording"
+                recordedMedia = recording
+            }
+        }
+    }
+
     recordedMedia?.let { recording ->
         RecordedMediaDialog(
             recording = recording,
@@ -1422,41 +1655,7 @@ fun DialogScreen(
                 recordedMedia = null
                 recordingError = null
             },
-            onSend = {
-                val currentSession = session ?: return@RecordedMediaDialog
-                isSendingRecording = true
-                recordingError = null
-
-                scope.launch {
-                    val durationSeconds = (recording.durationMs / 1000L)
-                        .toInt()
-                        .coerceAtLeast(1)
-
-                    val result = when (recording.kind) {
-                        MediaRecordingKind.Voice -> currentSession.sendVoiceNote(
-                            providerDialogId = providerDialogId,
-                            path = recording.path,
-                            durationSeconds = durationSeconds
-                        )
-
-                        MediaRecordingKind.VideoNote -> currentSession.sendVideoNote(
-                            providerDialogId = providerDialogId,
-                            path = recording.path,
-                            durationSeconds = durationSeconds
-                        )
-                    }
-
-                    isSendingRecording = false
-
-                    result.onSuccess {
-                        mediaRecorder.release(recording)
-                        recordedMedia = null
-                        scrollRequest = ScrollRequest.Latest
-                    }.onFailure { failure ->
-                        recordingError = failure.message ?: "Failed to send the recording"
-                    }
-                }
-            }
+            onSend = { sendRecording(recording) }
         )
     }
 
@@ -1468,6 +1667,20 @@ fun DialogScreen(
                 rootMessage = root,
                 session = currentSession,
                 onDismiss = { threadRoot = null }
+            )
+        }
+    }
+
+    if (showTopics) {
+        val currentSession = session
+        val currentDialog = dialog
+
+        if (currentSession != null && currentDialog != null) {
+            ForumTopicsDialog(
+                session = currentSession,
+                providerDialogId = providerDialogId,
+                title = currentDialog.title,
+                onDismiss = { showTopics = false }
             )
         }
     }
@@ -1540,7 +1753,7 @@ fun DialogScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if(!isTwoPaneWindow) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = { if (!isRecording) onBack() }) {
                     Icon(
                         tint = MaterialTheme.colorScheme.secondary,
                         imageVector = arrow_back_icon,
@@ -1581,6 +1794,17 @@ fun DialogScreen(
                         )
                     }
 
+                    if (dialog?.isVerified == true) {
+                        Icon(
+                            modifier = Modifier
+                                .padding(start = 4.dp)
+                                .size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                            imageVector = verified_icon,
+                            contentDescription = "Verified"
+                        )
+                    }
+
                     dialog?.emojiStatusId?.let { emojiId ->
                         EmojiStatusIcon(
                             modifier = Modifier.padding(start = 4.dp),
@@ -1596,7 +1820,13 @@ fun DialogScreen(
                     }
                     
                     val typingText = it.typingText
-                    var statusText = typingText ?: it.statusText
+                    // A stale "online" is misleading while the transport is
+                    // reconnecting, so the connection state wins over it.
+                    var statusText = if (!isConnected) {
+                        "Connecting..."
+                    } else {
+                        typingText ?: it.statusText
+                    }
                     val memberCount = it.memberCount
                     
                     if(it.kind == DialogKind.Bot && typingText == null) {
@@ -1623,7 +1853,7 @@ fun DialogScreen(
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         lineHeight = MaterialTheme.typography.bodyMedium.fontSize,
-                        color = if (typingText != null || statusText == "online") {
+                        color = if (!isConnected || typingText != null || statusText == "online") {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.secondary
@@ -1646,6 +1876,18 @@ fun DialogScreen(
                     imageVector = search_icon,
                     contentDescription = "Search in chat"
                 )
+            }
+
+            // Forums keep every conversation in a topic of its own, so the
+            // chat header opens the topic list instead of mixing them.
+            if (dialog?.isForum == true) {
+                IconButton(onClick = { showTopics = true }) {
+                    Icon(
+                        tint = MaterialTheme.colorScheme.secondary,
+                        imageVector = chat_bubble_icon,
+                        contentDescription = "Topics"
+                    )
+                }
             }
 
             val callNumber = dialog?.phoneNumber
@@ -1948,6 +2190,41 @@ fun DialogScreen(
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
+                    // The undiscovered row loads the next page of the gap as
+                    // soon as it becomes visible, so scrolling into it pages
+                    // the middle lazily instead of fetching the whole chat.
+                    LaunchedEffect(
+                        providerDialogId,
+                        history.hasUnloadedGap,
+                        history.messages.size,
+                        history.newerMessages.size,
+                        messageListState.isReady,
+                        gapRowId
+                    ) {
+                        val gapId = gapRowId ?: return@LaunchedEffect
+                        if (!history.hasUnloadedGap || !messageListState.isReady) {
+                            return@LaunchedEffect
+                        }
+
+                        snapshotFlow {
+                            messageListState.listState.layoutInfo.visibleItemsInfo.any { info ->
+                                info.key == gapId
+                            }
+                        }
+                            .distinctUntilChanged()
+                            .collect { visible ->
+                                if (!visible || isLoadingGap) return@collect
+
+                                isLoadingGap = true
+
+                                try {
+                                    session?.loadNewerMessages(providerDialogId)
+                                } finally {
+                                    isLoadingGap = false
+                                }
+                            }
+                    }
+
                     Box(modifier = Modifier.fillMaxSize()) {
                     when {
                         history.isLoadingInitial -> {
@@ -1991,6 +2268,28 @@ fun DialogScreen(
                                     items = visibleMessages,
                                     key = { _, it -> it.rowId }
                                 ) { index, message ->
+                                    if (message.messageId == UndiscoveredMessagesMessageId) {
+                                        UndiscoveredMessagesRow(
+                                            isLoading = isLoadingGap,
+                                            onClick = {
+                                                if (!isLoadingGap) {
+                                                    scope.launch {
+                                                        isLoadingGap = true
+
+                                                        try {
+                                                            session?.loadNewerMessages(
+                                                                providerDialogId
+                                                            )
+                                                        } finally {
+                                                            isLoadingGap = false
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        return@itemsIndexed
+                                    }
+
                                     if (unreadAnchorMessageId?.let { it in message.allMessageIds } == true) {
                                         UnreadMessagesHeader()
                                     }
@@ -2659,43 +2958,6 @@ fun DialogScreen(
                     }
                 }
 
-                // On large screens the picker floats above the composer and is
-                // driven by the pointer hovering the emoji button.
-                if (isTwoPaneWindow && session != null) {
-                    val pickerTransition = remember { MutableTransitionState(false) }
-                    pickerTransition.targetState = showEmojiPicker || showHoverPicker
-
-                    // Keep the popup mounted until the exit animation finishes.
-                    if (pickerTransition.currentState || !pickerTransition.isIdle) {
-                        val density = LocalDensity.current
-                        val pickerWidth = 340.dp
-                        val pickerWidthPx = with(density) { pickerWidth.roundToPx() }
-                        val pickerHeightPx = with(density) { 750.dp.roundToPx() }
-                        val gapPx = with(density) { 8.dp.roundToPx() }
-                        val anchor = emojiPickerAnchor
-
-                        if (anchor != null) {
-                            Popup(
-                                alignment = Alignment.TopStart,
-                                offset = IntOffset(
-                                    x = (anchor.left + anchor.width - pickerWidthPx).roundToInt(),
-                                    y = (anchor.top - pickerHeightPx - gapPx)
-                                        .coerceAtLeast(0f)
-                                        .roundToInt()
-                                ),
-                                properties = PopupProperties(focusable = false),
-                                onDismissRequest = { showHoverPicker = false }
-                            ) {
-                                Box(modifier = Modifier.hoverable(emojiPickerInteraction)) {
-                                    PickerPopupAnimation(pickerTransition) {
-                                        emojiPickerContent(Modifier.width(pickerWidth).height(700.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 if (dialog?.hasMainWebApp == true) {
                     Row(
                         modifier = Modifier
@@ -2919,79 +3181,53 @@ fun DialogScreen(
                                         awaitEachGesture {
                                             awaitFirstDown(requireUnconsumed = false)
 
+                                            // A tap switches the button between
+                                            // voice notes and circle video notes;
+                                            // holding it starts a recording in the
+                                            // selected mode that keeps running
+                                            // after the finger is lifted.
                                             val releasedEarly = withTimeoutOrNull(350L) {
                                                 waitForUpOrCancellation()
                                             }
 
                                             if (releasedEarly != null) {
-                                                // A tap starts a voice recording and
-                                                // turns the microphone into the pause
-                                                // control; releasing no longer stops it.
-                                                val kind = MediaRecordingKind.Voice
-                                                recordingError = null
-                                                recordingKind = kind
-
-                                                if (!mediaRecorder.start(kind)) {
-                                                    recordingError =
-                                                        "Microphone permission is required"
-                                                    return@awaitEachGesture
+                                                if (!isRecording) {
+                                                    videoMessageMode = !videoMessageMode
                                                 }
 
-                                                recordingStartedAt = System.currentTimeMillis()
-                                                recordingElapsedMs = 0L
-                                                isRecording = true
                                                 return@awaitEachGesture
                                             }
 
-                                            val kind = if (videoMessageMode) {
-                                                MediaRecordingKind.VideoNote
-                                            } else {
-                                                MediaRecordingKind.Voice
-                                            }
-
-                                            recordingError = null
-                                            recordingKind = kind
-
-                                            if (!mediaRecorder.start(kind)) {
-                                                recordingError =
-                                                    "Microphone or camera permission is required"
-                                                return@awaitEachGesture
-                                            }
-
-                                            recordingStartedAt = System.currentTimeMillis()
-                                            recordingElapsedMs = 0L
-                                            isRecording = true
+                                            beginRecording(
+                                                if (videoMessageMode) {
+                                                    MediaRecordingKind.VideoNote
+                                                } else {
+                                                    MediaRecordingKind.Voice
+                                                }
+                                            )
 
                                             waitForUpOrCancellation()
-
-                                            if (isRecording) {
-                                                stopRecording()
-                                            }
                                         }
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (isRecording) {
-                                    Text(
-                                        text = "${recordingElapsedMs / 1000}s",
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                } else {
-                                    Icon(
-                                        tint = MaterialTheme.colorScheme.secondary,
-                                        imageVector = if (videoMessageMode) {
-                                            videocam_icon
-                                        } else {
-                                            microphone_icon
-                                        },
-                                        contentDescription = if (videoMessageMode) {
-                                            "Hold to record a video message"
-                                        } else {
-                                            "Hold to record a voice message"
-                                        }
-                                    )
-                                }
+                                Icon(
+                                    tint = if (videoMessageMode) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.secondary
+                                    },
+                                    imageVector = if (videoMessageMode) {
+                                        videocam_icon
+                                    } else {
+                                        microphone_icon
+                                    },
+                                    contentDescription = if (videoMessageMode) {
+                                        "Tap to switch to voice messages, hold to record a video message"
+                                    } else {
+                                        "Tap to switch to video messages, hold to record a voice message"
+                                    }
+                                )
                             }
                         }
                     }
@@ -3033,6 +3269,17 @@ fun DialogScreen(
                         ) {
                             val seconds = recordingElapsedMs / 1000L
 
+                            if (recordingKind == MediaRecordingKind.VideoNote) {
+                                // Live circle preview of what the note captures.
+                                VideoNotePreview(
+                                    controller = mediaRecorder,
+                                    modifier = Modifier
+                                        .size(96.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black)
+                                )
+                            }
+
                             Text(
                                 text = "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}",
                                 color = MaterialTheme.colorScheme.error,
@@ -3041,15 +3288,40 @@ fun DialogScreen(
 
                             Spacer(Modifier.weight(1f))
 
-                            FilledIconButton(onClick = { stopRecording() }) {
-                                Text("⏸", style = MaterialTheme.typography.titleMedium)
+                            TextButton(onClick = { cancelRecording() }) {
+                                Text("Cancel")
+                            }
+
+                            FilledIconButton(
+                                enabled = recordingActive && !isSendingRecording,
+                                onClick = {
+                                    // Send straight from the recording bar; the
+                                    // review dialog only appears when sending
+                                    // fails and the note has to be retried.
+                                    stopRecording()
+                                    recordedMedia?.let { recorded ->
+                                        sendRecording(recorded)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = send_icon,
+                                    contentDescription = "Send"
+                                )
                             }
                         }
                     }
                 }
 
-                if (!isTwoPaneWindow && showEmojiPicker && session != null) {
-                    emojiPickerContent(Modifier)
+                // The emoji, sticker and GIF picker is part of the composer
+                // layout on every screen size: it grows the composer instead
+                // of floating over the chat and covering it.
+                if (showEmojiPicker && session != null) {
+                    emojiPickerContent(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                    )
                 }
                     }
             }
@@ -3428,6 +3700,43 @@ private data class PendingAttachment(
     val file: PickedFile,
     val asPhoto: Boolean
 )
+
+@Composable
+private fun UndiscoveredMessagesRow(
+    isLoading: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(enabled = !isLoading, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp
+            )
+
+            Spacer(Modifier.size(8.dp))
+        }
+
+        Text(
+            text = if (isLoading) {
+                "Loading messages..."
+            } else {
+                "Undiscovered messages — tap or scroll to load"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+    }
+}
 
 @Composable
 private fun UnreadMessagesHeader() {

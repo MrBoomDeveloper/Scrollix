@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -162,6 +163,7 @@ fun HomeScreen(
     val isAllShown = settings.showAllChatsTab
     val isSingleRowFilters = settings.singleRowFilters
     val isUsingNativeFolders = settings.useNativeFolders
+    val isMergeDuplicateDialogs = settings.mergeDuplicateDialogs
     val scope = rememberCoroutineScope()
 
     // Chip geometry backs both the "scroll the selected folder into view"
@@ -172,8 +174,17 @@ fun HomeScreen(
     val chipBounds = remember { mutableStateMapOf<String, Rect>() }
     var draggedChipKey by remember { mutableStateOf<String?>(null) }
     var draggedChipShift by remember { mutableStateOf(Offset.Zero) }
+    // Geometry captured when the drag starts. The preview insertion index is
+    // computed against this snapshot, so the chips that reflow to make room
+    // cannot move the drop target under the finger.
+    var dragStartKeys by remember { mutableStateOf<List<String>>(emptyList()) }
+    var dragStartBounds by remember { mutableStateOf<Map<String, Rect>>(emptyMap()) }
+    var dragInsertionIndex by remember { mutableStateOf<Int?>(null) }
+    var draggedChipWidth by remember { mutableStateOf(0.dp) }
+    var draggedChipHeight by remember { mutableStateOf(0.dp) }
     val dragEdge = with(LocalDensity.current) { 32.dp.toPx() }
     val dragScrollStep = with(LocalDensity.current) { 12.dp.toPx() }
+    val dragGapPx = with(LocalDensity.current) { 4.dp.toPx() }
 
     var showFolderOrderDialog by remember { mutableStateOf(false) }
     var showPinnedOrderDialog by remember { mutableStateOf(false) }
@@ -353,7 +364,12 @@ fun HomeScreen(
         val state = sessionStates[account.id]
         state == null || state is AuthState.Initializing
     }
-    val isDialogsLoading = isConnecting || loadingDialogs.isNotEmpty()
+    // Stay in the loading state until a dialog list actually exists. A failed
+    // connection used to flip the spinner off and show "no chats", which
+    // looked like an empty account while TDLib was still reconnecting.
+    val isDialogsLoading = isConnecting ||
+        loadingDialogs.isNotEmpty() ||
+        (entries.isEmpty() && accountState.accounts.isNotEmpty())
 
     val activeFolderId = if (isUsingNativeFolders) {
         selectedNativeFolder?.folder?.id
@@ -362,40 +378,58 @@ fun HomeScreen(
     }
 
     /**
-     * Applies a drop: the chip is inserted where it was released, judged by
-     * the centres of the other chips in the row (row-major, so wrapped chips
-     * reorder too). The resulting list is the same `folderOrder` the reorder
-     * dialog and the pager pages use.
+     * Index among the other chips where the dragged chip would land. In the
+     * single-row setting only the horizontal position decides, so a small
+     * vertical wobble can never move a folder into another row.
      */
-    fun dropChip(key: String) {
-        val bounds = chipBounds[key] ?: return
-        val keys = folderPages.map { page -> page.orderKey() }
-        if (key !in keys) return
+    fun insertionIndexFor(key: String): Int? {
+        val keys = dragStartKeys
+        if (key !in keys) return null
 
+        val origin = dragStartBounds[key] ?: chipBounds[key] ?: return null
         val center = Offset(
-            bounds.center.x + draggedChipShift.x,
-            bounds.center.y + draggedChipShift.y
+            origin.center.x + draggedChipShift.x,
+            origin.center.y + draggedChipShift.y
         )
-        val tolerance = (bounds.height / 2f).coerceAtLeast(1f)
+        val tolerance = (origin.height / 2f).coerceAtLeast(1f)
         val others = keys.filter { other -> other != key }
 
-        val before = others.count { other ->
-            val otherCenter = chipBounds[other]?.center ?: return@count false
+        return others.count { other ->
+            val bounds = dragStartBounds[other] ?: return@count false
 
-            if (abs(otherCenter.y - center.y) > tolerance) {
-                otherCenter.y < center.y
+            if (isSingleRowFilters) {
+                bounds.center.x < center.x
+            } else if (abs(bounds.center.y - center.y) > tolerance) {
+                bounds.center.y < center.y
             } else {
-                otherCenter.x < center.x
+                bounds.center.x < center.x
             }
         }
+    }
 
+    /** Commits the preview insertion once the finger is lifted. */
+    fun applyDrop(key: String) {
+        val insertion = dragInsertionIndex ?: return
+        if (dragStartKeys.isEmpty() || key !in dragStartKeys) return
+
+        val others = dragStartKeys.filter { other -> other != key }
         val reordered = others.toMutableList().apply {
-            add(before.coerceIn(0, size), key)
+            add(insertion.coerceIn(0, size), key)
         }
 
-        if (reordered == keys) return
+        if (reordered != dragStartKeys) {
+            AppSettingsStore.update { current ->
+                current.copy(folderOrder = reordered)
+            }
+        }
+    }
 
-        AppSettingsStore.update { current -> current.copy(folderOrder = reordered) }
+    fun resetDrag() {
+        draggedChipKey = null
+        draggedChipShift = Offset.Zero
+        dragStartKeys = emptyList()
+        dragStartBounds = emptyMap()
+        dragInsertionIndex = null
     }
 
     /** Scrolls the row when a dragged chip reaches its left or right edge. */
@@ -422,11 +456,6 @@ fun HomeScreen(
         // and the drop target keeps matching what the user sees.
         if (consumed != 0f) draggedChipShift += Offset(consumed, 0f)
     }
-
-    // The drag gesture must not restart when the preview order changes (that
-    // would drop the finger). This holder always calls the latest dropChip,
-    // which reads the current chip geometry and order.
-    val currentDropChip by rememberUpdatedState<(String) -> Unit>({ key -> dropChip(key) })
 
     val visibleEntries = remember(
         entries,
@@ -466,6 +495,7 @@ fun HomeScreen(
 
     Column(Modifier.fillMaxSize()) {
         Surface(
+            modifier = Modifier.zIndex(1f),
             color = MaterialTheme.colorScheme.background
         ) {
             Column(Modifier.fillMaxWidth()) {
@@ -617,8 +647,23 @@ fun HomeScreen(
 
                                 if (draggedChipKey != key) return@graphicsLayer
 
-                                translationX = draggedChipShift.x
-                                translationY = draggedChipShift.y
+                                // Inserting the preview gap reflows the chip;
+                                // compensate so it stays under the finger. In
+                                // the single-row mode vertical movement is
+                                // disabled entirely.
+                                val insertion = dragInsertionIndex
+                                val originalIndex = dragStartKeys.indexOf(key)
+                                val gapShift = if (
+                                    isSingleRowFilters &&
+                                    insertion != null &&
+                                    originalIndex >= 0 &&
+                                    insertion < originalIndex
+                                ) {
+                                    (dragStartBounds[key]?.width ?: 0f) + dragGapPx
+                                } else 0f
+
+                                translationX = draggedChipShift.x + gapShift
+                                translationY = if (isSingleRowFilters) 0f else draggedChipShift.y
                             }
                             .onGloballyPositioned { coordinates ->
                                 // The dragged chip is translated by a graphics
@@ -640,31 +685,87 @@ fun HomeScreen(
                             .pointerInput(key) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = {
+                                        val bounds = chipBounds[key]
                                         draggedChipKey = key
                                         draggedChipShift = Offset.Zero
+                                        draggedChipWidth = bounds?.width?.toDp() ?: 0.dp
+                                        draggedChipHeight = bounds?.height?.toDp() ?: 0.dp
+                                        dragStartKeys = folderPages.map { page ->
+                                            page.orderKey()
+                                        }
+                                        dragStartBounds = chipBounds.toMap()
+                                        dragInsertionIndex = dragStartKeys
+                                            .indexOf(key)
+                                            .coerceAtLeast(0)
                                     },
                                     onDrag = { change, amount ->
                                         change.consume()
-                                        draggedChipShift += amount
+                                        draggedChipShift += if (isSingleRowFilters) {
+                                            Offset(amount.x, 0f)
+                                        } else {
+                                            amount
+                                        }
                                         autoScrollRow(key)
-                                        // Reorder while the finger is still down, so
-                                        // the chips behind visibly make room before
-                                        // the drop.
-                                        currentDropChip(key)
+                                        // Only preview the target slot here; the
+                                        // order is committed on release, so a
+                                        // folder never "snaps" to a new place
+                                        // while the finger is still down.
+                                        dragInsertionIndex = insertionIndexFor(key)
                                     },
                                     onDragEnd = {
-                                        currentDropChip(key)
-                                        draggedChipKey = null
-                                        draggedChipShift = Offset.Zero
+                                        applyDrop(key)
+                                        resetDrag()
                                     },
                                     onDragCancel = {
-                                        draggedChipKey = null
-                                        draggedChipShift = Offset.Zero
+                                        resetDrag()
                                     }
                                 )
                             }
 
-                        folderPages.forEach { page ->
+                        val pageByKey = folderPages.associateBy { page ->
+                            page.orderKey()
+                        }
+                        val flowKeys = if (
+                            draggedChipKey != null && dragStartKeys.isNotEmpty()
+                        ) {
+                            dragStartKeys
+                        } else {
+                            folderPages.map { page -> page.orderKey() }
+                        }
+                        val dragging = draggedChipKey
+                        val originalFlowIndex = dragging?.let { key ->
+                            flowKeys.indexOf(key)
+                        } ?: -1
+                        // The dragged chip still occupies its own row, so the
+                        // gap is placed before or after it depending on the
+                        // direction of travel. No gap is drawn while it sits
+                        // on its original slot.
+                        val gapFlowIndex = if (
+                            dragging == null ||
+                            dragInsertionIndex == null ||
+                            dragInsertionIndex == originalFlowIndex
+                        ) {
+                            -1
+                        } else if (dragInsertionIndex!! < originalFlowIndex) {
+                            dragInsertionIndex!!
+                        } else {
+                            dragInsertionIndex!! + 1
+                        }
+
+                        flowKeys.forEachIndexed { flowIndex, flowKey ->
+                            // The dragged folder keeps its own row; every other
+                            // folder moves out of the preview slot, leaving an
+                            // empty space exactly as wide as the dragged chip.
+                            if (gapFlowIndex == flowIndex) {
+                                Spacer(
+                                    modifier = Modifier
+                                        .width(draggedChipWidth)
+                                        .height(draggedChipHeight)
+                                )
+                            }
+
+                            val page = pageByKey[flowKey] ?: return@forEachIndexed
+
                             when (page) {
                                 HomePage.All -> HomeTab(
                                     modifier = chipModifierFor(page.orderKey()),
@@ -687,7 +788,7 @@ fun HomeScreen(
 
                                 is HomePage.Folder -> {
                                     val folder = folders.firstOrNull { it.key == page.key }
-                                        ?: return@forEach
+                                        ?: return@forEachIndexed
 
                                     NativeFolderTab(
                                         modifier = chipModifierFor(page.orderKey()),
@@ -717,6 +818,14 @@ fun HomeScreen(
                                     onClick = { selectedTab = page.index }
                                 )
                             }
+                        }
+
+                        if (gapFlowIndex == flowKeys.size) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(draggedChipWidth)
+                                    .height(draggedChipHeight)
+                            )
                         }
                     }
                 }
@@ -748,6 +857,7 @@ fun HomeScreen(
                 DialogList(
                     entries = pageEntries.first,
                     folderId = pageEntries.second,
+                    mergeDuplicates = isMergeDuplicateDialogs,
                     isDialogsLoading = isDialogsLoading,
                     hasAccounts = accountState.accounts.isNotEmpty(),
                     selectedDialogAccountId = selectedDialogAccountId,
@@ -761,6 +871,7 @@ fun HomeScreen(
             DialogList(
                 entries = visibleEntries,
                 folderId = activeFolderId,
+                mergeDuplicates = isMergeDuplicateDialogs,
                 isDialogsLoading = isDialogsLoading,
                 hasAccounts = accountState.accounts.isNotEmpty(),
                 selectedDialogAccountId = selectedDialogAccountId,
@@ -825,6 +936,7 @@ fun HomeScreen(
 private fun DialogList(
     entries: List<AccountDialogEntry>,
     folderId: Int?,
+    mergeDuplicates: Boolean = false,
     isDialogsLoading: Boolean,
     hasAccounts: Boolean,
     selectedDialogAccountId: String?,
@@ -839,21 +951,41 @@ private fun DialogList(
         entries.count { entry -> entry.dialog.isSavedMessages } > 1
     }
 
+    val rows = remember(entries, mergeDuplicates) {
+        if (mergeDuplicates) groupDuplicateDialogs(entries) else entries.map(::listOf)
+    }
+
     LazyColumn(modifier = modifier) {
         items(
-            items = entries,
-            key = { entry ->
-                "${entry.account.id}:${entry.dialog.providerDialogId}"
+            items = rows,
+            key = { row ->
+                row.joinToString("|") { entry ->
+                    "${entry.account.id}:${entry.dialog.providerDialogId}"
+                }
             }
-        ) { entry ->
-            DialogItem(
-                entry = entry,
-                isSelected = entry.account.id == selectedDialogAccountId &&
-                    entry.dialog.providerDialogId == selectedDialogProviderDialogId,
-                folderId = folderId,
-                showSavedMessagesAccountBadge = showSavedMessagesAccountBadge,
-                onClick = { onOpenDialog(entry) }
-            )
+        ) { row ->
+            val isSelected = row.any { entry ->
+                entry.account.id == selectedDialogAccountId &&
+                    entry.dialog.providerDialogId == selectedDialogProviderDialogId
+            }
+
+            if (row.size == 1) {
+                val entry = row.first()
+
+                DialogItem(
+                    entry = entry,
+                    isSelected = isSelected,
+                    folderId = folderId,
+                    showSavedMessagesAccountBadge = showSavedMessagesAccountBadge,
+                    onClick = { onOpenDialog(entry) }
+                )
+            } else {
+                MergedDialogItem(
+                    entries = row,
+                    isSelected = isSelected,
+                    onOpenDialog = onOpenDialog
+                )
+            }
         }
 
         if (entries.isEmpty()) {
@@ -1024,6 +1156,233 @@ private fun NativeFolderTab(
             }
         }
     )
+}
+
+/**
+ * Rows of the dialog list. With merging enabled, every account copy of the
+ * same chat becomes one row. Saved Messages merges per provider, and secret
+ * chats merge by their peer (the provider identity already keys them that
+ * way); identities without a provider id stay separate.
+ */
+private fun groupDuplicateDialogs(
+    entries: List<AccountDialogEntry>
+): List<List<AccountDialogEntry>> {
+    val byIdentity = LinkedHashMap<String, MutableList<AccountDialogEntry>>()
+    val rows = mutableListOf<List<AccountDialogEntry>>()
+
+    for (entry in entries) {
+        val identity = entry.dialog.identity
+
+        val key = when {
+            // Every account has its own Saved Messages chat, but they describe
+            // the same idea and merge across accounts of one provider.
+            entry.dialog.isSavedMessages -> "saved:${identity.providerId}"
+
+            identity.remoteId.isBlank() -> {
+                rows += listOf(entry)
+                continue
+            }
+
+            else -> "${identity.providerId}:${identity.remoteId}"
+        }
+
+        val existing = byIdentity[key]
+
+        if (existing == null) {
+            val group = mutableListOf(entry)
+            byIdentity[key] = group
+            rows += group
+        } else {
+            existing += entry
+        }
+    }
+
+    return rows
+}
+
+/**
+ * One row for a chat that several accounts share. The account avatars sit in a
+ * column next to the chat avatar, the caption is the newest message, and a tap
+ * opens a chooser pinned to the top of the row before any chat is opened.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MergedDialogItem(
+    entries: List<AccountDialogEntry>,
+    isSelected: Boolean,
+    onOpenDialog: (AccountDialogEntry) -> Unit
+) {
+    val latest = remember(entries) {
+        entries.maxByOrNull { entry -> entry.dialog.timestamp } ?: entries.first()
+    }
+    val dialog = latest.dialog
+    val session = remember(dialog.accountId) { ApiManager.session(dialog.accountId) }
+    var chooserExpanded by remember(entries) { mutableStateOf(false) }
+
+    Box {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = { chooserExpanded = true },
+                    onLongClick = { chooserExpanded = true }
+                )
+                .onSecondaryClick { chooserExpanded = true },
+            color = if (isSelected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            } else Color.Transparent
+        ) {
+            Row(modifier = Modifier.padding(8.dp)) {
+                Row(
+                    modifier = Modifier.padding(end = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (dialog.isSavedMessages) {
+                        SavedMessagesAvatar(size = 48.dp)
+                    } else {
+                        AvatarImage(
+                            avatar = dialog.avatar ?: Avatar.fromName(dialog.title),
+                            size = 48.dp
+                        )
+                    }
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        entries.take(4).forEach { entry ->
+                            AvatarImage(
+                                avatar = entry.account.avatar
+                                    ?: Avatar.fromName(entry.account.displayName),
+                                size = 16.dp
+                            )
+                        }
+
+                        if (entries.size > 4) {
+                            Text(
+                                text = "+${entries.size - 4}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            modifier = Modifier.weight(1f, fill = false),
+                            text = dialog.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        if (dialog.isVerified) {
+                            Icon(
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                                imageVector = verified_icon,
+                                contentDescription = "Verified"
+                            )
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        dialog.lastMessageMedia?.let { media ->
+                            DialogMediaPreview(
+                                media = media,
+                                session = session,
+                                size = 20.dp
+                            )
+                        }
+
+                        DialogPreviewText(
+                            modifier = Modifier.weight(1f),
+                            dialog = dialog,
+                            session = session
+                        )
+                    }
+                }
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = formatTime(dialog.timestamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+
+                    val unread = entries.sumOf { entry -> entry.dialog.unreadCount }
+
+                    if (unread > 0) {
+                        UnreadCountBadge(count = unread, selected = isSelected)
+                    }
+
+                    Icon(
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.secondary,
+                        imageVector = more_vertical_icon,
+                        contentDescription = null
+                    )
+                }
+            }
+        }
+
+        // The chooser hangs from the top of the merged row so the account and
+        // the contact are picked in one step before anything opens.
+        DropdownMenu(
+            expanded = chooserExpanded,
+            onDismissRequest = { chooserExpanded = false },
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            entries.forEach { entry ->
+                DropdownMenuItem(
+                    leadingIcon = {
+                        AvatarImage(
+                            avatar = entry.account.avatar
+                                ?: Avatar.fromName(entry.account.displayName),
+                            size = 24.dp
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = entry.account.displayName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Text(
+                                text = entry.dialog.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    },
+                    onClick = {
+                        chooserExpanded = false
+                        onOpenDialog(entry)
+                    }
+                )
+            }
+        }
+    }
 }
 
 private fun Dialog.hasUnreadIndicator(): Boolean =

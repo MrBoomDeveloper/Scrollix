@@ -477,6 +477,9 @@ class MaxSession(
     private val _authState = MutableStateFlow<AuthState>(AuthState.Initializing)
     override val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
+    private val _isConnected = MutableStateFlow(true)
+    override val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
     private val _profile = MutableStateFlow<AccountProfile?>(null)
     override val profile: StateFlow<AccountProfile?> = _profile.asStateFlow()
 
@@ -948,6 +951,7 @@ class MaxSession(
             startPushLoop(created)
             startMonitor(created)
 
+            _isConnected.value = true
             _authState.value = AuthState.Ready
             runCatching { refreshDialogs() }
         } catch (exception: CancellationException) {
@@ -1981,6 +1985,7 @@ class MaxSession(
                     username = user?.username,
                     phoneNumber = user?.phone,
                     bio = user?.description,
+                    isVerified = user?.isVerified == true,
                     kind = DialogKind.Direct,
                     // MAX service accounts are the app's own notices and cannot
                     // be blocked from a third-party client.
@@ -2011,6 +2016,7 @@ class MaxSession(
                 displayName = title,
                 avatar = avatarFor(title, chat.pictureUrl),
                 kind = chat.kind(),
+                isVerified = chat.isVerified,
                 memberCount = chat.participantsCount,
                 description = chat.description,
                 members = members
@@ -4344,6 +4350,7 @@ class MaxSession(
 
             rpc = null
             monitorJob = null
+            _isConnected.value = false
 
             if (reconnectAttempts >= 5) {
                 _authState.value = AuthState.Error(

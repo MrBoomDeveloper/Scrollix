@@ -2,3 +2,10 @@
 # Get them at https://my.telegram.org/apps
 telegram.apiId=123456
 telegram.apiHash=0123456789abcdef0123456789abcdef
+
+# Optional: run against Telegram's test server in a fully isolated profile
+# (separate settings, accounts, databases and TDLib directory; MAX and VK are
+# disabled because they have no public test server).
+# Either set SCROLLIX_TEST_SERVER=1 in the environment before building, or
+# uncomment the next line and rebuild.
+# telegram.testServer=true

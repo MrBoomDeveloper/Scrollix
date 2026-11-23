@@ -162,6 +162,21 @@ data class MessageReply(
     val media: MessageMedia? = null
 )
 
+/**
+ * One forum topic of a chat: a thread with its own title, icon and unread
+ * counter. Telegram channels keep comment threads as direct-message topics,
+ * while supergroups expose them as forum topics; both map onto this shape.
+ */
+data class ChatTopic(
+    val id: Long,
+    val title: String,
+    val unreadCount: Int = 0,
+    val isClosed: Boolean = false,
+    val lastMessageText: String = "",
+    val lastMessageTimestamp: Long = 0,
+    val iconCustomEmojiId: Long? = null
+)
+
 /** A provider message thread, with the chat that actually holds the replies. */
 data class ChatMessageThread(
     val chatId: String,

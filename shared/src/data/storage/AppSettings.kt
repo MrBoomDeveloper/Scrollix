@@ -40,6 +40,12 @@ data class AppSettings(
     val emojiPackOrders: Map<String, List<Long>> = emptyMap(),
     val showAllChatsTab: Boolean = false,
     val singleRowFilters: Boolean = false,
+    /**
+     * Collapses a chat that several accounts share into one row with the
+     * account avatars in a column. Off by default: merging hides the separate
+     * account copies, so it is an explicit choice.
+     */
+    val mergeDuplicateDialogs: Boolean = false,
     val showRecentStickersAndEmojis: Boolean = true,
     val showSystemEmojis: Boolean = true,
     val disabledEmojis: Set<String> = emptySet(),

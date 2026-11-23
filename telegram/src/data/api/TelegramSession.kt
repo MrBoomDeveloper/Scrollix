@@ -26,7 +26,9 @@ import com.mrboomdev.scrollix.data.model.MessageLinkPreview
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.ChatTopic
 import com.mrboomdev.scrollix.data.model.MessageVideoQuality
+import com.mrboomdev.scrollix.data.model.NotificationException
 import com.mrboomdev.scrollix.data.model.WebAppLaunch
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
@@ -185,6 +187,8 @@ class TelegramSession(
     private val folderChatsMutex = Mutex()
     private val loadedFolderChats = mutableSetOf<Int>()
     private val loadingFolderChats = mutableSetOf<Int>()
+    private val _isConnected = MutableStateFlow(true)
+    override val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
     private val _chats = MutableStateFlow<Map<Long, ChatEntry>>(emptyMap())
     private val _users = MutableStateFlow<Map<Long, User>>(emptyMap())
     private val _userStatuses = MutableStateFlow<Map<Long, UserStatus>>(emptyMap())
@@ -220,6 +224,26 @@ class TelegramSession(
         return history.loadOlder(limit)
     }
 
+    override suspend fun jumpToBeginning(
+        providerDialogId: String,
+        limit: Int
+    ): Result<Boolean> {
+        val history = historyFor(providerDialogId)
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return history.jumpToBeginning(limit)
+    }
+
+    override suspend fun loadNewerMessages(
+        providerDialogId: String,
+        limit: Int
+    ): Result<Boolean> {
+        val history = historyFor(providerDialogId)
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return history.loadGap(limit)
+    }
+
     override suspend fun loadMessagesUntil(
         providerDialogId: String,
         messageId: Long
@@ -252,11 +276,20 @@ class TelegramSession(
                     fromMessageId: Long,
                     limit: Int
                 ): Result<MessagePage> {
+                    return load(fromMessageId, limit, offset = 0)
+                }
+
+                override suspend fun load(
+                    fromMessageId: Long,
+                    limit: Int,
+                    offset: Int
+                ): Result<MessagePage> {
                     return try {
                         Result.success(
                             fetchChatHistory(
                                 chatId = chatId,
                                 fromMessageId = fromMessageId,
+                                offset = offset,
                                 limit = limit
                             )
                         )
@@ -296,12 +329,13 @@ class TelegramSession(
     private suspend fun fetchChatHistory(
         chatId: Long,
         fromMessageId: Long,
-        limit: Int
+        limit: Int,
+        offset: Int = 0
     ): MessagePage {
         return when (val result = client.getChatHistory(
             chatId = chatId,
             fromMessageId = fromMessageId,
-            offset = 0,
+            offset = offset,
             limit = limit.coerceIn(1, 100),
             onlyLocal = false
         )) {
@@ -1275,6 +1309,7 @@ class TelegramSession(
                     birthdate = fullInfo?.birthdate?.let(::formatBirthdate),
                     status = userStatusText(user),
                     isOnline = (user.status as? UserStatusOnline) != null,
+                    isVerified = user.verificationStatus?.isVerified == true,
                     emojiStatusId = emojiStatusId(user.emojiStatus),
                     accentColorsLight = user.upgradedGiftColors
                         ?.lightThemeColors
@@ -1343,6 +1378,7 @@ class TelegramSession(
                     birthdate = fullInfo?.birthdate?.let(::formatBirthdate),
                     status = userStatusText(user),
                     isOnline = currentStatus is UserStatusOnline,
+                    isVerified = user.verificationStatus?.isVerified == true,
                     emojiStatusId = emojiStatusId(user.emojiStatus),
                     accentColorsLight = user.upgradedGiftColors
                         ?.lightThemeColors
@@ -1398,6 +1434,7 @@ class TelegramSession(
             kind = if (type.isChannel) DialogKind.Channel else DialogKind.Group,
             memberCount = fullInfo?.memberCount?.takeIf { it > 0 },
             description = fullInfo?.description?.ifBlank { null },
+            isVerified = type.supergroupId in _verifiedSupergroups.value,
             emojiStatusId = emojiStatusId(chat.emojiStatus),
             members = loadChatMembers(chat.id),
             isSubscribed = isSubscribed,
@@ -2170,6 +2207,214 @@ class TelegramSession(
         }
     }
 
+    override suspend fun loadNotificationExceptions(
+        scope: NotificationScope
+    ): Result<List<NotificationException>> {
+        return try {
+            val chatIds = when (val result = client.getChatNotificationSettingsExceptions(
+                scope = scope.toTdlibScope(),
+                compareSound = false
+            )) {
+                is TdlResult.Success -> result.result.chatIds
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            val cached = _dialogs.value.associateBy { dialog ->
+                dialog.providerDialogId
+            }
+
+            // These are the chats that override the category defaults. The
+            // list is bounded so opening settings stays one quick round trip.
+            val exceptions = chatIds.take(50).mapNotNull { chatId ->
+                val chat = when (val result = client.getChat(chatId)) {
+                    is TdlResult.Success -> result.result
+                    is TdlResult.Failure -> return@mapNotNull null
+                }
+
+                val dialog = cached[chatId.toString()]
+                val settings = chat.notificationSettings
+
+                NotificationException(
+                    providerDialogId = chatId.toString(),
+                    title = chat.title.ifBlank { dialog?.title ?: "Chat" },
+                    avatar = dialog?.avatar ?: Avatar.fromName(chat.title),
+                    isMuted = !settings.useDefaultMuteFor && settings.muteFor > 0,
+                    scope = scope
+                )
+            }
+
+            Result.success(exceptions)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun resetDialogNotificationSettings(
+        providerDialogId: String
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val chat = when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            // Every "use default" flag makes the chat follow its scope again,
+            // which is what removes it from the exceptions list.
+            val current = chat.notificationSettings
+            val settings = ChatNotificationSettings(
+                useDefaultMuteFor = true,
+                muteFor = current.muteFor,
+                useDefaultSound = true,
+                soundId = current.soundId,
+                useDefaultShowPreview = true,
+                showPreview = current.showPreview,
+                useDefaultMuteStories = true,
+                muteStories = current.muteStories,
+                useDefaultStorySound = true,
+                storySoundId = current.storySoundId,
+                useDefaultShowStoryPoster = true,
+                showStoryPoster = current.showStoryPoster,
+                useDefaultDisablePinnedMessageNotifications = true,
+                disablePinnedMessageNotifications = current.disablePinnedMessageNotifications,
+                useDefaultDisableMentionNotifications = true,
+                disableMentionNotifications = current.disableMentionNotifications
+            )
+
+            when (val result = client.setChatNotificationSettings(chatId, settings)) {
+                is TdlResult.Success -> {
+                    when (val refreshed = client.getChat(chatId)) {
+                        is TdlResult.Success -> upsertChat(refreshed.result)
+                        is TdlResult.Failure -> Unit
+                    }
+
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadTopics(providerDialogId: String): Result<List<ChatTopic>> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val topics = when (val result = client.getForumTopics(
+                chatId = chatId,
+                query = "",
+                offsetDate = 0,
+                offsetMessageId = 0,
+                offsetForumTopicId = 0,
+                limit = 100
+            )) {
+                is TdlResult.Success -> result.result
+                is TdlResult.Failure -> return Result.failure(Exception(result.message))
+            }
+
+            Result.success(
+                topics.topics.map { topic ->
+                    ChatTopic(
+                        id = topic.info.forumTopicId.toLong(),
+                        title = topic.info.name.ifBlank {
+                            if (topic.info.isGeneral) "General" else "Topic"
+                        },
+                        unreadCount = topic.unreadCount,
+                        isClosed = topic.info.isClosed,
+                        lastMessageText = topic.lastMessage?.let(::messagePreview).orEmpty(),
+                        lastMessageTimestamp = (topic.lastMessage?.date ?: 0).toLong() * 1000L,
+                        iconCustomEmojiId = topic.info.icon?.customEmojiId?.takeIf { it != 0L }
+                    )
+                }
+            )
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun loadTopicMessages(
+        providerDialogId: String,
+        topicId: Long,
+        limit: Int
+    ): Result<List<ChatMessage>> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        return try {
+            val result = when (val response = client.getForumTopicHistory(
+                chatId = chatId,
+                forumTopicId = topicId.toInt(),
+                fromMessageId = 0,
+                offset = 0,
+                limit = limit
+            )) {
+                is TdlResult.Success -> response.result
+                is TdlResult.Failure -> return Result.failure(Exception(response.message))
+            }
+
+            // TDLib returns newest first; the chat UI renders oldest first.
+            Result.success(
+                result.messages.filterNotNull().map(::mapMessage).asReversed()
+            )
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    override suspend fun sendTopicMessage(
+        providerDialogId: String,
+        topicId: Long,
+        text: String,
+        customEmojis: List<CustomEmojiSpan>
+    ): Result<Unit> {
+        val chatId = providerDialogId.toLongOrNull()
+            ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Message is empty"))
+        }
+
+        return try {
+            when (val result = client.sendMessage(
+                chatId = chatId,
+                topicId = MessageTopicForum(topicId.toInt()),
+                inputMessageContent = InputMessageText(
+                    text = FormattedText(
+                        text = trimmed,
+                        entities = customEmojiEntities(text, customEmojis)
+                    ),
+                    linkPreviewOptions = null,
+                    clearDraft = true
+                )
+            )) {
+                is TdlResult.Success -> {
+                    upsertMessage(result.result)
+                    Result.success(Unit)
+                }
+
+                is TdlResult.Failure -> Result.failure(Exception(result.message))
+            }
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
     override suspend fun isDialogMuted(providerDialogId: String): Boolean? {
         val chatId = providerDialogId.toLongOrNull() ?: return null
 
@@ -2637,6 +2882,10 @@ class TelegramSession(
         when (update) {
             is UpdateAuthorizationState -> handleAuthorizationState(update.authorizationState)
 
+            is UpdateConnectionState -> {
+                _isConnected.value = update.state is ConnectionStateReady
+            }
+
             is UpdateNewChat -> {
                 upsertChat(update.chat)
             }
@@ -2853,7 +3102,9 @@ class TelegramSession(
                     )
 
                     val parametersResult = client.setTdlibParameters(
-                        useTestDc = false,
+                        // Test-server builds talk to the test DC and keep their
+                        // own database directory (see the storage profile).
+                        useTestDc = BuildConfig.TEST_SERVER_MODE,
                         databaseDirectory = databaseDirectory,
                         filesDirectory = filesDirectory,
                         databaseEncryptionKey = ByteArray(0),
@@ -3427,8 +3678,12 @@ class TelegramSession(
                     text = reply.quote?.text?.text.orEmpty()
                 )
             },
-            // This TDLib build does not expose the topic id on Message; the
-            // thread id comes from MessageThreadInfo when a thread is opened.
+            // Forum topics carry their id on the message itself, so the dialog
+            // can scope history and sending to the topic it belongs to.
+            messageThreadId = when (val topic = message.topicId) {
+                is MessageTopicForum -> topic.forumTopicId.toLong()
+                else -> 0L
+            },
             replyCount = message.interactionInfo?.replyInfo?.replyCount ?: 0,
             keyboard = mapKeyboard(message.replyMarkup, message.senderId),
             reactions = mapReactions(message.interactionInfo),
@@ -6465,6 +6720,49 @@ class TelegramSession(
         )
     }
 
+    /** Channels where this account may post: administrators and creators. */
+    private val _channelPostRights = MutableStateFlow<Map<Long, Boolean>>(emptyMap())
+    private val _channelPostRightRequests = MutableStateFlow<Set<Long>>(emptySet())
+
+    private fun requestChannelPostRights(chatId: Long) {
+        var shouldRequest = false
+
+        _channelPostRightRequests.update { requested ->
+            if (chatId in requested) {
+                requested
+            } else {
+                shouldRequest = true
+                requested + chatId
+            }
+        }
+
+        if (!shouldRequest) return
+
+        val userId = currentUserId ?: return
+
+        scope.launch {
+            val allowed = when (val result = client.getChatMember(
+                chatId,
+                MessageSenderUser(userId)
+            )) {
+                is TdlResult.Success -> when (result.result.status) {
+                    is ChatMemberStatusAdministrator, is ChatMemberStatusCreator -> true
+                    else -> false
+                }
+
+                is TdlResult.Failure -> false
+            }
+
+            _channelPostRights.update { rights -> rights + (chatId to allowed) }
+
+            // A channel admin gets the composer even though broadcast channel
+            // permissions only describe what regular subscribers may do.
+            if (allowed) {
+                emitDialogs()
+            }
+        }
+    }
+
     private fun emitDialogs() {
         val dialogs = _chats.value.values.mapNotNull { entry ->
             val mainPosition = entry.positions.firstOrNull {
@@ -6528,7 +6826,11 @@ class TelegramSession(
 
                 is ChatTypeSecret -> DialogIdentity(
                     providerId = providerId,
-                    remoteId = "secret:$accountId:${type.secretChatId}"
+                    // A secret chat is 1:1 with a user. Keying it by the peer
+                    // keeps it distinct from that user's normal chat while
+                    // letting the same contact's secret chats from several
+                    // accounts merge into one row.
+                    remoteId = "secret:user:${type.userId}"
                 )
             }
 
@@ -6537,6 +6839,11 @@ class TelegramSession(
                 ?: entry.photo?.minithumbnail?.data
                 ?: user?.profilePhoto?.minithumbnail?.data
             val lastMessage = entry.lastMessage
+            val isChannelChat = (entry.type as? ChatTypeSupergroup)?.isChannel == true
+
+            if (isChannelChat) {
+                requestChannelPostRights(entry.chatId)
+            }
 
             return Dialog(
                 providerId = providerId,
@@ -6571,7 +6878,8 @@ class TelegramSession(
                 unreadCount = entry.unreadCount,
                 memberCount = _memberCounts.value[identity.remoteId]?.takeIf { it > 0 },
                 pinnedMessageId = _pinnedMessageIds.value[entry.chatId]?.takeIf { it > 0 },
-            canSendMessages = entry.permissions.canSendBasicMessages,
+            canSendMessages = entry.permissions.canSendBasicMessages ||
+                (isChannelChat && _channelPostRights.value[entry.chatId] == true),
             canPinMessages = entry.permissions.canPinMessages,
             // Only moderators may delete someone else's message; every
             // account may delete its own.
@@ -6584,6 +6892,7 @@ class TelegramSession(
                     is ChatTypeSupergroup -> type.supergroupId in _verifiedSupergroups.value
                     else -> false
                 },
+                isForum = entry.viewAsTopics,
                 hasMainWebApp = entry.type is ChatTypePrivate &&
                     (user?.type as? UserTypeBot)?.hasMainWebApp == true,
                 isSavedMessages = isSavedMessages,
@@ -6703,7 +7012,9 @@ class TelegramSession(
         val unreadCount: Int,
         val lastReadOutboxMessageId: Long,
         val isMarkedAsUnread: Boolean,
-        val typingText: String? = null
+        val typingText: String? = null,
+        /** The chat is shown as a list of forum topics (`viewAsTopics`). */
+        val viewAsTopics: Boolean = false
     ) {
         companion object {
             fun from(chat: Chat): ChatEntry {
@@ -6721,7 +7032,8 @@ class TelegramSession(
                     permissions = chat.permissions,
                     unreadCount = chat.unreadCount,
                     lastReadOutboxMessageId = chat.lastReadOutboxMessageId,
-                    isMarkedAsUnread = chat.isMarkedAsUnread
+                    isMarkedAsUnread = chat.isMarkedAsUnread,
+                    viewAsTopics = chat.viewAsTopics
                 )
             }
         }

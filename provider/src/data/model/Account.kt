@@ -61,6 +61,8 @@ data class UserProfileDetails(
     val birthdate: String? = null,
     val status: String? = null,
     val isOnline: Boolean = false,
+    /** Peer or channel carries the provider's verification mark. */
+    val isVerified: Boolean = false,
     val emojiStatusId: Long? = null,
     /** Custom profile colors from a collectible gift, when Telegram exposes them. */
     val accentColorsLight: List<Long> = emptyList(),

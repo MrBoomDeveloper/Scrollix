@@ -19,3 +19,16 @@ data class NotificationSettings(
     val allMuted: Boolean
         get() = mutedScopes.containsAll(NotificationScope.entries)
 }
+
+/**
+ * One chat that does not follow its [scope]'s notification defaults. Telegram
+ * keeps these overrides per chat on the server; the settings screen lists them
+ * under the matching category so they can be reset.
+ */
+data class NotificationException(
+    val providerDialogId: String,
+    val title: String,
+    val avatar: Avatar? = null,
+    val isMuted: Boolean = false,
+    val scope: NotificationScope? = null
+)

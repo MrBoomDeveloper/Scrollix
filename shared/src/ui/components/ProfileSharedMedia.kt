@@ -194,37 +194,49 @@ fun ProfileSharedMediaSection(
                 color = MaterialTheme.colorScheme.secondary
             )
 
-            // Photos, videos and GIFs are a grid of tiles; the other tabs
-            // read better as a list of rows.
-            selectedTab.isVisual -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 104.dp),
-                modifier = Modifier.heightIn(max = 360.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(loaded, key = { message -> message.messageId }) { message ->
-                    SharedMediaTile(
-                        message = message,
-                        tab = selectedTab,
-                        session = session,
-                        onOpenMessage = onOpenMessage
-                    )
+            // Photos, videos and GIFs the way Telegram lays them out: rows of
+            // equal height whose widths follow each media's aspect ratio, so
+            // the grid has no holes between tiles.
+            selectedTab.isVisual -> {
+                val mediaByKey = remember(loaded) {
+                    loaded.associateBy { message -> message.messageId }
+                }
+                val justifiedItems = remember(loaded) {
+                    loaded.map { message ->
+                        JustifiedMediaItem(
+                            key = message.messageId,
+                            aspectRatio = message.media?.let(::mediaAspectRatio) ?: 1f
+                        )
+                    }
                 }
 
-                if (hasMore[selectedTab] == true) {
-                    item(
-                        key = "shared-media-sentinel",
-                        span = { GridItemSpan(maxLineSpan) }
-                    ) {
-                        SharedMediaLoadMore(
-                            failure = error,
-                            effectKey = Triple(selectedTab, loaded.size, error),
-                            onLoadMore = {
-                                loadPage(
-                                    fromMessageId = loaded.lastOrNull()?.messageId ?: 0,
-                                    replace = false
-                                )
-                            }
+                JustifiedMediaGrid(
+                    items = justifiedItems,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp),
+                    footer = if (hasMore[selectedTab] == true) {
+                        {
+                            SharedMediaLoadMore(
+                                failure = error,
+                                effectKey = Triple(selectedTab, loaded.size, error),
+                                onLoadMore = {
+                                    loadPage(
+                                        fromMessageId = loaded.lastOrNull()?.messageId ?: 0,
+                                        replace = false
+                                    )
+                                }
+                            )
+                        }
+                    } else null
+                ) { item, tileModifier ->
+                    mediaByKey[item.key as Long]?.let { message ->
+                        SharedMediaTile(
+                            modifier = tileModifier,
+                            message = message,
+                            tab = selectedTab,
+                            session = session,
+                            onOpenMessage = onOpenMessage
                         )
                     }
                 }
@@ -308,14 +320,13 @@ private fun SharedMediaTile(
     message: ChatMessage,
     tab: SharedMediaTab,
     session: AccountSession?,
-    onOpenMessage: (Long) -> Unit
+    onOpenMessage: (Long) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val media = message.media
 
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
+        modifier = modifier
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable { onOpenMessage(message.messageId) }
     ) {
@@ -446,6 +457,13 @@ private fun SharedMediaThumbnail(
             )
         }
     }
+}
+
+/** Width / height of a media item, used to justify its grid row. */
+private fun mediaAspectRatio(media: MessageMedia): Float {
+    if (media.width <= 0 || media.height <= 0) return 1f
+
+    return media.width.toFloat() / media.height.toFloat()
 }
 
 private val SharedMediaTab.isVisual: Boolean

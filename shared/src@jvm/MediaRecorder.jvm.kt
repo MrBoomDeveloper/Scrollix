@@ -1,7 +1,11 @@
 package com.mrboomdev.scrollix.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.TargetDataLine
@@ -11,6 +15,12 @@ import java.io.File
 @Composable
 actual fun rememberMediaRecorder(): MediaRecordingController {
     return remember { JvmMediaRecordingController() }
+}
+
+@Composable
+actual fun VideoNotePreview(controller: MediaRecordingController, modifier: Modifier) {
+    // Desktop has no video note recording, so there is no camera to preview.
+    Box(modifier = modifier.background(Color.Black))
 }
 
 private class JvmMediaRecordingController : MediaRecordingController {

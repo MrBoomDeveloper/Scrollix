@@ -127,6 +127,7 @@ import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.music_note_icon
 import com.mrboomdev.scrollix.ui.icons.notifications_icon
+import com.mrboomdev.scrollix.ui.icons.verified_icon
 import com.mrboomdev.scrollix.ui.icons.notifications_off_icon
 import com.mrboomdev.scrollix.ui.icons.pause_icon_filled
 import com.mrboomdev.scrollix.ui.icons.play_icon_filled
@@ -676,7 +677,8 @@ fun ProfileScreen(
     providerDialogId: String,
     userId: Long? = null,
     ownAccount: Boolean = false,
-    onOpenChannelProfile: (String) -> Unit = {},
+    /** Opens a channel or group chat from the profile (personal channel, groups in common). */
+    onOpenChat: (String) -> Unit = {},
     onMessage: (String) -> Unit = {},
     onOpenMessage: (Long) -> Unit = {},
     onBack: () -> Unit
@@ -1026,7 +1028,7 @@ fun ProfileScreen(
                         profile?.personalChannel?.let { channel ->
                             PersonalChannelCard(
                                 channel = channel,
-                                onClick = { onOpenChannelProfile(channel.providerDialogId) },
+                                onClick = { onOpenChat(channel.providerDialogId) },
                                 onPortrait = false
                             )
                         }
@@ -1048,6 +1050,15 @@ fun ProfileScreen(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center
+                        )
+                    }
+
+                    if (profile?.isVerified == true || dialog?.isVerified == true) {
+                        Icon(
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                            imageVector = verified_icon,
+                            contentDescription = "Verified"
                         )
                     }
 
@@ -1115,7 +1126,7 @@ fun ProfileScreen(
                 profile?.personalChannel?.let { channel ->
                     PersonalChannelCard(
                         channel = channel,
-                        onClick = { onOpenChannelProfile(channel.providerDialogId) },
+                        onClick = { onOpenChat(channel.providerDialogId) },
                         onPortrait = true
                     )
                 }   
@@ -1146,7 +1157,7 @@ fun ProfileScreen(
                 CommonGroupsSection(
                     groups = commonGroups,
                     onOpenGroup = { group ->
-                        onOpenChannelProfile(group.providerDialogId)
+                        onOpenChat(group.providerDialogId)
                     }
                 )
             }

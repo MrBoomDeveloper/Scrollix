@@ -28,6 +28,17 @@ data class MessagePage(
 /** Fetches one page of history; [fromMessageId] of 0 means the newest page. */
 fun interface MessagePageLoader {
     suspend fun load(fromMessageId: Long, limit: Int): Result<MessagePage>
+
+    /**
+     * Loads a page with an optional TDLib offset. A negative offset returns
+     * messages newer than the anchor, which is what fills an undiscovered
+     * gap. Loaders that cannot express it keep the default behavior.
+     */
+    suspend fun load(
+        fromMessageId: Long,
+        limit: Int,
+        offset: Int
+    ): Result<MessagePage> = load(fromMessageId, limit)
 }
 
 /**
@@ -81,7 +92,12 @@ class MessageHistoryController(
     private suspend fun loadLatestLocked(limit: Int): Result<Unit> {
         val current = _state.value
         val hadMessages = current.messages.isNotEmpty()
-        val replaceWindow = !hadMessages || current.hasMoreNewer
+        // An undiscovered gap means the window is a far-away block that the
+        // newest page does not overlap: refreshing to the end has to replace
+        // it, otherwise the missing middle would stay invisible.
+        val replaceWindow = !hadMessages ||
+            current.hasMoreNewer ||
+            current.hasUnloadedGap
 
         if (!hadMessages) {
             _state.update { it.copy(isLoadingInitial = true) }
@@ -93,17 +109,22 @@ class MessageHistoryController(
                 .filterNot { message -> message.messageId in deletedIds }
                 .filter { message -> message.sendState != MessageSendState.Failed }
 
-            // A cache preview and the newest page are usually disjoint: the
-            // user was reading the middle of the chat when the app stopped.
-            // Merging them would render a window with an invisible hole that
-            // older paging can never fill, so the network page wins.
+            // A refresh can return a page that is entirely newer than the
+            // loaded window (messages arrived while the chat was closed).
+            // Merging the two blocks would leave an invisible hole that older
+            // paging can never fill, which looked like missing messages when
+            // the dialog was reopened. Message ids are not contiguous, so
+            // "adjacent" cannot be inferred from id arithmetic: only an
+            // overlapping page may be merged.
             val currentNewest = current.newestMessageId
-            val cacheIsDisjoint = isSeededWindow && hadMessages &&
+            val currentIds = current.messages.mapTo(HashSet()) { it.messageId }
+            val pageIsDetached = hadMessages &&
                 fetched.isNotEmpty() &&
+                fetched.none { message -> message.messageId in currentIds } &&
                 currentNewest != null &&
-                fetched.minOf { message -> message.messageId } > currentNewest + 1
+                fetched.maxOf { message -> message.messageId } > currentNewest
 
-            mergeMessages(fetched, replace = replaceWindow || cacheIsDisjoint)
+            mergeMessages(fetched, replace = replaceWindow || pageIsDetached)
             isSeededWindow = false
 
             _state.update { state ->
@@ -112,11 +133,13 @@ class MessageHistoryController(
                     isLoadingOlder = false,
                     hasMoreNewer = false,
                     totalCount = page.totalCount ?: state.totalCount,
+                    newerMessages = emptyList(),
+                    hasUnloadedGap = false,
                     // A refresh must not lower a flag that an older-page
                     // request already answered; the newest page is only a
                     // probe when the window was empty.
                     hasMoreOlder = when {
-                        cacheIsDisjoint || replaceWindow -> fetched.isNotEmpty()
+                        pageIsDetached || replaceWindow -> fetched.isNotEmpty()
                         else -> state.hasMoreOlder
                     }
                 )
@@ -276,6 +299,153 @@ class MessageHistoryController(
                 Result.failure(exception)
             }
         }
+
+    /**
+     * Jumps to the true beginning of the chat without paging the whole
+     * history. The oldest message id is found with a binary search over
+     * `getChatHistory` anchors, the first page is fetched directly, and the
+     * previously loaded window is kept as the far-end preview with an
+     * undiscovered gap in between.
+     */
+    suspend fun jumpToBeginning(limit: Int = pageSize): Result<Boolean> =
+        pageMutex.withLock {
+            val current = _state.value
+            val upper = current.newestMessageId ?: return@withLock Result.success(false)
+
+            return@withLock try {
+                val firstId = findFirstMessageId(upper)
+                val pageLimit = limit.coerceIn(2, 100)
+                val page = pageLoader.load(
+                    fromMessageId = firstId,
+                    limit = pageLimit,
+                    // TDLib has no "oldest page" call; a negative offset asks
+                    // for the first message plus newer messages around it.
+                    offset = -(pageLimit - 1)
+                ).getOrThrow()
+
+                val head = page.messages
+                    .filterNot { message -> message.messageId in deletedIds }
+                    .filter { message -> message.sendState != MessageSendState.Failed }
+                    .sortedBy { message -> message.messageId }
+
+                if (head.isEmpty()) {
+                    return@withLock Result.success(false)
+                }
+
+                val headNewest = head.last().messageId
+                val tail = current.messages
+                    .filter { message -> message.messageId > headNewest }
+                    .takeLast(pageSize)
+                val hasGap = tail.isNotEmpty()
+
+                _state.value = MessageHistory(
+                    messages = head,
+                    hasMoreOlder = false,
+                    isLoadingInitial = false,
+                    isLoadingOlder = false,
+                    hasMoreNewer = true,
+                    totalCount = page.totalCount ?: current.totalCount,
+                    newerMessages = if (hasGap) tail else emptyList(),
+                    hasUnloadedGap = hasGap
+                )
+                isSeededWindow = false
+                Result.success(true)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                _state.update { state -> state.copy(isLoadingOlder = false) }
+                Result.failure(exception)
+            }
+        }
+
+    /**
+     * Loads one page of the undiscovered range. Scrolling to the gap calls
+     * this repeatedly until the head block meets the retained tail.
+     */
+    suspend fun loadGap(limit: Int = pageSize): Result<Boolean> = pageMutex.withLock {
+        val current = _state.value
+
+        if (!current.hasUnloadedGap || current.newerMessages.isEmpty()) {
+            return@withLock Result.success(false)
+        }
+
+        val headNewest = current.messages.lastOrNull()?.messageId
+            ?: return@withLock Result.success(false)
+        val tailOldest = current.newerMessages.first().messageId
+
+        return@withLock try {
+            val pageLimit = limit.coerceIn(2, 100)
+            val page = pageLoader.load(
+                fromMessageId = headNewest,
+                limit = pageLimit,
+                offset = -(pageLimit - 1)
+            ).getOrThrow()
+
+            val fetched = page.messages
+                .filterNot { message -> message.messageId in deletedIds }
+                .filter { message -> message.sendState != MessageSendState.Failed }
+                .filter { message -> message.messageId > headNewest }
+                .sortedBy { message -> message.messageId }
+
+            val reachesTail = fetched.any { message -> message.messageId >= tailOldest }
+            val inGap = fetched.filter { message -> message.messageId < tailOldest }
+            val merged = (current.messages + inGap)
+                .distinctBy { message -> message.messageId }
+                .sortedBy { message -> message.messageId }
+
+            // No newer message exists between the blocks (or the page reached
+            // the retained tail): close the gap and join both blocks.
+            val closesGap = reachesTail || inGap.isEmpty()
+            val joined = if (closesGap) {
+                (merged + current.newerMessages)
+                    .distinctBy { message -> message.messageId }
+                    .sortedBy { message -> message.messageId }
+            } else {
+                merged
+            }
+
+            _state.value = current.copy(
+                messages = joined,
+                newerMessages = if (closesGap) emptyList() else current.newerMessages,
+                hasUnloadedGap = !closesGap
+            )
+            Result.success(true)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
+            Result.failure(exception)
+        }
+    }
+
+    /**
+     * Binary-searches the first existing message id. `getChatHistory` returns
+     * the anchor or the closest older message, so a midpoint without messages
+     * proves the chat starts later. This costs a logarithmic number of tiny
+     * requests and never walks the history.
+     */
+    private suspend fun findFirstMessageId(upper: Long): Long {
+        var low = 1L
+        var high = upper.coerceAtLeast(1L)
+        var probes = 0
+
+        while (low < high && probes < 64) {
+            val mid = low + (high - low) / 2
+            val page = pageLoader.load(fromMessageId = mid, limit = 1).getOrThrow()
+            val closest = page.messages
+                .mapNotNull { message -> message.messageId.takeIf { id -> id in 1..mid } }
+                .maxOrNull()
+
+            if (closest == null) {
+                low = mid + 1
+            } else {
+                high = closest
+            }
+
+            probes++
+        }
+
+        return high
+    }
 
     /**
      * Pages history backwards until [messageId] is part of the window.

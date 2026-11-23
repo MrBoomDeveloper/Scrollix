@@ -16,6 +16,8 @@ import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.ChatTopic
+import com.mrboomdev.scrollix.data.model.NotificationException
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
@@ -28,13 +30,23 @@ import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+
+/** Sessions without a live transport are always considered connected. */
+private val AlwaysConnected = MutableStateFlow(true)
 
 interface AccountSession {
     val accountId: String
     val providerId: String
 
     val authState: StateFlow<AuthState>
+    /**
+     * False while the provider lost its server connection. The dialog header
+     * shows "Connecting..." instead of a stale online status until it heals.
+     * Providers without a live connection keep the default `true`.
+     */
+    val isConnected: StateFlow<Boolean> get() = AlwaysConnected
     val profile: StateFlow<AccountProfile?>
     val dialogs: StateFlow<List<Dialog>>
     val folders: StateFlow<List<DialogFolder>>
@@ -65,6 +77,45 @@ interface AccountSession {
     suspend fun confirmQrCodeAuthentication(link: String): Result<Unit>
     suspend fun loadMessages(providerDialogId: String, limit: Int = 50): Result<Unit>
     suspend fun loadOlderMessages(providerDialogId: String, limit: Int = 50): Result<Boolean>
+
+    /**
+     * Jumps to the true beginning of a chat, keeping the previously loaded
+     * window as a far-end preview behind an undiscovered gap.
+     */
+    suspend fun jumpToBeginning(
+        providerDialogId: String,
+        limit: Int = 50
+    ): Result<Boolean> = Result.success(false)
+
+    /** Fills one page of the undiscovered gap after [jumpToBeginning]. */
+    suspend fun loadNewerMessages(
+        providerDialogId: String,
+        limit: Int = 50
+    ): Result<Boolean> = Result.success(false)
+
+    /** Forum topics of a chat, newest activity first. Empty for non-forums. */
+    suspend fun loadTopics(providerDialogId: String): Result<List<ChatTopic>> =
+        Result.failure(UnsupportedOperationException("Topics are not supported"))
+
+    /** Newest page of one topic's history, oldest first. */
+    suspend fun loadTopicMessages(
+        providerDialogId: String,
+        topicId: Long,
+        limit: Int = 50
+    ): Result<List<ChatMessage>> = Result.failure(
+        UnsupportedOperationException("Topics are not supported")
+    )
+
+    /** Sends a message into a forum topic. */
+    suspend fun sendTopicMessage(
+        providerDialogId: String,
+        topicId: Long,
+        text: String,
+        customEmojis: List<CustomEmojiSpan> = emptyList()
+    ): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Topics are not supported")
+    )
+
     suspend fun loadMessagesUntil(providerDialogId: String, messageId: Long): Result<Boolean>
 
     /**
@@ -231,6 +282,20 @@ interface AccountSession {
 
     suspend fun setScopeMuted(scope: NotificationScope, muted: Boolean): Result<Unit> =
         Result.success(Unit)
+
+    /**
+     * Chats whose notification settings differ from [scope]'s defaults. These
+     * are the per-chat exceptions listed under the category in settings.
+     */
+    suspend fun loadNotificationExceptions(
+        scope: NotificationScope
+    ): Result<List<NotificationException>> = Result.success(emptyList())
+
+    /** Restores a chat's notification settings to its scope's defaults. */
+    suspend fun resetDialogNotificationSettings(providerDialogId: String): Result<Unit> =
+        Result.failure(
+            UnsupportedOperationException("Notification settings are not supported")
+        )
 
     /** Mutes or unmutes one chat (person, group or channel) on the server. */
     suspend fun setDialogMuted(providerDialogId: String, muted: Boolean): Result<Unit> =

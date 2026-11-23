@@ -35,6 +35,8 @@ class DialogMessageListState internal constructor(
     /** Messages as rendered, with media albums merged into single rows. */
     private val displayMessages: () -> List<ChatMessage>,
     private val requestOlderPage: suspend () -> Result<Boolean>,
+    /** Loads the true beginning and leaves the previous window as a gap. */
+    private val requestBeginning: suspend () -> Result<Boolean>,
     private val requestMessage: suspend (Long) -> Result<Boolean>,
     private val requestAround: suspend (Long) -> Result<Boolean>,
     private val refreshNewest: suspend () -> Result<Unit>,
@@ -136,7 +138,14 @@ class DialogMessageListState internal constructor(
         hasNewMessages = false
 
         try {
+            // Reaching the end must not walk through messages that were never
+            // loaded: refresh the newest page (which also closes an
+            // undiscovered gap) and let it lay out before landing on the true
+            // end without any animation.
             refreshNewest().exceptionOrNull()?.let(onError)
+
+            withFrameNanos { }
+            withFrameNanos { }
 
             val messages = displayMessages()
             if (messages.isNotEmpty()) {
@@ -150,33 +159,28 @@ class DialogMessageListState internal constructor(
         }
     }
 
-    /** Pages the whole history in and lands on its first message. */
+    /**
+     * Jumps to the true first message. Only the first page is fetched; the
+     * middle stays marked as undiscovered and is filled lazily when the
+     * placeholder scrolls into view.
+     */
     suspend fun jumpToFirstMessage() {
         if (isJumping) return
 
         isJumping = true
 
         try {
-            var pages = 0
+            val result = requestBeginning()
+            val throwable = result.exceptionOrNull()
 
-            while (
-                pages < MaxFirstMessagePages &&
-                history().hasMoreOlder &&
-                history().messages.isNotEmpty()
-            ) {
-                val sizeBefore = history().messages.size
-                val result = requestOlderPage()
-
-                result.exceptionOrNull()?.let { throwable ->
-                    onError(throwable)
-                    return
-                }
-
-                if (history().messages.size == sizeBefore) break
-                pages++
+            if (throwable != null) {
+                onError(throwable)
+                return
             }
 
-            listState.scrollToItem(0)
+            if (result.getOrNull() == true) {
+                listState.scrollToItem(0)
+            }
         } finally {
             isJumping = false
         }
@@ -192,6 +196,7 @@ fun rememberDialogMessageListState(
     savedPosition: DialogScrollPosition?,
     trackPosition: Boolean,
     loadOlder: suspend () -> Result<Boolean>,
+    loadBeginning: suspend () -> Result<Boolean>,
     loadUntilLoaded: suspend (Long) -> Result<Boolean>,
     loadAround: suspend (Long) -> Result<Boolean> = loadUntilLoaded,
     loadLatest: suspend () -> Result<Unit>,
@@ -238,6 +243,7 @@ fun rememberDialogMessageListState(
     val latestInitialMessageId = rememberUpdatedState(initialMessageId)
     val latestSavedPosition = rememberUpdatedState(savedPosition)
     val latestLoadOlder = rememberUpdatedState(loadOlder)
+    val latestLoadBeginning = rememberUpdatedState(loadBeginning)
     val latestLoadUntilLoaded = rememberUpdatedState(loadUntilLoaded)
     val latestLoadAround = rememberUpdatedState(loadAround)
     val latestLoadLatest = rememberUpdatedState(loadLatest)
@@ -261,6 +267,7 @@ fun rememberDialogMessageListState(
             history = { latestHistory.value },
             displayMessages = { latestDisplayMessages.value },
             requestOlderPage = { latestLoadOlder.value() },
+            requestBeginning = { latestLoadBeginning.value() },
             requestMessage = { messageId -> latestLoadUntilLoaded.value(messageId) },
             requestAround = { messageId -> latestLoadAround.value(messageId) },
             refreshNewest = { latestLoadLatest.value() },

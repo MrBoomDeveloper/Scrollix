@@ -47,12 +47,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.savedstate.serialization.SavedStateConfiguration
+import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.DialogKind
@@ -112,7 +115,7 @@ private data class AppNavTab(
     val onClick: () -> Unit
 )
 
-@OptIn(ExperimentalSerializationApi::class)
+@OptIn(ExperimentalSerializationApi::class, ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 @Preview
 @DevelopmentEntryPoint
@@ -145,9 +148,11 @@ fun App() {
     val pendingDeepLink by DeepLinkHandler.pending.collectAsState()
     val pendingChatOpen by ChatOpenHandler.pending.collectAsState()
     val backRequests by BackNavigation.requests.collectAsState()
+    val isRecording by DialogRecordingState.isRecording.collectAsState()
     val currentRoute = backStack.lastOrNull()
     val uriHandler = LocalUriHandler.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val listDetailStrategy = rememberListDetailSceneStrategy<NavKey>()
     var stickerSetOverlay by remember {
         mutableStateOf<Pair<String, StickerSetTarget>?>(null)
     }
@@ -186,7 +191,8 @@ fun App() {
                 // they never warrant a notification.
                 if (dialog.isSavedMessages) return@forEach
 
-                val open = selectedDialog.value
+                val open = (backStack.lastOrNull() as? Route.Dialog)
+                    ?: selectedDialog.value
                 val isOpen = open != null &&
                     open.accountId == entry.account.id &&
                     open.providerDialogId == dialog.providerDialogId
@@ -332,8 +338,12 @@ fun App() {
     
     // Desktop Escape (published by the entry point) behaves like a back
     // press: overlays close first, then the navigation stack pops.
-    LaunchedEffect(backRequests) {
+    LaunchedEffect(backRequests, isRecording) {
         if (backRequests == 0L) return@LaunchedEffect
+
+        // A recording must not be abandoned through the navigation stack;
+        // DialogScreen consumes the same back press on mobile.
+        if (isRecording) return@LaunchedEffect
 
         when {
             MediaViewer.isShowing -> MediaViewer.close()
@@ -362,11 +372,13 @@ fun App() {
                 icon = if(isHomeTab) home_icon_filled else home_icon,
                 title = "Home",
                 onClick = {
-                    // Keep the wide-layout chat selection when switching back
-                    // from Search/other tabs, so the right pane does not go
-                    // blank just because the Home tab was tapped.
-                    backStack.clearExcept {
-                        it is Route.Home 
+                    if (!isRecording) {
+                        // Keep the wide-layout chat selection when switching
+                        // back from Search/other tabs, so the right pane does
+                        // not go blank just because the Home tab was tapped.
+                        backStack.clearExcept {
+                            it is Route.Home
+                        }
                     }
                 }
             ),
@@ -385,7 +397,7 @@ fun App() {
                 icon = search_icon,
                 title = "Search",
                 onClick = {
-                    if (backStack.lastOrNull() != Route.Search()) {
+                    if (!isRecording && backStack.lastOrNull() != Route.Search()) {
                         backStack.add(Route.Search())
                     }
                 }
@@ -397,7 +409,7 @@ fun App() {
                 icon = account_circle_icon,
                 title = "Accounts",
                 onClick = {
-                    if (backStack.lastOrNull() != Route.Accounts) {
+                    if (!isRecording && backStack.lastOrNull() != Route.Accounts) {
                         backStack.add(Route.Accounts)
                     }
                 }
@@ -532,11 +544,16 @@ fun App() {
                         NavDisplay(
                             modifier = Modifier.fillMaxSize(),
                             backStack = backStack,
+                            sceneStrategies = listOf(listDetailStrategy),
 
                             entryProvider = rememberAppEntryProvider(
                                 backStack = backStack,
                                 selectedDialog = selectedDialog,
-                                onSelectDialog = { selectedDialog.value = it }
+                                onSelectDialog = {
+                                    if (!DialogRecordingState.isActive) {
+                                        selectedDialog.value = it
+                                    }
+                                }
                             ),
 
                             transitionSpec = {

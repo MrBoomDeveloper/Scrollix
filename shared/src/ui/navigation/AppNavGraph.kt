@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -24,6 +26,7 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.features.accounts.AccountsScreen
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
@@ -35,6 +38,7 @@ import com.mrboomdev.scrollix.features.settings.SettingsScreen
 import com.mrboomdev.scrollix.isTwoPaneLayout
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun rememberAppEntryProvider(
     backStack: NavBackStack<NavKey>,
@@ -42,51 +46,36 @@ fun rememberAppEntryProvider(
     onSelectDialog: (Route.Dialog?) -> Unit
 ): (NavKey) -> NavEntry<NavKey> {
     return entryProvider {
-        entry<Route.Home> {
-            val isTwoPane = isTwoPaneLayout()
-            val selected by selectedDialog
+        // The home entry is the list pane of the Navigation 3 list/detail
+        // scene. On a wide window the Dialog entry below becomes the detail
+        // pane; on a phone the same entry fills the screen. The strategy
+        // itself decides whether a scene is possible, so there is no custom
+        // wide-layout branching left here.
+        entry<Route.Home>(
+            metadata = ListDetailSceneStrategy.listPane(
+                detailPlaceholder = { NoDialogSelected() }
+            )
+        ) {
+            val selected = backStack.lastOrNull() as? Route.Dialog
 
-            if (isTwoPane) {
-                WideDialogsScreen(
-                    selectedDialog = selected,
-                    onOpenDialog = onSelectDialog,
-                    onCloseDialog = { onSelectDialog(null) },
-                    onOpenSettingsScreen = {
-                        backStack += Route.Settings
-                    },
-                    onOpenProfile = { dialog ->
-                        backStack += Route.Profile(
-                            accountId = dialog.accountId,
-                            providerDialogId = dialog.providerDialogId
-                        )
-                    },
-                    onOpenUserProfile = { dialog, userId ->
-                        backStack += Route.Profile(
-                            accountId = dialog.accountId,
-                            providerDialogId = dialog.providerDialogId,
-                            userId = userId
-                        )
-                    },
-                    onOpenAccountsScreen = { backStack += Route.Accounts },
-                    onOpenHashtag = { hashtag -> backStack += Route.Search(hashtag) }
-                )
-            } else {
-                HomeScreen(
-                    onOpenAccountsScreen = {
-                        backStack += Route.Accounts
-                    },
-                    onOpenSettingsScreen = {
-                        backStack += Route.Settings
-                    },
-                    onOpenDialog = { entry ->
-                        onSelectDialog(null)
-                        backStack += Route.Dialog(
+            HomeScreen(
+                onOpenAccountsScreen = {
+                    backStack += Route.Accounts
+                },
+                onOpenSettingsScreen = {
+                    backStack += Route.Settings
+                },
+                onOpenDialog = { entry ->
+                    backStack.openDialog(
+                        Route.Dialog(
                             accountId = entry.account.id,
                             providerDialogId = entry.dialog.providerDialogId
                         )
-                    }
-                )
-            }
+                    )
+                },
+                selectedDialogAccountId = selected?.accountId,
+                selectedDialogProviderDialogId = selected?.providerDialogId
+            )
         }
 
         entry<Route.Accounts> {
@@ -115,63 +104,33 @@ fun rememberAppEntryProvider(
             )
         }
 
-        entry<Route.Dialog> { route ->
-            val isTwoPane = isTwoPaneLayout()
-            val selected by selectedDialog
-
-            if (isTwoPane) {
-                LaunchedEffect(route) {
-                    onSelectDialog(route)
-                    backStack.remove(route)
-                }
-
-                WideDialogsScreen(
-                    selectedDialog = selected ?: route,
-                    onOpenDialog = onSelectDialog,
-                    onCloseDialog = { onSelectDialog(null) },
-                    onOpenSettingsScreen = {
-                        backStack += Route.Settings
-                    },
-                    onOpenProfile = { dialog ->
-                        backStack += Route.Profile(
-                            accountId = dialog.accountId,
-                            providerDialogId = dialog.providerDialogId
-                        )
-                    },
-                    onOpenUserProfile = { dialog, userId ->
-                        backStack += Route.Profile(
-                            accountId = dialog.accountId,
-                            providerDialogId = dialog.providerDialogId,
-                            userId = userId
-                        )
-                    },
-                    onOpenAccountsScreen = { backStack += Route.Accounts },
-                    onOpenHashtag = { hashtag -> backStack += Route.Search(hashtag) }
-                )
-            } else {
-                DialogScreen(
-                    accountId = route.accountId,
-                    providerDialogId = route.providerDialogId,
-                    initialMessageId = route.messageId,
-                    onOpenProfile = {
-                        backStack += Route.Profile(
-                            accountId = route.accountId,
-                            providerDialogId = route.providerDialogId
-                        )
-                    },
-                    onOpenUserProfile = { userId ->
-                        backStack += Route.Profile(
-                            accountId = route.accountId,
-                            providerDialogId = route.providerDialogId,
-                            userId = userId
-                        )
-                    },
-                    onOpenHashtag = { hashtag -> backStack += Route.Search(hashtag) },
-                    onBack = {
+        entry<Route.Dialog>(
+            metadata = ListDetailSceneStrategy.detailPane()
+        ) { route ->
+            DialogScreen(
+                accountId = route.accountId,
+                providerDialogId = route.providerDialogId,
+                initialMessageId = route.messageId,
+                onOpenProfile = {
+                    backStack += Route.Profile(
+                        accountId = route.accountId,
+                        providerDialogId = route.providerDialogId
+                    )
+                },
+                onOpenUserProfile = { userId ->
+                    backStack += Route.Profile(
+                        accountId = route.accountId,
+                        providerDialogId = route.providerDialogId,
+                        userId = userId
+                    )
+                },
+                onOpenHashtag = { hashtag -> backStack += Route.Search(hashtag) },
+                onBack = {
+                    if (!DialogRecordingState.isActive) {
                         backStack.removeLastOrNull()
                     }
-                )
-            }
+                }
+            )
         }
 
         entry<Route.Search> { route ->
@@ -236,30 +195,31 @@ fun rememberAppEntryProvider(
         entry<Route.Profile> { route ->
             val isTwoPane = isTwoPaneLayout()
 
+            // Opening a chat from a profile – the message button, a personal
+            // channel or a group in common – lands in the chat itself, so the
+            // profile of that chat is never pushed on top of itself.
+            val openChat: (String) -> Unit = { targetDialogId ->
+                val target = Route.Dialog(
+                    accountId = route.accountId,
+                    providerDialogId = targetDialogId
+                )
+
+                backStack.removeLastOrNull()
+
+                if (isTwoPane) {
+                    backStack.clear()
+                    backStack.add(Route.Home)
+                    backStack.add(target)
+                } else if (backStack.lastOrNull() != target) {
+                    backStack += target
+                }
+            }
+
             ProfileScreen(
                 accountId = route.accountId,
                 providerDialogId = route.providerDialogId,
                 userId = route.userId,
-                onMessage = { targetDialogId ->
-                    val target = Route.Dialog(
-                        accountId = route.accountId,
-                        providerDialogId = targetDialogId
-                    )
-
-                    // The profile is a full screen entry, so it has to be
-                    // dismissed for the chat to become visible.
-                    backStack.removeLastOrNull()
-
-                    if (isTwoPane) {
-                        // On wide layouts the chat lives in the home pane;
-                        // drop whatever covered it (search, profile, ...).
-                        onSelectDialog(target)
-                        backStack.clear()
-                        backStack.add(Route.Home)
-                    } else if (backStack.lastOrNull() != target) {
-                        backStack += target
-                    }
-                },
+                onMessage = openChat,
                 onOpenMessage = { messageId ->
                     val target = Route.Dialog(
                         accountId = route.accountId,
@@ -277,12 +237,7 @@ fun rememberAppEntryProvider(
                         backStack += target
                     }
                 },
-                onOpenChannelProfile = { channelId ->
-                    backStack += Route.Profile(
-                        accountId = route.accountId,
-                        providerDialogId = channelId
-                    )
-                },
+                onOpenChat = openChat,
                 onBack = {
                     backStack.removeLastOrNull()
                 }
@@ -308,73 +263,26 @@ fun rememberAppEntryProvider(
     }
 }
 
-@Composable
-private fun WideDialogsScreen(
-    selectedDialog: Route.Dialog?,
-    onOpenDialog: (Route.Dialog) -> Unit,
-    onCloseDialog: () -> Unit,
-    onOpenProfile: (Route.Dialog) -> Unit,
-    onOpenUserProfile: (Route.Dialog, Long) -> Unit,
-    onOpenAccountsScreen: () -> Unit,
-    onOpenSettingsScreen: () -> Unit,
-    onOpenHashtag: (String) -> Unit,
+private fun androidx.navigation3.runtime.NavBackStack<NavKey>.openDialog(
+    route: Route.Dialog
 ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val listWidth = (maxWidth * 0.38f).coerceIn(300.dp, 400.dp)
+    val current = lastOrNull()
 
-        Row(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .width(listWidth)
-                    .fillMaxHeight()
-            ) {
-                HomeScreen(
-                    onOpenAccountsScreen = onOpenAccountsScreen,
-                    onOpenDialog = { entry ->
-                        onOpenDialog(
-                            Route.Dialog(
-                                accountId = entry.account.id,
-                                providerDialogId = entry.dialog.providerDialogId
-                            )
-                        )
-                    },
-                    onOpenSettingsScreen = onOpenSettingsScreen,
-                    selectedDialogAccountId = selectedDialog?.accountId,
-                    selectedDialogProviderDialogId = selectedDialog?.providerDialogId
-                )
-            }
-
-            VerticalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-            ) {
-                if (selectedDialog != null) {
-                    key(
-                        selectedDialog.accountId,
-                        selectedDialog.providerDialogId,
-                        selectedDialog.messageId
-                    ) {
-                        DialogScreen(
-                            accountId = selectedDialog.accountId,
-                            providerDialogId = selectedDialog.providerDialogId,
-                            initialMessageId = selectedDialog.messageId,
-                            onOpenProfile = { onOpenProfile(selectedDialog) },
-                            onOpenUserProfile = { userId ->
-                                onOpenUserProfile(selectedDialog, userId)
-                            },
-                            onOpenHashtag = onOpenHashtag,
-                            onBack = onCloseDialog
-                        )
-                    }
-                } else {
-                    NoDialogSelected()
-                }
-            }
+    if (current is Route.Dialog) {
+        if (
+            current.accountId == route.accountId &&
+            current.providerDialogId == route.providerDialogId &&
+            current.messageId == route.messageId
+        ) {
+            return
         }
+
+        // Keep one detail entry in the back stack; selecting another chat
+        // swaps the detail pane instead of stacking histories.
+        removeLastOrNull()
     }
+
+    add(route)
 }
 
 @Composable

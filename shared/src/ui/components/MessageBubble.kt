@@ -582,6 +582,35 @@ fun MessageBubble(
                                 }
                             }
 
+                            // Channel posts expose their discussion thread right
+                            // under the post instead of hiding it in the action
+                            // menu, where most readers never found it.
+                            if (
+                                dialogKind == DialogKind.Channel &&
+                                message.replyCount > 0 &&
+                                onOpenThread != null
+                            ) {
+                                TextButton(
+                                    modifier = Modifier.padding(top = 2.dp),
+                                    onClick = onOpenThread
+                                ) {
+                                    Icon(
+                                        modifier = Modifier.size(16.dp),
+                                        imageVector = reply_icon,
+                                        contentDescription = null
+                                    )
+
+                                    Text(
+                                        modifier = Modifier.padding(start = 6.dp),
+                                        text = if (message.replyCount == 1) {
+                                            "1 comment"
+                                        } else {
+                                            "${message.replyCount} comments"
+                                        }
+                                    )
+                                }
+                            }
+
                             if (!isMediaOnly && !isFooterInline) {
                                 MessageFooter(
                                     message = message,
@@ -677,6 +706,7 @@ fun MessageBubble(
                             data = customEmojiData,
                             adaptiveEmojis = customEmojiAdaptive,
                             session = session,
+                            isChannel = dialogKind == DialogKind.Channel,
                             onReaction = { option ->
                                 menuExpanded = false
                                 onReaction(option)
@@ -909,9 +939,11 @@ private fun ReactionPickerRow(
     data: Map<Long, ByteArray>,
     adaptiveEmojis: Set<Long> = emptySet(),
     session: AccountSession?,
+    isChannel: Boolean = false,
     onReaction: (MessageReactionOption) -> Unit
 ) {
     var expanded by remember(message.messageId) { mutableStateOf(false) }
+    var reactionsLoading by remember(message.messageId) { mutableStateOf(true) }
     var available by remember(message.messageId) {
         mutableStateOf<List<MessageReactionOption>>(emptyList())
     }
@@ -925,16 +957,28 @@ private fun ReactionPickerRow(
     val scope = rememberCoroutineScope()
     val settings by AppSettingsStore.state.collectAsState()
 
-    LaunchedEffect(expanded, session, message.messageId) {
-        if (!expanded) return@LaunchedEffect
+    // Reactions are loaded as soon as the menu opens so a channel only ever
+    // offers the set the server enabled for that post. Pack reactions are not
+    // fetched for channels: arbitrary custom emoji are not sendable there.
+    LaunchedEffect(session, message.messageId) {
+        val currentSession = session
+
+        if (currentSession == null) {
+            reactionsLoading = false
+            return@LaunchedEffect
+        }
+
+        reactionsLoading = true
+        available = currentSession
+            .loadAvailableReactions(message.providerDialogId, message.messageId)
+            .getOrDefault(emptyList())
+        reactionsLoading = false
+    }
+
+    LaunchedEffect(expanded, session, message.messageId, isChannel) {
+        if (!expanded || isChannel) return@LaunchedEffect
 
         val currentSession = session ?: return@LaunchedEffect
-
-        if (available.isEmpty()) {
-            available = currentSession
-                .loadAvailableReactions(message.providerDialogId, message.messageId)
-                .getOrDefault(emptyList())
-        }
 
         if (packs.isEmpty()) {
             val loadedPacks = currentSession
@@ -973,9 +1017,11 @@ private fun ReactionPickerRow(
     // Channels (and chats with a restricted reaction set) only accept the
     // reactions the server lists. The user's pinned quick reactions must not
     // stay in the menu when they are not sendable here.
-    val sendableQuick = remember(quick, available) {
+    val sendableQuick = remember(quick, available, isChannel) {
         if (available.isEmpty()) {
-            quick
+            // A channel with disabled or restricted reactions must not fall
+            // back to the user's global quick reactions.
+            if (isChannel) emptyList() else quick
         } else {
             quick.filter { option -> available.any { it.key == option.key } }
         }
@@ -985,7 +1031,11 @@ private fun ReactionPickerRow(
         buildList {
             add(
                 ReactionMenuEntry.Available(
-                    options = (sendableQuick + available).distinctBy { it.key }
+                    options = if (isChannel) {
+                        available
+                    } else {
+                        (sendableQuick + available).distinctBy { it.key }
+                    }
                 )
             )
 
@@ -1014,7 +1064,34 @@ private fun ReactionPickerRow(
     }
 
     Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-        if (!expanded) {
+        if (isChannel) {
+            when {
+                reactionsLoading -> Text(
+                    text = "Loading reactions...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                available.isEmpty() -> Text(
+                    text = "Reactions are disabled in this channel",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    available.forEach { option ->
+                        ReactionPickerButton(
+                            option = option,
+                            chosen = isChosen(option),
+                            data = data,
+                            adaptiveEmojis = adaptiveEmojis,
+                            session = session,
+                            onClick = { onReaction(option) }
+                        )
+                    }
+                }
+            }
+        } else if (!expanded) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 sendableQuick.ifEmpty { available }.forEach { option ->
                     ReactionPickerButton(

@@ -56,6 +56,8 @@ data class Dialog(
     val isVerified: Boolean = false,
     /** The bot behind this dialog exposes a main mini app. */
     val hasMainWebApp: Boolean = false,
+    /** The chat is displayed as a list of forum topics. */
+    val isForum: Boolean = false,
     val statusText: String? = null,
     /** Phone number of a direct chat's peer, when the provider exposes it. */
     val phoneNumber: String? = null,

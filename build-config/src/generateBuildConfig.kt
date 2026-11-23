@@ -42,6 +42,22 @@ fun generateBuildConfig(
         println("WARNING: telegram.apiHash is missing or empty in $propertiesFile; using an empty value.")
     }
 
+    // Test-server mode isolates the whole app: separate storage profile and
+    // TDLib database, the test DC instead of the production one, and only the
+    // providers that actually have a public test server.
+    val envTestServer = System.getenv("SCROLLIX_TEST_SERVER")?.trim()
+    val propertyTestServer = properties.getProperty("telegram.testServer")?.trim()
+
+    val testServer = when {
+        !envTestServer.isNullOrEmpty() -> envTestServer.isTruthy()
+        !propertyTestServer.isNullOrEmpty() -> propertyTestServer.isTruthy()
+        else -> false
+    }
+
+    if (testServer) {
+        println("Building Scrollix for the Telegram test server (isolated profile).")
+    }
+
     val outputFile = generatedSourceDir.resolve("BuildConfig.kt")
     outputFile.createParentDirectories()
     outputFile.writeText(
@@ -51,9 +67,15 @@ fun generateBuildConfig(
             appendLine("public object BuildConfig {")
             appendLine("    public const val TELEGRAM_API_ID: Int = ${apiId ?: 0}")
             appendLine("    public const val TELEGRAM_API_HASH: String = \"${apiHash.orEmpty().escapeKotlinString()}\"")
+            appendLine("    public const val TEST_SERVER_MODE: Boolean = $testServer")
             appendLine("}")
         }
     )
+}
+
+/** Accepts the usual spellings people put into an environment variable. */
+private fun String.isTruthy(): Boolean {
+    return lowercase() in setOf("1", "true", "yes", "on")
 }
 
 private fun String.escapeKotlinString(): String = buildString {

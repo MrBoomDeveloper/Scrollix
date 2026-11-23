@@ -5,11 +5,16 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Build
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -32,6 +37,35 @@ actual fun rememberMediaRecorder(): MediaRecordingController {
     return controller
 }
 
+@Composable
+actual fun VideoNotePreview(controller: MediaRecordingController, modifier: Modifier) {
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            SurfaceView(context).apply {
+                holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        controller.attachPreviewSurface(holder.surface)
+                    }
+
+                    override fun surfaceChanged(
+                        holder: SurfaceHolder,
+                        format: Int,
+                        width: Int,
+                        height: Int
+                    ) {
+                        controller.attachPreviewSurface(holder.surface)
+                    }
+
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        controller.attachPreviewSurface(null)
+                    }
+                })
+            }
+        }
+    )
+}
+
 private class AndroidMediaRecordingController(
     private val context: Context
 ) : MediaRecordingController {
@@ -43,6 +77,11 @@ private class AndroidMediaRecordingController(
     private var file: File? = null
     private var startedAt = 0L
     private var kind = MediaRecordingKind.Voice
+    private var previewSurface: Surface? = null
+
+    override fun attachPreviewSurface(surface: Any?) {
+        previewSurface = surface as? Surface
+    }
 
     override fun start(kind: MediaRecordingKind): Boolean {
         cancel()
@@ -82,6 +121,13 @@ private class AndroidMediaRecordingController(
                 mediaRecorder.setVideoFrameRate(30)
                 mediaRecorder.setVideoEncodingBitRate(1_500_000)
                 mediaRecorder.setMaxDuration(MaxVideoNoteDurationMs.toInt())
+
+                // The preview surface has to be known before prepare(), which
+                // is why the recorder is started only after the circle preview
+                // is composed.
+                previewSurface?.let { surface ->
+                    runCatching { mediaRecorder.setPreviewDisplay(surface) }
+                }
             }
 
             mediaRecorder.setOutputFile(output.absolutePath)

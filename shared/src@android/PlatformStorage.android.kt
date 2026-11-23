@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.storage
 
 import android.content.Context
+import com.mrboomdev.scrollix.data.AppMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -16,7 +17,12 @@ object AndroidAppContext {
 }
 
 private class AndroidPlatformStorage : PlatformStorage {
-    private val root = File(AndroidAppContext.context.noBackupFilesDir, "scrollix")
+    // The test-server profile gets its own root, so settings, accounts, cache
+    // databases and TDLib directories never clash with a regular install.
+    private val root = File(
+        AndroidAppContext.context.noBackupFilesDir,
+        AppMode.storageProfileName
+    )
 
     override val rootDirectory: String = root.absolutePath
 
