@@ -1,5 +1,14 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.data.model.ChatWallpaper
+import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettings
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -86,74 +95,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.mrboomdev.scrollix.DialogRecordingState
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.ChatWallpaper
-import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.model.MessageHistory
-import com.mrboomdev.scrollix.data.model.MessageMediaKind
-import com.mrboomdev.scrollix.data.model.MessageReactionOption
-import com.mrboomdev.scrollix.data.model.MessageReply
-import com.mrboomdev.scrollix.data.model.MessageSendState
-import com.mrboomdev.scrollix.data.model.UndiscoveredMessagesMessageId
-import com.mrboomdev.scrollix.data.model.asSessionException
-import com.mrboomdev.scrollix.data.model.groupMessageAlbums
-import com.mrboomdev.scrollix.data.outbox.OutboxAttachment
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryKind
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
-import com.mrboomdev.scrollix.data.outbox.OutboxManager
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.DialogScrollPositionStore
-import com.mrboomdev.scrollix.isTwoPaneLayout
-import com.mrboomdev.scrollix.moved
-import com.mrboomdev.scrollix.openDialer
-import com.mrboomdev.scrollix.resources.Res
-import com.mrboomdev.scrollix.resources.wallpaper
-import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.ChatAnimationPreview
-import com.mrboomdev.scrollix.ui.components.ChatSticker
-import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
-import com.mrboomdev.scrollix.ui.components.ComposerInputRow
-import com.mrboomdev.scrollix.ui.components.EmojiPicker
-import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
-import com.mrboomdev.scrollix.ui.components.ForumTopicsDialog
-import com.mrboomdev.scrollix.ui.components.LoadingContent
-import com.mrboomdev.scrollix.ui.components.MediaRecordingKind
-import com.mrboomdev.scrollix.ui.components.MediaViewer
-import com.mrboomdev.scrollix.ui.components.MessageBubble
-import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
-import com.mrboomdev.scrollix.ui.components.MessageDatePill
-import com.mrboomdev.scrollix.ui.components.MessageGallery
-import com.mrboomdev.scrollix.ui.components.MessageThreadDialog
-import com.mrboomdev.scrollix.ui.components.MessageThreadRail
-import com.mrboomdev.scrollix.ui.components.PickedFile
-import com.mrboomdev.scrollix.ui.components.PlatformBackHandler
-import com.mrboomdev.scrollix.ui.components.RecordedMedia
-import com.mrboomdev.scrollix.ui.components.RecordedMediaDialog
-import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
-import com.mrboomdev.scrollix.ui.components.VideoNotePreview
-import com.mrboomdev.scrollix.ui.components.VoiceMessagePlayer
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
-import com.mrboomdev.scrollix.ui.components.messageDate
-import com.mrboomdev.scrollix.ui.components.readClipboardImages
-import com.mrboomdev.scrollix.ui.components.rememberFilePicker
-import com.mrboomdev.scrollix.ui.components.rememberMediaRecorder
-import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.icons.call_icon
-import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
-import com.mrboomdev.scrollix.ui.icons.close_icon
-import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
-import com.mrboomdev.scrollix.ui.icons.search_icon
-import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
-import com.mrboomdev.scrollix.ui.icons.send_icon
-import com.mrboomdev.scrollix.ui.icons.verified_icon
-import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -162,8 +103,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
-import com.mrboomdev.scrollix.data.storage.AppSettings
-import com.mrboomdev.scrollix.data.provider.AccountSession
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.State
 
@@ -267,91 +206,4 @@ internal fun wallpaperBrush(wallpaper: ChatWallpaper): Brush {
         1 -> SolidColor(colors.first())
         else -> Brush.verticalGradient(colors)
     }
-}
-
-@Composable
-
-internal fun DialogWallpaperEffects(
-    settings: AppSettings,
-    dialog: Dialog?,
-    session: AccountSession?,
-    appWallpaper: MutableState<ImageBitmap?>,
-    wallpaperImage: MutableState<ImageBitmap?>
-) {
-        LaunchedEffect(settings.hasCustomWallpaper, settings.wallpaperUpdatedAt) {
-            appWallpaper.value = if (settings.hasCustomWallpaper) {
-                val bytes = withContext(Dispatchers.IO) {
-                    AppSettingsStore.readWallpaper()
-                }
-
-                bytes?.let { data ->
-                    withContext(Dispatchers.Default) {
-                        decodeImageBitmap(data)
-                    }
-                }
-            } else {
-                null
-            }
-        }
-
-        LaunchedEffect(dialog?.providerDialogId, dialog?.wallpaper, session) {
-            val currentDialog = dialog ?: return@LaunchedEffect
-            val wallpaper = currentDialog.wallpaper
-
-            if (wallpaper == null) {
-                wallpaperImage.value = null
-                return@LaunchedEffect
-            }
-
-            val cacheKey = buildString {
-                append(currentDialog.providerDialogId)
-                append(':')
-                append(wallpaper.fileUniqueId ?: wallpaper.fileId)
-                append(':')
-                append(wallpaper.thumbnailUniqueId ?: wallpaper.thumbnailFileId)
-            }
-
-            WallpaperImageCache.exact(cacheKey)?.let { cached ->
-                wallpaperImage.value = cached
-                return@LaunchedEffect
-            }
-
-            var image: ImageBitmap? = null
-            val thumbnailFileId = wallpaper.thumbnailFileId
-
-            // Cached media is addressed by the durable remote unique id, so a
-            // custom wallpaper is restored right away instead of waiting for TDLib
-            // to replay the chat: the file ids stored in a cached dialog are only
-            // valid for the run that produced them.
-            val thumbnailBytes = wallpaper.thumbnailUniqueId
-                ?.let { uniqueId -> session?.loadCachedMedia(uniqueId) }
-                ?: thumbnailFileId?.let { fileId -> session?.loadFile(fileId)?.getOrNull() }
-
-            if (thumbnailBytes != null) {
-                image = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(thumbnailBytes)
-                }
-            }
-
-            val fileId = wallpaper.fileId
-
-            if (image == null && fileId != null && fileId != thumbnailFileId) {
-                val bytes = wallpaper.fileUniqueId
-                    ?.let { uniqueId -> session?.loadCachedMedia(uniqueId) }
-                    ?: session?.loadFile(fileId)?.getOrNull()
-
-                if (bytes != null) {
-                    // Animated wallpapers (video/TGS) can't be decoded as a bitmap,
-                    // in that case the thumbnail stays as the wallpaper.
-                    image = withContext(Dispatchers.Default) {
-                        decodeImageBitmap(bytes)
-                    }
-                }
-            }
-
-            image?.let { decoded ->
-                WallpaperImageCache.put(cacheKey, decoded)
-                wallpaperImage.value = decoded
-            }
-        }
 }

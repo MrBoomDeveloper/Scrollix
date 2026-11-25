@@ -1,9 +1,10 @@
 package com.mrboomdev.scrollix.data.cache
 
-import androidx.room3.Room
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.mrboomdev.scrollix.data.storage.AndroidAppContext
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
+
+import androidx.room3.Room
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 
 internal actual fun createCacheDatabase(): ScrollixCacheDatabase {
     val storage = createPlatformStorage()

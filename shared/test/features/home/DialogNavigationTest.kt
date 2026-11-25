@@ -5,6 +5,7 @@ import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogIdentity
 import com.mrboomdev.scrollix.data.model.DialogKind
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

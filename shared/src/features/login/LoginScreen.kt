@@ -1,5 +1,13 @@
 package com.mrboomdev.scrollix.features.login
 
+import com.mrboomdev.scrollix.data.model.AuthAction
+import com.mrboomdev.scrollix.data.model.AuthChallenge
+import com.mrboomdev.scrollix.data.model.AuthField
+import com.mrboomdev.scrollix.data.model.AuthFieldType
+import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -26,9 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,36 +47,19 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AuthAction
-import com.mrboomdev.scrollix.data.model.AuthCaptchaValueId
-import com.mrboomdev.scrollix.data.model.AuthChallenge
-import com.mrboomdev.scrollix.data.model.AuthField
-import com.mrboomdev.scrollix.data.model.AuthFieldType
-import com.mrboomdev.scrollix.data.model.AuthState
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.ui.components.CaptchaView
-import com.mrboomdev.scrollix.ui.components.LoadingContent
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.alexzhirkevich.qrose.rememberQrCodePainter
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
-
-/** Delay before the code can be requested again. */
-private const val CodeResendDelaySeconds = 60
 
 @Composable
-fun LoginScreen(
+internal fun LoginScreen(
     accountId: String,
     onBack: () -> Unit,
-    onDone: () -> Unit
-) {
-    val session = remember(accountId) { ApiManager.session(accountId) }
-    val fallback = remember {
-        MutableStateFlow<AuthState>(AuthState.Error("Account not found"))
+    onDone: () -> Unit,
+    viewModel: LoginScreenViewModel = viewModel(key = accountId) {
+        LoginScreenViewModel(accountId = accountId)
     }
-    val authState by (session?.authState ?: fallback).collectAsState()
+) {
+    val authState by viewModel.authState.collectAsState()
 
     LaunchedEffect(authState) {
         if (authState is AuthState.Ready) {
@@ -110,7 +99,7 @@ fun LoginScreen(
                     AuthChallengeContent(
                         modifier = contentModifier,
                         challenge = state.challenge,
-                        session = session
+                        viewModel = viewModel
                     )
                 }
 
@@ -152,63 +141,19 @@ fun LoginScreen(
 private fun AuthChallengeContent(
     modifier: Modifier,
     challenge: AuthChallenge,
-    session: AccountSession?
+    viewModel: LoginScreenViewModel
 ) {
-    val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val uriHandler = LocalUriHandler.current
     val scrollState = rememberScrollState()
-    var values by remember(challenge.id) {
-        mutableStateOf(
-            challenge.fields.associate { it.id to "" }
-        )
-    }
-    var pendingAction by remember(challenge.id) {
-        mutableStateOf<AuthAction?>(null)
-    }
-    var captchaError by remember(challenge.id) {
-        mutableStateOf<String?>(null)
-    }
 
-    // Telegram blocks code requests for a while if they are repeated too
-    // often, which looks like the code never arrives. The server tells TDLib
-    // exactly when a resend is allowed (`codeInfo.timeout`); a hardcoded
-    // cooldown kept the only working recovery — asking for the code again so
-    // it goes out as an SMS — locked for a minute even when it was allowed
-    // immediately.
-    val resendDelay = challenge.resendAfterSeconds ?: CodeResendDelaySeconds
-
-    var resendCooldown by remember(challenge.id, resendDelay) {
-        mutableStateOf(
-            if (challenge.id == "code" || challenge.id == "email_code") resendDelay else 0
-        )
-    }
-    LaunchedEffect(resendCooldown) {
-        if (resendCooldown > 0) {
-            delay(1_000)
-            resendCooldown--
-        }
-    }
-
-    val isBusy = challenge.isSubmitting || pendingAction != null
-
-    val canSubmit = challenge.fields.isNotEmpty() && challenge.fields.all { field ->
-        field.type == AuthFieldType.LastName || values[field.id].orEmpty().isNotBlank()
-    }
-
-    fun performAction(action: AuthAction) {
-        if (session == null || pendingAction != null) return
-
-        scope.launch {
-            pendingAction = action
-
-            try {
-                session.performAuthAction(action)
-            } finally {
-                pendingAction = null
-            }
-        }
-    }
+    val values = viewModel.values
+    val pendingAction = viewModel.pendingAction
+    val captchaError = viewModel.captchaError
+    val resendDelay = viewModel.resendDelay
+    val resendCooldown = viewModel.resendCooldown
+    val isBusy = viewModel.isBusy
+    val canSubmit = viewModel.canSubmit
 
 
     Column(
@@ -238,15 +183,9 @@ private fun AuthChallengeContent(
                     .fillMaxWidth()
                     .padding(top = 8.dp),
                 url = captchaUrl,
-                enabled = !isBusy && session != null,
-                onToken = { token ->
-                    if (session != null && !isBusy) {
-                        scope.launch {
-                            session.submitAuth(mapOf(AuthCaptchaValueId to token))
-                        }
-                    }
-                },
-                onError = { message -> captchaError = message }
+                enabled = !isBusy && viewModel.hasSession,
+                onToken = { token -> viewModel.submitCaptcha(token) },
+                onError = { message -> viewModel.reportCaptchaError(message) }
             )
 
             if (challenge.isSubmitting) {
@@ -286,7 +225,7 @@ private fun AuthChallengeContent(
                 value = values[field.id].orEmpty(),
                 enabled = !isBusy,
                 onValueChange = { value ->
-                    values = values + (field.id to value)
+                    viewModel.updateValue(field.id, value)
                 }
             )
         }
@@ -329,15 +268,10 @@ private fun AuthChallengeContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
-                enabled = canSubmit && !isBusy && session != null,
+                enabled = canSubmit && !isBusy && viewModel.hasSession,
                 onClick = {
                     keyboardController?.hide()
-
-                    if (session != null) {
-                        scope.launch {
-                            session.submitAuth(values)
-                        }
-                    }
+                    viewModel.submit()
                 }
             ) {
                 if (challenge.isSubmitting) {
@@ -363,11 +297,8 @@ private fun AuthChallengeContent(
                                 "Resend code"
                             },
                             isBusy = pendingAction == action,
-                            enabled = !isBusy && session != null && resendCooldown == 0,
-                            onClick = {
-                                resendCooldown = CodeResendDelaySeconds
-                                performAction(action)
-                            }
+                            enabled = !isBusy && viewModel.hasSession && resendCooldown == 0,
+                            onClick = { viewModel.resendCode(action) }
                         )
                     }
 
@@ -375,8 +306,8 @@ private fun AuthChallengeContent(
                         AuthActionButton(
                             text = "Recover password",
                             isBusy = pendingAction == action,
-                            enabled = !isBusy && session != null,
-                            onClick = { performAction(action) }
+                            enabled = !isBusy && viewModel.hasSession,
+                            onClick = { viewModel.performAction(action) }
                         )
                     }
 
@@ -384,8 +315,8 @@ private fun AuthChallengeContent(
                         AuthActionButton(
                             text = "Log in with QR code",
                             isBusy = pendingAction == action,
-                            enabled = !isBusy && session != null,
-                            onClick = { performAction(action) }
+                            enabled = !isBusy && viewModel.hasSession,
+                            onClick = { viewModel.performAction(action) }
                         )
                     }
 
@@ -393,10 +324,10 @@ private fun AuthChallengeContent(
                         AuthActionButton(
                             text = "Reload captcha",
                             isBusy = pendingAction == action,
-                            enabled = !isBusy && session != null,
+                            enabled = !isBusy && viewModel.hasSession,
                             onClick = {
-                                captchaError = null
-                                performAction(action)
+                                viewModel.clearCaptchaError()
+                                viewModel.performAction(action)
                             }
                         )
                     }

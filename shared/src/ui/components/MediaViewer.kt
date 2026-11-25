@@ -1,10 +1,12 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.platform.PlatformBackHandler
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

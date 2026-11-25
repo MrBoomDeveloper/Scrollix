@@ -1,5 +1,20 @@
 package com.mrboomdev.scrollix.features.profile
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.ChatMemberInfo
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.UserProfileDetails
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.features.home.EmojiStatusIcon
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.isWideLayout
+import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
+import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.verified_icon
+import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,27 +65,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.ChatMemberInfo
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
-import com.mrboomdev.scrollix.data.model.UserProfileDetails
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.isWideLayout
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
-import com.mrboomdev.scrollix.ui.components.ProfileAvatarGalleryDialog
-import com.mrboomdev.scrollix.ui.components.ProfileSharedMediaSection
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.milliseconds
-import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
-import com.mrboomdev.scrollix.ui.icons.verified_icon
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
-fun ProfileScreen(
+internal fun ProfileScreen(
     accountId: String,
     providerDialogId: String,
     userId: Long? = null,
@@ -79,7 +77,17 @@ fun ProfileScreen(
     onOpenChat: (String) -> Unit = {},
     onMessage: (String) -> Unit = {},
     onOpenMessage: (Long) -> Unit = {},
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: ProfileScreenViewModel = viewModel(
+        key = "profile:$accountId:$providerDialogId:$userId:$ownAccount"
+    ) {
+        ProfileScreenViewModel(
+            accountId = accountId,
+            providerDialogId = providerDialogId,
+            userId = userId,
+            ownAccount = ownAccount
+        )
+    }
 ) {
     val isWide = isWideLayout()
     val session = remember(accountId) { ApiManager.session(accountId) }
@@ -88,20 +96,11 @@ fun ProfileScreen(
         entry.account.id == accountId &&
             entry.dialog.providerDialogId == providerDialogId
     }
-    var details by remember(accountId, providerDialogId, userId) {
-        mutableStateOf<UserProfileDetails?>(null)
-    }
-    val scope = rememberCoroutineScope()
-    var subscriptionOverride by remember(accountId, providerDialogId) {
-        mutableStateOf<Boolean?>(null)
-    }
-    var isUpdatingSubscription by remember(accountId, providerDialogId) {
-        mutableStateOf(false)
-    }
-    var actionError by remember(accountId, providerDialogId) {
-        mutableStateOf<String?>(null)
-    }
-    var isMuted by remember(accountId, providerDialogId) { mutableStateOf<Boolean?>(null) }
+    val details = viewModel.details
+    val isUpdatingSubscription = viewModel.isUpdatingSubscription
+    val actionError = viewModel.actionError
+    val isMuted = viewModel.isMuted
+    val isSubscribed = viewModel.isSubscribed
     var showAvatarGallery by remember(accountId, providerDialogId) {
         mutableStateOf(false)
     }
@@ -110,167 +109,6 @@ fun ProfileScreen(
     }
     var contactFirstName by remember(accountId, providerDialogId) { mutableStateOf("") }
     var contactLastName by remember(accountId, providerDialogId) { mutableStateOf("") }
-
-    LaunchedEffect(accountId, providerDialogId, session, ownAccount) {
-        if (!ownAccount && providerDialogId.isNotBlank()) {
-            isMuted = session?.isDialogMuted(providerDialogId)
-        }
-    }
-
-    fun toggleMute() {
-        val currentSession = session ?: return
-        val muted = isMuted ?: return
-        val next = !muted
-
-        isMuted = next
-
-        scope.launch {
-            currentSession.setDialogMuted(providerDialogId, next).onFailure {
-                isMuted = muted
-                actionError = it.message ?: "Failed to update notifications"
-            }
-        }
-    }
-
-    fun toggleBlock() {
-        val currentSession = session ?: return
-        val targetUserId = details?.userId ?: return
-        if (details?.canBlock == false) return
-
-        val blocked = details?.isBlocked == true
-
-        details = details?.copy(isBlocked = !blocked)
-
-        scope.launch {
-            currentSession.setUserBlocked(targetUserId, !blocked).onFailure {
-                details = details?.copy(isBlocked = blocked)
-                actionError = it.message ?: "Failed to update the block state"
-            }
-        }
-    }
-
-    fun openContactEditor() {
-        val parts = details?.displayName.orEmpty().trim().split(' ', limit = 2)
-
-        contactFirstName = parts.firstOrNull().orEmpty()
-        contactLastName = parts.getOrNull(1).orEmpty()
-        showContactEditor = true
-    }
-
-    fun saveContact() {
-        val currentSession = session ?: return
-        val targetUserId = details?.userId ?: return
-        val firstName = contactFirstName.trim()
-        val lastName = contactLastName.trim()
-
-        if (firstName.isEmpty()) {
-            actionError = "Enter a first name"
-            return
-        }
-
-        showContactEditor = false
-        actionError = null
-
-        details = details?.copy(
-            isContact = true,
-            displayName = listOf(firstName, lastName)
-                .filter { part -> part.isNotBlank() }
-                .joinToString(" ")
-        )
-
-        scope.launch {
-            currentSession.addContact(targetUserId, firstName, lastName).onFailure {
-                details = details?.copy(isContact = false)
-                actionError = it.message ?: "Failed to update the contact"
-            }
-        }
-    }
-
-    fun removeContact() {
-        val currentSession = session ?: return
-        val targetUserId = details?.userId ?: return
-
-        details = details?.copy(isContact = false)
-        actionError = null
-
-        scope.launch {
-            currentSession.removeContact(targetUserId).onFailure {
-                details = details?.copy(isContact = true)
-                actionError = it.message ?: "Failed to remove the contact"
-            }
-        }
-    }
-
-    LaunchedEffect(accountId, providerDialogId, userId, ownAccount) {
-        details = if (ownAccount) {
-            session?.loadOwnProfile()?.getOrNull()
-        } else {
-            ApiManager.loadUserProfile(
-                accountId = accountId,
-                providerDialogId = providerDialogId,
-                userId = userId
-            ).getOrNull()
-        }
-    }
-
-    val isSubscribed = subscriptionOverride ?: details?.isSubscribed == true
-
-    fun toggleSubscription() {
-        val currentSession = session
-
-        if (currentSession == null) {
-            actionError = "Account session is not available"
-            return
-        }
-
-        val subscribe = !isSubscribed
-        val previous = isSubscribed
-
-        // Flip the label right away and revert it if the request fails.
-        subscriptionOverride = subscribe
-        details = details?.copy(isSubscribed = subscribe)
-
-        fun revert(message: String?) {
-            subscriptionOverride = previous
-            details = details?.copy(isSubscribed = previous)
-
-            if (message != null) {
-                actionError = message
-            }
-        }
-
-        scope.launch {
-            isUpdatingSubscription = true
-            actionError = null
-
-            try {
-                val result = withTimeoutOrNull(15_000.milliseconds) {
-                    currentSession.setChatSubscribed(providerDialogId, subscribe)
-                }
-
-                when {
-                    result == null -> revert("The server took too long to respond")
-
-                    result.isSuccess -> {
-                        // Re-read the membership from the server so reopening
-                        // the profile keeps showing the updated state.
-                        details = ApiManager.loadUserProfile(
-                            accountId = accountId,
-                            providerDialogId = providerDialogId,
-                            userId = userId
-                        ).getOrNull() ?: details
-                    }
-
-                    else -> revert(
-                        result.exceptionOrNull()?.message
-                            ?: "Failed to update subscription"
-                    )
-                }
-            } finally {
-                isUpdatingSubscription = false
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -305,6 +143,19 @@ fun ProfileScreen(
         val dialog = entry?.dialog
         val isChannel = (details?.kind ?: dialog?.kind) == DialogKind.Channel
         val profile = details
+
+        // Only the dialog and its form fields stay here; the mutation lives in
+        // the view model, which the screen just calls.
+        val openContactEditor: () -> Unit = {
+            val parts = (profile?.displayName ?: dialog?.title).orEmpty()
+                .trim()
+                .split(' ')
+                .filter { part -> part.isNotBlank() }
+
+            contactFirstName = parts.firstOrNull().orEmpty()
+            contactLastName = parts.drop(1).joinToString(" ")
+            showContactEditor = true
+        }
 
         if (entry == null && profile == null && !ownAccount) {
             Text(
@@ -411,14 +262,14 @@ fun ProfileScreen(
                                 details?.canManageContacts == true,
                             isContact = details?.isContact == true,
                             stretch = false,
-                            onEditContact = ::openContactEditor,
-                            onRemoveContact = ::removeContact,
+                            onEditContact = openContactEditor,
+                            onRemoveContact = viewModel::removeContact,
                             onMessage = {
                                 onMessage(details?.discussionChatId ?: providerDialogId)
                             },
-                            onToggleSubscription = ::toggleSubscription,
-                            onToggleMute = ::toggleMute,
-                            onToggleBlock = ::toggleBlock
+                            onToggleSubscription = viewModel::toggleSubscription,
+                            onToggleMute = viewModel::toggleMute,
+                            onToggleBlock = viewModel::toggleBlock
                         )
                     }
 
@@ -495,14 +346,14 @@ fun ProfileScreen(
                         details?.canManageContacts == true,
                     isContact = details?.isContact == true,
                     stretch = true,
-                    onEditContact = ::openContactEditor,
-                    onRemoveContact = ::removeContact,
+                    onEditContact = openContactEditor,
+                    onRemoveContact = viewModel::removeContact,
                     onMessage = {
                         onMessage(details?.discussionChatId ?: providerDialogId)
                     },
-                    onToggleSubscription = ::toggleSubscription,
-                    onToggleMute = ::toggleMute,
-                    onToggleBlock = ::toggleBlock
+                    onToggleSubscription = viewModel::toggleSubscription,
+                    onToggleMute = viewModel::toggleMute,
+                    onToggleBlock = viewModel::toggleBlock
                 )
             }
             
@@ -621,7 +472,14 @@ fun ProfileScreen(
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = ::saveContact) {
+                        TextButton(
+                            onClick = {
+                                // Keep the dialog open when the name is rejected.
+                                if (viewModel.saveContact(contactFirstName, contactLastName)) {
+                                    showContactEditor = false
+                                }
+                            }
+                        ) {
                             Text("Save")
                         }
                     },

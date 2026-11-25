@@ -1,5 +1,8 @@
 package com.mrboomdev.scrollix.data.api
 
+import dev.g000sha256.tdl.TdlResult
+import dev.g000sha256.tdl.dto.*
+import kotlinx.coroutines.flow.map
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageButton
@@ -13,9 +16,6 @@ import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageRichTextStyle
 import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.data.model.RichTextSpan
-import dev.g000sha256.tdl.TdlResult
-import dev.g000sha256.tdl.dto.*
-import kotlinx.coroutines.flow.map
 
 /** Maps a shared point, live shares included, into the UI model. */
 internal fun TelegramSession.mapLocation(content: MessageContent): MessageLocationInfo? {

@@ -14,13 +14,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import com.mrboomdev.scrollix.ui.components.ScrollixContextMenuRepresentation
-import com.mrboomdev.scrollix.ui.components.shutdownCaptchaBrowser
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.diagnostics.CrashReports
-import com.mrboomdev.scrollix.data.max.MaxIntegration
-import com.mrboomdev.scrollix.data.telegram.TelegramIntegration
-import com.mrboomdev.scrollix.data.vk.VkIntegration
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.awt.AWTEvent
@@ -29,6 +22,13 @@ import java.awt.Toolkit
 import java.awt.event.InputEvent
 import java.awt.event.MouseEvent
 import java.awt.event.MouseWheelEvent
+import com.mrboomdev.scrollix.ui.components.ScrollixContextMenuRepresentation
+import com.mrboomdev.scrollix.features.login.shutdownCaptchaBrowser
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.diagnostics.CrashReports
+import com.mrboomdev.scrollix.data.max.MaxIntegration
+import com.mrboomdev.scrollix.data.telegram.TelegramIntegration
+import com.mrboomdev.scrollix.data.vk.VkIntegration
 
 fun main() {
     TelegramIntegration.init()

@@ -1,8 +1,5 @@
 package com.mrboomdev.scrollix.data.provider
 
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.MessageHistory
-import com.mrboomdev.scrollix.data.model.MessageSendState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,6 +7,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.MessageHistory
+import com.mrboomdev.scrollix.data.model.MessageSendState
 
 /**
  * One page of provider history.

@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix
 
+import com.mrboomdev.scrollix.data.storage.AndroidAppContext
+
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -10,7 +12,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import com.mrboomdev.scrollix.data.storage.AndroidAppContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection

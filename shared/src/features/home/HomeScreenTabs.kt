@@ -1,5 +1,15 @@
 package com.mrboomdev.scrollix.features.home
 
+import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.AccountDialogFolder
+import com.mrboomdev.scrollix.data.model.AccountRecord
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.features.settings.icon
+import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.LoadingContent
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,15 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.AccountDialogEntry
-import com.mrboomdev.scrollix.data.model.AccountDialogFolder
-import com.mrboomdev.scrollix.data.model.AccountRecord
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.DialogFolder
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.FolderNameText
-import com.mrboomdev.scrollix.ui.components.LoadingContent
 
 internal fun HomePage.orderKey(): String = when (this) {
     HomePage.All -> "all"

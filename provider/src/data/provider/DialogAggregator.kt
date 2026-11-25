@@ -1,9 +1,9 @@
 package com.mrboomdev.scrollix.data.provider
-
-import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.DialogIdentity
+
 
 object DialogAggregator {
     fun aggregate(

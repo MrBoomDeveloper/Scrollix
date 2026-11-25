@@ -1,5 +1,16 @@
 package com.mrboomdev.scrollix.data.api
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.mrboomdev.scrollix.data.max.network.maxInvalidChatId
 import com.mrboomdev.scrollix.data.max.network.maxNotConnected
 import com.mrboomdev.scrollix.data.max.network.array
@@ -27,17 +38,6 @@ import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.fetchUrlBytes
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal fun MaxSession.parseChat(objectValue: JsonObject): MaxChat {
     val id = objectValue.long("id") ?: 0

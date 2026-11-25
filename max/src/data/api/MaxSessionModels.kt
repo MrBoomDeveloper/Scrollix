@@ -1,5 +1,8 @@
 package com.mrboomdev.scrollix.data.api
 
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import com.mrboomdev.scrollix.data.max.network.array
 import com.mrboomdev.scrollix.data.max.network.bool
 import com.mrboomdev.scrollix.data.max.network.int
@@ -13,9 +16,6 @@ import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
-import kotlinx.coroutines.flow.first
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 
 internal val MentionUsernameRegex = Regex("""@([A-Za-z0-9_]{2,64})""")
 

@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.data.model.SessionErrorCode
 import com.mrboomdev.scrollix.data.model.SessionException
 import com.mrboomdev.scrollix.data.model.sessionExceptionFrom
 
+
 /**
  * MAX uses dotted opcodes (`auth.invalid`, `flood.wait`, …) and prose
  * descriptions, so both are checked. The result feeds [SessionException] so the

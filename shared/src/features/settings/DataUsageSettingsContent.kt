@@ -1,5 +1,15 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.DataSavingPreset
+import com.mrboomdev.scrollix.data.storage.DataSavingSettings
+import com.mrboomdev.scrollix.data.storage.DataUsageStore
+import com.mrboomdev.scrollix.data.storage.LocalDataUsage
+import com.mrboomdev.scrollix.ui.icons.data_usage_icon
+import com.mrboomdev.scrollix.ui.icons.mood_icon
+import com.mrboomdev.scrollix.ui.icons.send_icon
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -23,15 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.DataSavingPreset
-import com.mrboomdev.scrollix.data.storage.DataSavingSettings
-import com.mrboomdev.scrollix.data.storage.DataUsageStore
-import com.mrboomdev.scrollix.data.storage.LocalDataUsage
-import com.mrboomdev.scrollix.ui.icons.data_usage_icon
-import com.mrboomdev.scrollix.ui.icons.mood_icon
-import com.mrboomdev.scrollix.ui.icons.send_icon
 
 /**
  * Traffic counted on this device and the local data-saver policy. Neither the

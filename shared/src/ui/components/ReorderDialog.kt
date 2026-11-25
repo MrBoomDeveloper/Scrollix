@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.features.home.key
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth

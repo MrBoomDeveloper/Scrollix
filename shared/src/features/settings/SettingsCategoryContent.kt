@@ -1,5 +1,22 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.StickerPackKind
+import com.mrboomdev.scrollix.data.storage.AppSettings
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.icons.bug_report_icon
+import com.mrboomdev.scrollix.ui.icons.folder_icon
+import com.mrboomdev.scrollix.ui.icons.history_icon
+import com.mrboomdev.scrollix.ui.icons.home_icon
+import com.mrboomdev.scrollix.ui.icons.image_icon
+import com.mrboomdev.scrollix.ui.icons.merge_icon
+import com.mrboomdev.scrollix.ui.icons.mood_icon
+import com.mrboomdev.scrollix.ui.icons.tab_icon
+import com.mrboomdev.scrollix.ui.icons.touch_app_icon
+import com.mrboomdev.scrollix.ui.icons.view_list_icon
+
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,21 +42,6 @@ import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.StickerPackKind
-import com.mrboomdev.scrollix.data.storage.AppSettings
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
-import com.mrboomdev.scrollix.ui.icons.bug_report_icon
-import com.mrboomdev.scrollix.ui.icons.folder_icon
-import com.mrboomdev.scrollix.ui.icons.history_icon
-import com.mrboomdev.scrollix.ui.icons.home_icon
-import com.mrboomdev.scrollix.ui.icons.image_icon
-import com.mrboomdev.scrollix.ui.icons.merge_icon
-import com.mrboomdev.scrollix.ui.icons.mood_icon
-import com.mrboomdev.scrollix.ui.icons.tab_icon
-import com.mrboomdev.scrollix.ui.icons.touch_app_icon
-import com.mrboomdev.scrollix.ui.icons.view_list_icon
 
 @Composable
 internal fun SettingsCategoryContent(

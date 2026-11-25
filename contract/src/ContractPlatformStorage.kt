@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.data.contract
 
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 
+
 /**
  * In-memory storage for contract tests, so sessions that restore tokens or
  * caches start from a known empty state and never touch the real profile.

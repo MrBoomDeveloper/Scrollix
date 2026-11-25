@@ -8,6 +8,7 @@ import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageVideoQuality
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

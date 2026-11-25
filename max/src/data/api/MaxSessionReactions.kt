@@ -1,13 +1,13 @@
 package com.mrboomdev.scrollix.data.api
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.mrboomdev.scrollix.data.max.network.maxInvalidChatId
 import com.mrboomdev.scrollix.data.max.network.maxNotConnected
 import com.mrboomdev.scrollix.data.max.network.obj
 import com.mrboomdev.scrollix.data.model.asSessionException
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
-import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal suspend fun MaxSession.addMessageReactionImpl(providerDialogId: String, messageId: Long, emoji: String, customEmojiId: Long?): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()

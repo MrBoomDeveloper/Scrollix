@@ -1,5 +1,14 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.platform.files.PickedFile
+import com.mrboomdev.scrollix.ui.components.EmojiPickerDialog
+import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.icons.close_icon
+import com.mrboomdev.scrollix.ui.icons.mood_icon
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -49,14 +58,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.readFileBytes
-import com.mrboomdev.scrollix.ui.components.EmojiPickerDialog
-import com.mrboomdev.scrollix.ui.components.PickedFile
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
-import com.mrboomdev.scrollix.ui.icons.mood_icon
-import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

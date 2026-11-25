@@ -1,5 +1,11 @@
 package com.mrboomdev.scrollix.features.home
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.api.ConnectionRetry
+import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
+import com.mrboomdev.scrollix.data.outbox.OutboxManager
+import com.mrboomdev.scrollix.ui.icons.wifi_off_icon
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,11 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.api.ConnectionRetry
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
-import com.mrboomdev.scrollix.data.outbox.OutboxManager
-import com.mrboomdev.scrollix.ui.icons.wifi_off_icon
 
 /**
  * Text of the offline banner, or null when every live account is connected.

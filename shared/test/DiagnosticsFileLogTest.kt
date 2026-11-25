@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.diagnostics
 
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

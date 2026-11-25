@@ -1,5 +1,18 @@
 package com.mrboomdev.scrollix.features.search
 
+import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.PostSearchQuota
+import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
+import com.mrboomdev.scrollix.data.storage.formatTime
+import com.mrboomdev.scrollix.features.dialog.formatFileSize
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.icons.attach_file_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,16 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.AccountDialogEntry
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.model.PostSearchQuota
-import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
-import com.mrboomdev.scrollix.data.storage.formatTime
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.icons.attach_file_icon
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable

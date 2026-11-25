@@ -1,10 +1,10 @@
 package com.mrboomdev.scrollix.data.api
 
+import dev.g000sha256.tdl.TdlResult
+import dev.g000sha256.tdl.dto.Session
 import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
 import com.mrboomdev.scrollix.data.model.SessionException
 import com.mrboomdev.scrollix.data.model.sessionExceptionFrom
-import dev.g000sha256.tdl.TdlResult
-import dev.g000sha256.tdl.dto.Session
 
 /** TDLib reports session times in seconds, the UI works in milliseconds. */
 internal fun TdlResult.Failure.toSessionException(): SessionException =

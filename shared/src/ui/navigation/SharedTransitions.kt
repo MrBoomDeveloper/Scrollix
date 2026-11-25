@@ -1,5 +1,8 @@
 package com.mrboomdev.scrollix.ui.navigation
 
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.features.home.key
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -13,7 +16,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 
 /** Provides the app-wide shared transition scope to pushed screens. */
 val LocalSharedTransitionScope = staticCompositionLocalOf<SharedTransitionScope?> { null }

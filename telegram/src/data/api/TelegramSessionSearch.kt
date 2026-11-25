@@ -1,5 +1,11 @@
 package com.mrboomdev.scrollix.data.api
 
+import dev.g000sha256.tdl.TdlResult
+import dev.g000sha256.tdl.dto.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.withLock
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
@@ -8,12 +14,6 @@ import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
-import dev.g000sha256.tdl.TdlResult
-import dev.g000sha256.tdl.dto.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.sync.withLock
 
 internal suspend fun TelegramSession.searchMessagesImpl(providerDialogId: String, query: String, limit: Int): Result<List<ChatMessage>> {
     val chatId = providerDialogId.toLongOrNull()

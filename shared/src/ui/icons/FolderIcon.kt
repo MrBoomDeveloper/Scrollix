@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.icons
 
+import com.mrboomdev.scrollix.data.model.DialogFolder
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -13,7 +15,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mrboomdev.scrollix.data.model.DialogFolder
 
 @Composable
 fun FolderIcon(

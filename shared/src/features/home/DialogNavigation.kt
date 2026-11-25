@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.home
 
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 
+
 /**
  * Returns the chat [step] places away from the selected one in the aggregated
  * dialog list (positive is down, negative is up). The walk stops at the ends

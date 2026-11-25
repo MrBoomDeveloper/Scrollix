@@ -34,6 +34,7 @@ import kotlinx.coroutines.withContext
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
+import com.mrboomdev.scrollix.data.media.silenceFfmpegLogs
 
 @Composable
 actual fun PlatformQrCamera(

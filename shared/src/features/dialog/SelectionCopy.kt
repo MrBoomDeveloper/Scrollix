@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.ChatMessage
 
+
 /**
  * Text placed on the clipboard when several messages are selected. Messages
  * are copied oldest first regardless of the display order, blank and service

@@ -5,11 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import org.jetbrains.compose.resources.Font
 import com.mrboomdev.scrollix.resources.Res
 import com.mrboomdev.scrollix.resources.google_sans_flex_bold
 import com.mrboomdev.scrollix.resources.google_sans_flex_medium
 import com.mrboomdev.scrollix.resources.google_sans_flex_regular
-import org.jetbrains.compose.resources.Font
 
 @Composable
 fun appTypography(): Typography {

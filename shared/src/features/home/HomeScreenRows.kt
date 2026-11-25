@@ -1,5 +1,23 @@
 package com.mrboomdev.scrollix.features.home
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.formatTime
+import com.mrboomdev.scrollix.features.dialog.CustomEmojiMessageText
+import com.mrboomdev.scrollix.features.dialog.MainMiniAppDialog
+import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
+import com.mrboomdev.scrollix.ui.icons.check_icon
+import com.mrboomdev.scrollix.ui.icons.delete_icon
+import com.mrboomdev.scrollix.ui.icons.done_all_icon
+import com.mrboomdev.scrollix.ui.icons.keep_icon
+import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.verified_icon
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -41,27 +59,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AccountDialogEntry
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.formatTime
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
-import com.mrboomdev.scrollix.ui.components.DialogMediaPreview
-import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
-import com.mrboomdev.scrollix.ui.components.MainMiniAppDialog
-import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
-import com.mrboomdev.scrollix.ui.icons.check_icon
-import com.mrboomdev.scrollix.ui.icons.delete_icon
-import com.mrboomdev.scrollix.ui.icons.done_all_icon
-import com.mrboomdev.scrollix.ui.icons.keep_icon
-import com.mrboomdev.scrollix.ui.icons.verified_icon
-import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
-import com.mrboomdev.scrollix.onSecondaryClick
 import kotlinx.coroutines.launch
+import com.mrboomdev.scrollix.onSecondaryClick
 
 /**
  * One row for a chat that several accounts share. The account avatars sit in a

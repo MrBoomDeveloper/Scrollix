@@ -1,10 +1,10 @@
 package com.mrboomdev.scrollix.data.vk.network
 
-import com.mrboomdev.scrollix.data.model.SessionErrorCode
-import com.mrboomdev.scrollix.data.model.SessionException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import com.mrboomdev.scrollix.data.model.SessionErrorCode
+import com.mrboomdev.scrollix.data.model.SessionException
 
 class VkErrorMappingTest {
     @Test

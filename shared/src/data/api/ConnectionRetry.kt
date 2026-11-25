@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.data.api
 
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow

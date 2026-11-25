@@ -1,5 +1,14 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AccountRecord
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.CacheStore
+import com.mrboomdev.scrollix.data.storage.keepMediaKey
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.icons.keep_icon
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,13 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AccountRecord
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.CacheStore
-import com.mrboomdev.scrollix.data.storage.keepMediaKey
-import com.mrboomdev.scrollix.ui.icons.keep_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

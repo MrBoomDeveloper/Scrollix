@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.navigation
 
+import com.mrboomdev.scrollix.data.model.Dialog
+
 import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable
 

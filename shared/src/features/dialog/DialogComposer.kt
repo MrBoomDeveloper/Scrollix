@@ -1,5 +1,18 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.isDesktopPlatform
+import com.mrboomdev.scrollix.platform.files.FilePicker
+import com.mrboomdev.scrollix.platform.files.PickedFile
+import com.mrboomdev.scrollix.platform.files.readClipboardImages
+import com.mrboomdev.scrollix.platform.media.MediaRecordingController
+import com.mrboomdev.scrollix.platform.media.MediaRecordingKind
+import com.mrboomdev.scrollix.platform.media.RecordedMedia
+import com.mrboomdev.scrollix.platform.media.VideoNotePreview
+import com.mrboomdev.scrollix.ui.components.EmojiPicker
+import com.mrboomdev.scrollix.ui.icons.send_icon
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -99,7 +112,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Rect
-import com.mrboomdev.scrollix.isDesktopPlatform
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -121,102 +133,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.mrboomdev.scrollix.DialogRecordingState
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AccountDialogFolder
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.ChatWallpaper
-import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
-import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.model.MessageButton
-import com.mrboomdev.scrollix.data.model.MessageHistory
-import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.model.MessageMediaKind
-import com.mrboomdev.scrollix.data.model.MessagePollInfo
-import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
-import com.mrboomdev.scrollix.data.model.MessageReactionOption
-import com.mrboomdev.scrollix.data.model.MessageReply
-import com.mrboomdev.scrollix.data.model.MessageSendState
-import com.mrboomdev.scrollix.data.model.MessageStickerFormat
-import com.mrboomdev.scrollix.data.model.UndiscoveredMessagesMessageId
-import com.mrboomdev.scrollix.data.model.asSessionException
-import com.mrboomdev.scrollix.data.model.groupMessageAlbums
-import com.mrboomdev.scrollix.data.outbox.OutboxAttachment
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryKind
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
-import com.mrboomdev.scrollix.data.outbox.OutboxManager
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.AppSettings
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.DialogScrollPosition
-import com.mrboomdev.scrollix.data.storage.DialogScrollPositionStore
-import com.mrboomdev.scrollix.data.storage.readFileBytes
-import com.mrboomdev.scrollix.data.storage.saveFileToDevice
-import com.mrboomdev.scrollix.isTwoPaneLayout
-import com.mrboomdev.scrollix.moved
-import com.mrboomdev.scrollix.openDialer
-import com.mrboomdev.scrollix.resources.Res
-import com.mrboomdev.scrollix.resources.wallpaper
-import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.ChatAnimationPreview
-import com.mrboomdev.scrollix.ui.components.ChatSticker
-import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
-import com.mrboomdev.scrollix.ui.components.ComposerInputRow
-import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
-import com.mrboomdev.scrollix.ui.components.EmojiPicker
-import com.mrboomdev.scrollix.ui.components.EmojiPickerDialog
-import com.mrboomdev.scrollix.ui.components.EmojiStatusIcon
-import com.mrboomdev.scrollix.ui.components.FilePicker
-import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
-import com.mrboomdev.scrollix.ui.components.ForumTopicsDialog
-import com.mrboomdev.scrollix.ui.components.LoadingContent
-import com.mrboomdev.scrollix.ui.components.LocationPickerDialog
-import com.mrboomdev.scrollix.ui.components.MainMiniAppDialog
-import com.mrboomdev.scrollix.ui.components.MediaRecordingController
-import com.mrboomdev.scrollix.ui.components.MediaRecordingKind
-import com.mrboomdev.scrollix.ui.components.MediaViewer
-import com.mrboomdev.scrollix.ui.components.MessageBubble
-import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
-import com.mrboomdev.scrollix.ui.components.MessageDatePill
-import com.mrboomdev.scrollix.ui.components.MessageGallery
-import com.mrboomdev.scrollix.ui.components.MessageThreadDialog
-import com.mrboomdev.scrollix.ui.components.MessageThreadRail
-import com.mrboomdev.scrollix.ui.components.MiniAppDialog
-import com.mrboomdev.scrollix.ui.components.PickedFile
-import com.mrboomdev.scrollix.ui.components.PlatformBackHandler
-import com.mrboomdev.scrollix.ui.components.PollCreateDialog
-import com.mrboomdev.scrollix.ui.components.RecordedMedia
-import com.mrboomdev.scrollix.ui.components.RecordedMediaDialog
-import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
-import com.mrboomdev.scrollix.ui.components.SpoilerOverlay
-import com.mrboomdev.scrollix.ui.components.StickerSetDialog
-import com.mrboomdev.scrollix.ui.components.StickerSetTarget
-import com.mrboomdev.scrollix.ui.components.VideoNotePreview
-import com.mrboomdev.scrollix.ui.components.VoiceMessagePlayer
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
-import com.mrboomdev.scrollix.ui.components.loadingBlur
-import com.mrboomdev.scrollix.ui.components.mediaSpoilerBlur
-import com.mrboomdev.scrollix.ui.components.messageDate
-import com.mrboomdev.scrollix.ui.components.readClipboardImages
-import com.mrboomdev.scrollix.ui.components.rememberFilePicker
-import com.mrboomdev.scrollix.ui.components.rememberMediaRecorder
-import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.icons.call_icon
-import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
-import com.mrboomdev.scrollix.ui.icons.close_icon
-import com.mrboomdev.scrollix.ui.icons.mood_icon
-import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
-import com.mrboomdev.scrollix.ui.icons.search_icon
-import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
-import com.mrboomdev.scrollix.ui.icons.send_icon
-import com.mrboomdev.scrollix.ui.icons.verified_icon
-import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
@@ -230,7 +146,7 @@ import org.jetbrains.compose.resources.painterResource
 
 @Composable
 internal fun BoxScope.DialogComposer(
-    ui: DialogScreenState,
+    ui: DialogScreenViewModel,
     providerDialogId: String,
     session: AccountSession?,
     allSessions: Map<String, AccountSession>,
@@ -294,8 +210,7 @@ internal fun BoxScope.DialogComposer(
                     TextButton(
                         onClick = {
                             editingMessage = null
-                            input = ""
-                            inputSelection = TextRange.Zero
+                            clearComposer()
                         }
                     ) {
                         Text("Cancel")
@@ -484,14 +399,7 @@ internal fun BoxScope.DialogComposer(
                         showEmojiPicker = !showEmojiPicker
                     },
                     onInputChange = { value, selection ->
-                        inputCustomEmojis = adjustCustomEmojiSpans(
-                            oldText = input,
-                            newText = value,
-                            spans = inputCustomEmojis
-                        )
-
-                        input = value
-                        inputSelection = selection
+                        updateInput(value, selection)
                     },
                     onPasteImages = {
                         val images = readClipboardImages()

@@ -1,7 +1,5 @@
 package com.mrboomdev.scrollix.data.vk.network
 
-import com.mrboomdev.scrollix.data.diagnostics.AppLog
-import com.mrboomdev.scrollix.data.model.SessionException
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -10,6 +8,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.random.Random
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.model.SessionException
 
 internal const val VkApiVersion = "5.199"
 private const val VkApiUrl = "https://api.vk.com/method"

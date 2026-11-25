@@ -1,5 +1,10 @@
 package com.mrboomdev.scrollix.data.api
 
+import dev.g000sha256.tdl.TdlResult
+import dev.g000sha256.tdl.dto.*
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import com.mrboomdev.scrollix.data.diagnostics.AppLog
 import com.mrboomdev.scrollix.data.model.AccountProfile
 import com.mrboomdev.scrollix.data.model.AuthAction
@@ -13,11 +18,6 @@ import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.generated.BuildConfig
 import com.mrboomdev.scrollix.tdlibDeviceModel
 import com.mrboomdev.scrollix.tdlibSystemVersion
-import dev.g000sha256.tdl.TdlResult
-import dev.g000sha256.tdl.dto.*
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withLock
 
 internal suspend fun TelegramSession.handleAuthorizationState(state: AuthorizationState) {
     stateMutex.withLock {

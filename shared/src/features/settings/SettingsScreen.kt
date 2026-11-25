@@ -1,5 +1,25 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.model.NotificationScope
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.isTwoPaneLayout
+import com.mrboomdev.scrollix.platform.files.rememberFilePicker
+import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.backup_icon
+import com.mrboomdev.scrollix.ui.icons.bug_report_icon
+import com.mrboomdev.scrollix.ui.icons.campaign_icon
+import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
+import com.mrboomdev.scrollix.ui.icons.close_icon
+import com.mrboomdev.scrollix.ui.icons.data_usage_icon
+import com.mrboomdev.scrollix.ui.icons.devices_icon
+import com.mrboomdev.scrollix.ui.icons.group_icon
+import com.mrboomdev.scrollix.ui.icons.info_icon
+import com.mrboomdev.scrollix.ui.icons.notifications_icon
+import com.mrboomdev.scrollix.ui.icons.search_icon
+import com.mrboomdev.scrollix.ui.icons.storage_icon
+import com.mrboomdev.scrollix.ui.icons.touch_app_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,38 +46,18 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.NotificationScope
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.readFileBytes
-import com.mrboomdev.scrollix.ui.components.rememberFilePicker
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.icons.backup_icon
-import com.mrboomdev.scrollix.ui.icons.bug_report_icon
-import com.mrboomdev.scrollix.ui.icons.campaign_icon
-import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
-import com.mrboomdev.scrollix.ui.icons.close_icon
-import com.mrboomdev.scrollix.ui.icons.data_usage_icon
-import com.mrboomdev.scrollix.ui.icons.devices_icon
-import com.mrboomdev.scrollix.ui.icons.group_icon
-import com.mrboomdev.scrollix.ui.icons.info_icon
-import com.mrboomdev.scrollix.ui.icons.notifications_icon
-import com.mrboomdev.scrollix.ui.icons.search_icon
-import com.mrboomdev.scrollix.ui.icons.storage_icon
-import com.mrboomdev.scrollix.ui.icons.touch_app_icon
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.mrboomdev.scrollix.isTwoPaneLayout
 
 /**
  * A settings section. [keywords] name things the section owns that its title
@@ -247,14 +247,15 @@ internal fun searchSettings(
 }
 
 @Composable
-fun SettingsScreen(
-    onOpenDiagnostics: () -> Unit
+internal fun SettingsScreen(
+    onOpenDiagnostics: () -> Unit,
+    viewModel: SettingsScreenViewModel = viewModel()
 ) {
     val isTwoPane = isTwoPaneLayout()
     val settings by AppSettingsStore.state.collectAsState()
     val scope = rememberCoroutineScope()
-    var categoryQuery by rememberSaveable { mutableStateOf("") }
-    var highlightTitle by rememberSaveable { mutableStateOf<String?>(null) }
+    val categoryQuery = viewModel.categoryQuery
+    val highlightTitle = viewModel.highlightTitle
     val filePicker = rememberFilePicker(
         onImagesPicked = { picked ->
             picked.firstOrNull()?.let { file ->
@@ -276,10 +277,7 @@ fun SettingsScreen(
         // rememberSaveable keeps the open section across navigation and
         // activity recreation; the enum itself is stored by name so the value
         // is a plain string.
-        var selectedName by rememberSaveable { mutableStateOf(SettingsCategory.ChatList.name) }
-        val selected = SettingsCategory.entries
-            .firstOrNull { category -> category.name == selectedName }
-            ?: SettingsCategory.ChatList
+        val selected = viewModel.selectedCategory
 
         Row(Modifier.fillMaxSize()) {
             SettingsCategories(
@@ -288,11 +286,8 @@ fun SettingsScreen(
                     .fillMaxHeight(),
                 selected = selected,
                 query = categoryQuery,
-                onQueryChange = { categoryQuery = it },
-                onSelect = { category, entry ->
-                    selectedName = category.name
-                    highlightTitle = entry?.title
-                }
+                onQueryChange = { viewModel.updateQuery(it) },
+                onSelect = { category, entry -> viewModel.openCategory(category, entry) }
             )
 
             VerticalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
@@ -304,7 +299,7 @@ fun SettingsScreen(
                 category = selected,
                 settings = settings,
                 highlightTitle = highlightTitle,
-                onHighlightDismiss = { highlightTitle = null },
+                onHighlightDismiss = { viewModel.clearHighlight() },
                 onPickWallpaper = { filePicker.pickImages() },
                 onOpenDiagnostics = onOpenDiagnostics
             )
@@ -313,19 +308,15 @@ fun SettingsScreen(
         return
     }
 
-    var openedName by rememberSaveable { mutableStateOf("") }
-    val category = SettingsCategory.entries.firstOrNull { it.name == openedName }
+    val category = viewModel.openedCategory
 
     if (category == null) {
         SettingsCategories(
             modifier = Modifier.fillMaxSize(),
             selected = null,
             query = categoryQuery,
-            onQueryChange = { categoryQuery = it },
-            onSelect = { category, entry ->
-                openedName = category.name
-                highlightTitle = entry?.title
-            }
+            onQueryChange = { viewModel.updateQuery(it) },
+            onSelect = { category, entry -> viewModel.openCategory(category, entry) }
         )
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -335,7 +326,7 @@ fun SettingsScreen(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { openedName = "" }) {
+                IconButton(onClick = { viewModel.closeCategory() }) {
                     Icon(
                         imageVector = arrow_back_icon,
                         contentDescription = "Back"
@@ -352,7 +343,7 @@ fun SettingsScreen(
                 category = category,
                 settings = settings,
                 highlightTitle = highlightTitle,
-                onHighlightDismiss = { highlightTitle = null },
+                onHighlightDismiss = { viewModel.clearHighlight() },
                 onPickWallpaper = { filePicker.pickImages() },
                 onOpenDiagnostics = onOpenDiagnostics
             )

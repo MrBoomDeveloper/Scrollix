@@ -1,5 +1,23 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
+import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessagePollInfo
+import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
+import com.mrboomdev.scrollix.data.model.MessageReply
+import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.saveFileToDevice
+import com.mrboomdev.scrollix.features.home.FolderEmojiImage
+import com.mrboomdev.scrollix.features.profile.formatCount
+import com.mrboomdev.scrollix.features.search.formatFileSize
+import com.mrboomdev.scrollix.ui.components.MediaViewer
+import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -51,29 +69,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
-import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
-import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.model.MessageMediaKind
-import com.mrboomdev.scrollix.data.model.MessagePollInfo
-import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
-import com.mrboomdev.scrollix.data.model.MessageReply
-import com.mrboomdev.scrollix.data.model.MessageStickerFormat
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.saveFileToDevice
-import com.mrboomdev.scrollix.ui.components.ChatAnimationPreview
-import com.mrboomdev.scrollix.ui.components.ChatSticker
-import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
-import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
-import com.mrboomdev.scrollix.ui.components.CustomEmojiMessageText
-import com.mrboomdev.scrollix.ui.components.FolderEmojiImage
-import com.mrboomdev.scrollix.ui.components.loadingBlur
-import com.mrboomdev.scrollix.ui.components.MediaViewer
-import com.mrboomdev.scrollix.ui.components.SpoilerOverlay
-import com.mrboomdev.scrollix.ui.components.mediaSpoilerBlur
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -431,14 +426,6 @@ internal fun RichBlockMediaPreview(
 
         else -> Unit
     }
-}
-
-internal fun formatCount(count: Int): String {
-    return count.toString()
-        .reversed()
-        .chunked(3)
-        .joinToString(" ")
-        .reversed()
 }
 
 internal fun formatFileSize(bytes: Long): String {

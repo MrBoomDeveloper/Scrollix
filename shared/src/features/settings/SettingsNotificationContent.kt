@@ -1,5 +1,14 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.NotificationException
+import com.mrboomdev.scrollix.data.model.NotificationScope
+import com.mrboomdev.scrollix.data.model.NotificationSettings
+import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.icons.notifications_icon
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,14 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AuthState
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.NotificationException
-import com.mrboomdev.scrollix.data.model.NotificationScope
-import com.mrboomdev.scrollix.data.model.NotificationSettings
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.icons.notifications_icon
 import kotlinx.coroutines.launch
 
 @Composable

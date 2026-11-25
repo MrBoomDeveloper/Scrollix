@@ -1,5 +1,9 @@
 package com.mrboomdev.scrollix.data.api
 
+import dev.g000sha256.tdl.dto.FormattedText
+import dev.g000sha256.tdl.dto.*
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
@@ -7,12 +11,8 @@ import com.mrboomdev.scrollix.data.model.MessageVideoQuality
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.DownloadedFile
-import dev.g000sha256.tdl.dto.FormattedText
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
-import dev.g000sha256.tdl.dto.*
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 
 internal fun TelegramSession.mapPoll(content: MessageContent): MessagePollInfo? {
     val poll = (content as? MessagePoll)?.poll ?: return null

@@ -1,5 +1,22 @@
 package com.mrboomdev.scrollix.features.accounts
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AccountRecord
+import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.outbox.OutboxEntry
+import com.mrboomdev.scrollix.data.outbox.OutboxEntryKind
+import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
+import com.mrboomdev.scrollix.data.outbox.OutboxManager
+import com.mrboomdev.scrollix.data.provider.ProviderRegistry
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
+import com.mrboomdev.scrollix.ui.icons.add_icon
+import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.send_icon
+import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,37 +48,20 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AccountRecord
-import com.mrboomdev.scrollix.data.model.AuthState
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.outbox.OutboxEntry
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryKind
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
-import com.mrboomdev.scrollix.data.outbox.OutboxManager
-import com.mrboomdev.scrollix.data.provider.ProviderRegistry
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
-import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
-import com.mrboomdev.scrollix.ui.icons.add_icon
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.icons.send_icon
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.style.TextOverflow
-import kotlinx.coroutines.launch
 
 @Composable
-fun AccountsScreen(
+internal fun AccountsScreen(
     onBack: () -> Unit,
     onOpenLogin: (String) -> Unit,
-    onOpenOwnProfile: (String) -> Unit = {}
+    onOpenOwnProfile: (String) -> Unit = {},
+    viewModel: AccountsScreenViewModel = viewModel()
 ) {
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
@@ -73,50 +73,11 @@ fun AccountsScreen(
     val accountNames = remember(accountState.accounts) {
         accountState.accounts.associate { account -> account.id to account.displayName }
     }
-    var confirmDiscard by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    var error by remember { mutableStateOf<String?>(null) }
-    var isAdding by remember { mutableStateOf(false) }
-    var removingIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var providerPickerOpen by remember { mutableStateOf(false) }
-
-    fun addAccount(providerId: String) {
-        if (isAdding) return
-        isAdding = true
-
-        scope.launch {
-            try {
-                runCatching {
-                    ApiManager.addAccount(providerId)
-                }.onSuccess { accountId ->
-                    error = null
-                    onOpenLogin(accountId)
-                }.onFailure { exception ->
-                    error = exception.message ?: "Failed to add account"
-                }
-            } finally {
-                isAdding = false
-            }
-        }
-    }
-
-    fun removeAccount(accountId: String) {
-        if (accountId in removingIds) return
-
-        removingIds = removingIds + accountId
-
-        scope.launch {
-            try {
-                runCatching {
-                    ApiManager.removeAccount(accountId)
-                }.onFailure { exception ->
-                    error = exception.message ?: "Failed to remove account"
-                }
-            } finally {
-                removingIds = removingIds - accountId
-            }
-        }
-    }
+    val confirmDiscard = viewModel.confirmDiscard
+    val error = viewModel.error
+    val isAdding = viewModel.isAdding
+    val removingIds = viewModel.removingIds
+    val providerPickerOpen = viewModel.providerPickerOpen
 
     Column(
         modifier = Modifier
@@ -148,7 +109,7 @@ fun AccountsScreen(
             )
 
             IconButton(
-                onClick = { providerPickerOpen = true },
+                onClick = { viewModel.openProviderPicker() },
                 enabled = !isAdding
             ) {
                 if (isAdding) {
@@ -179,7 +140,7 @@ fun AccountsScreen(
 
         if (providerPickerOpen) {
             AlertDialog(
-                onDismissRequest = { providerPickerOpen = false },
+                onDismissRequest = { viewModel.closeProviderPicker() },
                 title = { Text("Add account") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -188,8 +149,8 @@ fun AccountsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 color = Color.Transparent,
                                 onClick = {
-                                    providerPickerOpen = false
-                                    addAccount(provider.id)
+                                    viewModel.closeProviderPicker()
+                                    viewModel.addAccount(provider.id, onOpenLogin)
                                 }
                             ) {
                                 Row(
@@ -209,7 +170,7 @@ fun AccountsScreen(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { providerPickerOpen = false }) {
+                    TextButton(onClick = { viewModel.closeProviderPicker() }) {
                         Text("Cancel")
                     }
                 }
@@ -229,8 +190,8 @@ fun AccountsScreen(
                 OutgoingQueueCard(
                     entries = queue,
                     accountNames = accountNames,
-                    onRetryAll = { OutboxManager.retryAll() },
-                    onDiscardAll = { confirmDiscard = true }
+                    onRetryAll = { viewModel.retryAll() },
+                    onDiscardAll = { viewModel.requestDiscardAll() }
                 )
             }
 
@@ -248,7 +209,7 @@ fun AccountsScreen(
                     isDialogsLoading = account.id in dialogsLoading,
                     onOpenLogin = onOpenLogin,
                     onOpenOwnProfile = { onOpenOwnProfile(account.id) },
-                    onRemove = { removeAccount(account.id) }
+                    onRemove = { viewModel.removeAccount(account.id) }
                 )
             }
 
@@ -279,7 +240,7 @@ fun AccountsScreen(
 
     if (confirmDiscard) {
         AlertDialog(
-            onDismissRequest = { confirmDiscard = false },
+            onDismissRequest = { viewModel.dismissDiscardAll() },
             title = { Text("Discard the queue?") },
             text = {
                 Text(
@@ -289,16 +250,13 @@ fun AccountsScreen(
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        confirmDiscard = false
-                        OutboxManager.discardAll()
-                    }
+                    onClick = { viewModel.discardAll() }
                 ) {
                     Text("Discard")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDiscard = false }) {
+                TextButton(onClick = { viewModel.dismissDiscardAll() }) {
                     Text("Cancel")
                 }
             }

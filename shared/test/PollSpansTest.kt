@@ -1,6 +1,8 @@
 package com.mrboomdev.scrollix.ui.components
 
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.features.dialog.adjustCustomEmojiSpans
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -11,7 +13,7 @@ class PollSpansTest {
 
         assertEquals(
             listOf(CustomEmojiSpan(start = 5, end = 6, emojiId = 7)),
-            adjustCustomEmojiSpans(spans, oldText = "abcXdef", newText = "ZZabcXdef")
+            adjustCustomEmojiSpans(oldText = "abcXdef", newText = "ZZabcXdef", spans = spans)
         )
     }
 
@@ -21,7 +23,7 @@ class PollSpansTest {
 
         assertEquals(
             listOf(CustomEmojiSpan(start = 2, end = 3, emojiId = 7)),
-            adjustCustomEmojiSpans(spans, oldText = "abcXdef", newText = "acXdef")
+            adjustCustomEmojiSpans(oldText = "abcXdef", newText = "acXdef", spans = spans)
         )
     }
 
@@ -31,7 +33,7 @@ class PollSpansTest {
 
         assertEquals(
             emptyList(),
-            adjustCustomEmojiSpans(spans, oldText = "abcXdef", newText = "abcdef")
+            adjustCustomEmojiSpans(oldText = "abcXdef", newText = "abcdef", spans = spans)
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.ChatMessage
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

@@ -1,14 +1,5 @@
 package com.mrboomdev.scrollix.data.api
 
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.ChatWallpaper
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
-import com.mrboomdev.scrollix.data.model.DialogFolderPosition
-import com.mrboomdev.scrollix.data.model.DialogIdentity
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.storage.CacheStore
-import com.mrboomdev.scrollix.data.storage.readFileBytes
 import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.*
 import kotlinx.coroutines.CancellationException
@@ -21,6 +12,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.ChatWallpaper
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
+import com.mrboomdev.scrollix.data.model.DialogFolderPosition
+import com.mrboomdev.scrollix.data.model.DialogIdentity
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.storage.CacheStore
+import com.mrboomdev.scrollix.data.storage.readFileBytes
 
 internal fun TelegramSession.requestFolderChatsLoad(folderIds: Collection<Int>) {
     if (closed || folderIds.isEmpty()) return

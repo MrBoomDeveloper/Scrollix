@@ -1,5 +1,21 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.model.StickerPackKind
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.CacheStore
+import com.mrboomdev.scrollix.data.storage.MediaCacheLimitOptionsMb
+import com.mrboomdev.scrollix.data.storage.SettingsImportPreview
+import com.mrboomdev.scrollix.data.storage.UnlimitedMediaCacheBytes
+import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.data.storage.saveFileToDevice
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.platform.files.rememberFilePicker
+import com.mrboomdev.scrollix.ui.components.ReorderDialog
+import com.mrboomdev.scrollix.ui.components.ReorderItem
+import com.mrboomdev.scrollix.ui.components.orderedStickerPacks
+import com.mrboomdev.scrollix.ui.icons.storage_icon
+
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -29,20 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.StickerPackKind
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.SettingsImportPreview
-import com.mrboomdev.scrollix.data.storage.CacheStore
-import com.mrboomdev.scrollix.data.storage.MediaCacheLimitOptionsMb
-import com.mrboomdev.scrollix.data.storage.UnlimitedMediaCacheBytes
-import com.mrboomdev.scrollix.data.storage.readFileBytes
-import com.mrboomdev.scrollix.data.storage.saveFileToDevice
-import com.mrboomdev.scrollix.ui.components.ReorderDialog
-import com.mrboomdev.scrollix.ui.components.ReorderItem
-import com.mrboomdev.scrollix.ui.components.orderedStickerPacks
-import com.mrboomdev.scrollix.ui.components.rememberFilePicker
-import com.mrboomdev.scrollix.ui.icons.storage_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.media
 
+import com.mrboomdev.scrollix.features.home.key
+
 /**
  * Minimal GIF89a encoder for prerendered sticker animations.
  *

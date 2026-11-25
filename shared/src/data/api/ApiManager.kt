@@ -6,15 +6,15 @@ import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.AccountDialogFolder
 import com.mrboomdev.scrollix.data.model.AccountDownloadedFile
 import com.mrboomdev.scrollix.data.model.AccountRecord
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.AuthState
-import com.mrboomdev.scrollix.data.model.UserProfileDetails
+import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.PostSearchPage
 import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
+import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.DialogAggregator
@@ -29,6 +29,7 @@ import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.randomId
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi

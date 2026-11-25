@@ -1,14 +1,15 @@
 package com.mrboomdev.scrollix.media
 
+import com.mrboomdev.scrollix.data.media.gunzip
+import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
-import com.mrboomdev.scrollix.data.model.MessageStickerFormat
-import com.mrboomdev.scrollix.ui.components.decodeWebmAnimation
-import com.mrboomdev.scrollix.ui.components.gunzip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import com.mrboomdev.scrollix.data.media.decodeWebmAnimation
 
 /** A rasterized animation: frames plus how long each one is shown. */
 internal data class StickerFrames(

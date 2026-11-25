@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.data.model.Avatar
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -20,7 +22,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.Avatar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

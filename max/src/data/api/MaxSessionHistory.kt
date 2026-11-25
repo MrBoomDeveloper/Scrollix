@@ -1,5 +1,18 @@
 package com.mrboomdev.scrollix.data.api
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.mrboomdev.scrollix.data.max.network.MaxConnectionClosedException
 import com.mrboomdev.scrollix.data.max.network.maxFailure
 import com.mrboomdev.scrollix.data.max.network.maxNotConnected
@@ -18,19 +31,6 @@ import com.mrboomdev.scrollix.data.provider.MessageHistoryController
 import com.mrboomdev.scrollix.data.provider.MessagePage
 import com.mrboomdev.scrollix.data.provider.MessagePageLoader
 import com.mrboomdev.scrollix.data.storage.CacheStore
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal fun MaxSession.historyFor(providerDialogId: String): MessageHistoryController? {
     val chatId = providerDialogId.toLongOrNull() ?: return null

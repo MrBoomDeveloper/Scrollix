@@ -1,6 +1,5 @@
 package com.mrboomdev.scrollix.data.storage
 
-import com.mrboomdev.scrollix.data.AppMode
 import io.github.vinceglb.filekit.FileKit
 import io.github.vinceglb.filekit.PlatformFile
 import io.github.vinceglb.filekit.dialogs.openFileSaver
@@ -14,6 +13,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
+import com.mrboomdev.scrollix.data.AppMode
 
 private class JvmPlatformStorage : PlatformStorage {
     // A test-server build stores everything in .scrollix-test next to the

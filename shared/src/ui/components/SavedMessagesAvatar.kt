@@ -1,5 +1,8 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.ui.icons.keep_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -11,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
-import com.mrboomdev.scrollix.ui.icons.keep_icon
 
 /** Avatar of the chat with yourself, which Telegram shows as Saved Messages. */
 @Composable

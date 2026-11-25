@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.AppShortcut
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.AppShortcut
 
 /**
  * Lists the desktop shortcuts. Esc is included because it is handled by the

@@ -1,10 +1,14 @@
-package com.mrboomdev.scrollix.ui.components
+package com.mrboomdev.scrollix.data.media
+
+import com.mrboomdev.scrollix.data.media.MaxAnimationFrames
+import com.mrboomdev.scrollix.data.media.WebmAnimation
+import com.mrboomdev.scrollix.data.media.animationFrameSize
+import com.mrboomdev.scrollix.data.storage.AndroidAppContext
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import com.mrboomdev.scrollix.data.storage.AndroidAppContext
 import dev.mediacache.alphavideo.WebMAlphaPlayerNative
 import dev.mediacache.alphavideo.WebMFrame
 import kotlinx.coroutines.CancellationException

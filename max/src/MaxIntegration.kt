@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.data.AppMode
 import com.mrboomdev.scrollix.data.api.MaxProvider
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 
+
 /**
  * Registers the MAX provider with the shared provider registry.
  *

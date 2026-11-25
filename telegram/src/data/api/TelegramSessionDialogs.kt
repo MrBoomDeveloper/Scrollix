@@ -1,5 +1,11 @@
 package com.mrboomdev.scrollix.data.api
 
+import dev.g000sha256.tdl.TdlResult
+import dev.g000sha256.tdl.dto.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.withLock
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageButton
@@ -9,12 +15,6 @@ import com.mrboomdev.scrollix.data.model.WebAppLaunch
 import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.storage.CacheStore
-import dev.g000sha256.tdl.TdlResult
-import dev.g000sha256.tdl.dto.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.sync.withLock
 
 internal suspend fun TelegramSession.reorderPinnedDialogsImpl(providerDialogIds: List<String>, folderId: Int?): Result<Unit> {
     val chatIds = providerDialogIds.mapNotNull { id -> id.toLongOrNull() }

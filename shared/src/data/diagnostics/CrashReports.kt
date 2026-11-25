@@ -7,6 +7,7 @@ import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.getPlatform
 import com.mrboomdev.scrollix.installPlatformCrashHandler
+
 import kotlin.time.Instant
 
 const val CrashReportFileName = "diagnostics/last-crash.txt"

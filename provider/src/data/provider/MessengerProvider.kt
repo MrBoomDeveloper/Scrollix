@@ -1,8 +1,8 @@
 package com.mrboomdev.scrollix.data.provider
 
+import kotlinx.coroutines.CoroutineScope
 import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
-import kotlinx.coroutines.CoroutineScope
 
 data class ProviderCapabilities(
     val multipleAccounts: Boolean = true,

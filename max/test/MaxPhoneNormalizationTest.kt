@@ -1,8 +1,8 @@
 package com.mrboomdev.scrollix.data.max
 
-import com.mrboomdev.scrollix.data.max.network.normalizeMaxPhone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import com.mrboomdev.scrollix.data.max.network.normalizeMaxPhone
 
 class MaxPhoneNormalizationTest {
     @Test

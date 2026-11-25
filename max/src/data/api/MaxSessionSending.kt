@@ -1,5 +1,16 @@
 package com.mrboomdev.scrollix.data.api
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import com.mrboomdev.scrollix.data.max.network.maxFailure
 import com.mrboomdev.scrollix.data.max.network.maxInvalidChatId
 import com.mrboomdev.scrollix.data.max.network.maxNotConnected
@@ -15,17 +26,6 @@ import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.max.network.uploadMaxFile
 import com.mrboomdev.scrollix.data.max.network.uploadMaxRaw
 import com.mrboomdev.scrollix.fetchUrlBytes
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 
 /** Drops deleted ids from the window, the dialog preview and the badges. */
 internal fun MaxSession.removeDeletedLocally(

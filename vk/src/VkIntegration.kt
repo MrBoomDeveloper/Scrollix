@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.data.vk
 import com.mrboomdev.scrollix.data.AppMode
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 
+
 /**
  * Registers the VK provider with the shared provider registry.
  *

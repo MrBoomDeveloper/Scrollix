@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.data.storage
 
 import com.mrboomdev.scrollix.data.diagnostics.AppLog
 
+
 /** Names of the files the app writes at startup that must never be lost silently. */
 internal const val SettingsFileName = "settings.json"
 internal const val OutboxFileName = "outbox.json"

@@ -1,4 +1,6 @@
-package com.mrboomdev.scrollix.ui.components
+package com.mrboomdev.scrollix.features.dialog
+
+import com.mrboomdev.scrollix.features.home.key
 
 import android.annotation.SuppressLint
 import android.os.Handler

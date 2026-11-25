@@ -1,5 +1,14 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.emoji.EmojiCatalog
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.ReactionPreference
+import com.mrboomdev.scrollix.ui.components.EmojiPicker
+import com.mrboomdev.scrollix.ui.icons.push_pin_icon
+import com.mrboomdev.scrollix.ui.icons.touch_app_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,13 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.ReactionPreference
-import com.mrboomdev.scrollix.ui.components.EmojiCatalog
-import com.mrboomdev.scrollix.ui.components.EmojiPicker
-import com.mrboomdev.scrollix.ui.icons.push_pin_icon
-import com.mrboomdev.scrollix.ui.icons.touch_app_icon
 
 @Composable
 internal fun SystemEmojiDialog(

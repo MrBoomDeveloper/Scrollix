@@ -1,6 +1,6 @@
 package com.mrboomdev.scrollix.data.provider
-
 import com.mrboomdev.scrollix.data.model.StickerPackKind
+
 
 /**
  * What a Telegram deep link points at. Sticker link targets carry the set

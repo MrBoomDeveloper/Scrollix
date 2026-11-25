@@ -8,6 +8,8 @@ import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageSendState
+import com.mrboomdev.scrollix.features.home.key
+
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.builtins.ListSerializer

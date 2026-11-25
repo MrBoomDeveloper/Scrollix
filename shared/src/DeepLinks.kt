@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix
 
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
+
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

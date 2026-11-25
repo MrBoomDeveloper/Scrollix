@@ -1,11 +1,11 @@
 package com.mrboomdev.scrollix.data.api
 
-import com.mrboomdev.scrollix.data.contract.AccountSessionContract
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import com.mrboomdev.scrollix.data.contract.AccountSessionContract
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.PlatformStorage
 
 class MaxSessionContractTest : AccountSessionContract() {
     override val provider = MaxProvider

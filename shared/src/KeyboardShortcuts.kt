@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix
 
+import com.mrboomdev.scrollix.features.home.key
+
 import androidx.compose.ui.input.key.Key
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

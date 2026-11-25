@@ -1,5 +1,26 @@
 package com.mrboomdev.scrollix.features.home
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.features.settings.icon
+import com.mrboomdev.scrollix.moved
+import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.components.ReorderDialog
+import com.mrboomdev.scrollix.ui.components.ReorderItem
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
+import com.mrboomdev.scrollix.ui.icons.account_circle_icon
+import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
+import com.mrboomdev.scrollix.ui.icons.group_icon
+import com.mrboomdev.scrollix.ui.icons.home_icon
+import com.mrboomdev.scrollix.ui.icons.keep_icon
+import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
+import com.mrboomdev.scrollix.ui.icons.settings_icon
+import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
@@ -45,7 +66,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,26 +80,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AccountDialogEntry
-import com.mrboomdev.scrollix.data.model.AuthState
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.ui.components.ReorderDialog
-import com.mrboomdev.scrollix.ui.components.ReorderItem
-import com.mrboomdev.scrollix.ui.icons.account_circle_icon
-import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
-import com.mrboomdev.scrollix.ui.icons.group_icon
-import com.mrboomdev.scrollix.ui.icons.home_icon
-import com.mrboomdev.scrollix.ui.icons.keep_icon
-import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
-import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
-import com.mrboomdev.scrollix.ui.icons.settings_icon
-import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
-import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
-import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlin.math.abs
-import kotlinx.coroutines.launch
 
 internal const val TAB_ALL = 0
 internal const val TAB_DIRECT = 1
@@ -89,12 +91,13 @@ internal const val TAB_BOTS = 4
 
 @OptIn(ExperimentalFlexBoxApi::class)
 @Composable
-fun HomeScreen(
+internal fun HomeScreen(
     onOpenAccountsScreen: () -> Unit,
     onOpenSettingsScreen: () -> Unit,
     onOpenDialog: (AccountDialogEntry) -> Unit,
     selectedDialogAccountId: String? = null,
-    selectedDialogProviderDialogId: String? = null
+    selectedDialogProviderDialogId: String? = null,
+    viewModel: HomeScreenViewModel = viewModel()
 ) {
     val layoutInfo = currentAdaptiveLayoutInfo()
     val settings by AppSettingsStore.state.collectAsState()
@@ -102,7 +105,6 @@ fun HomeScreen(
     val isSingleRowFilters = settings.singleRowFilters
     val isUsingNativeFolders = settings.useNativeFolders
     val isMergeDuplicateDialogs = settings.mergeDuplicateDialogs
-    val scope = rememberCoroutineScope()
 
     // Chip geometry backs both the "scroll the selected folder into view"
     // behaviour and dragging a chip to a new place in the row.
@@ -124,21 +126,13 @@ fun HomeScreen(
     val dragScrollStep = with(LocalDensity.current) { 12.dp.toPx() }
     val dragGapPx = with(LocalDensity.current) { 4.dp.toPx() }
 
-    var showFolderOrderDialog by remember { mutableStateOf(false) }
-    var showPinnedOrderDialog by remember { mutableStateOf(false) }
-    
-    var selectedTab by remember {
-        mutableStateOf(
-            when (settings.defaultHomeTab) {
-                "direct" -> TAB_DIRECT
-                "groups" -> TAB_GROUPS
-                "channels" -> TAB_CHANNELS
-                "bots" -> TAB_BOTS
-                else -> if(isAllShown) TAB_ALL else TAB_DIRECT
-            }
-        )
+
+    LaunchedEffect(settings.defaultHomeTab, isAllShown) {
+        viewModel.applyDefaultTab(settings)
     }
-    var selectedNativeFolderKey by remember { mutableStateOf<String?>(null) }
+
+    val selectedTab = viewModel.selectedTab
+    val selectedNativeFolderKey = viewModel.selectedNativeFolderKey
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
     val loadingDialogs by ApiManager.dialogsLoading.collectAsState()
@@ -222,14 +216,10 @@ fun HomeScreen(
         when (val page = folderPages.getOrNull(folderPagerState.settledPage)) {
             null -> Unit
 
-            HomePage.All -> if (isUsingNativeFolders) {
-                selectedNativeFolderKey = null
-            } else {
-                selectedTab = TAB_ALL
-            }
+            HomePage.All -> viewModel.selectAll(isUsingNativeFolders)
 
-            is HomePage.Folder -> selectedNativeFolderKey = page.key
-            is HomePage.Tab -> selectedTab = page.index
+            is HomePage.Folder -> viewModel.selectFolder(page.key)
+            is HomePage.Tab -> viewModel.selectTab(page.index)
         }
     }
 
@@ -266,37 +256,7 @@ fun HomeScreen(
             .keys
     }
 
-    val folderUnreadCounts = remember(entries) {
-        val counts = mutableMapOf<String, Int>()
-
-        entries.forEach { entry ->
-            if (!entry.dialog.hasUnreadIndicator()) return@forEach
-
-            entry.dialog.folderIds.forEach { folderId ->
-                val key = "${entry.account.id}:$folderId"
-                counts[key] = (counts[key] ?: 0) + 1
-            }
-        }
-
-        counts
-    }
-
-    val allUnreadCount = remember(entries) {
-        entries.count { entry -> entry.dialog.hasUnreadIndicator() }
-    }
-
-    val tabUnreadCounts = remember(entries) {
-        entries.filter { entry -> entry.dialog.hasUnreadIndicator() }
-            .groupingBy { entry ->
-                when (entry.dialog.kind) {
-                    DialogKind.Direct, DialogKind.Secret -> TAB_DIRECT
-                    DialogKind.Group -> TAB_GROUPS
-                    DialogKind.Channel -> TAB_CHANNELS
-                    DialogKind.Bot -> TAB_BOTS
-                }
-            }
-            .eachCount()
-    }
+    val unreadCounts = remember(entries) { homeUnreadCounts(entries) }
 
     val isConnecting = accountState.accounts.any { account ->
         val state = sessionStates[account.id]
@@ -512,7 +472,7 @@ fun HomeScreen(
                                     },
                                     text = { Text("Reorder folders") },
                                     onClick = {
-                                        showFolderOrderDialog = true
+                                        viewModel.openFolderOrder()
                                         expand = false
                                     }
                                 )
@@ -526,7 +486,7 @@ fun HomeScreen(
                                     },
                                     text = { Text("Reorder pinned chats") },
                                     onClick = {
-                                        showPinnedOrderDialog = true
+                                        viewModel.openPinnedOrder()
                                         expand = false
                                     }
                                 )
@@ -714,14 +674,8 @@ fun HomeScreen(
                                     },
                                     label = "All",
                                     icon = home_icon,
-                                    unreadCount = allUnreadCount,
-                                    onClick = {
-                                        if (isUsingNativeFolders) {
-                                            selectedNativeFolderKey = null
-                                        } else {
-                                            selectedTab = TAB_ALL
-                                        }
-                                    }
+                                    unreadCount = unreadCounts.all,
+                                    onClick = { viewModel.selectAll(isUsingNativeFolders) }
                                 )
 
                                 is HomePage.Folder -> {
@@ -733,12 +687,10 @@ fun HomeScreen(
                                         selected = selectedNativeFolder?.key == folder.key,
                                         folder = folder.folder,
                                         account = folder.account,
-                                        unreadCount = folderUnreadCounts[folder.key] ?: 0,
+                                        unreadCount = unreadCounts.folders[folder.key] ?: 0,
                                         showAccountIndicator =
                                             folder.folder.name in duplicateFolderNames,
-                                        onClick = {
-                                            selectedNativeFolderKey = folder.key
-                                        }
+                                        onClick = { viewModel.selectFolder(folder.key) }
                                     )
                                 }
 
@@ -752,8 +704,8 @@ fun HomeScreen(
                                         TAB_CHANNELS -> brand_awareness_icon
                                         else -> smart_toy_icon
                                     },
-                                    unreadCount = tabUnreadCounts[page.index] ?: 0,
-                                    onClick = { selectedTab = page.index }
+                                    unreadCount = unreadCounts.tabs[page.index] ?: 0,
+                                    onClick = { viewModel.selectTab(page.index) }
                                 )
                             }
                         }
@@ -827,21 +779,18 @@ fun HomeScreen(
         }
     }
 
-    if (showFolderOrderDialog) {
+    if (viewModel.showFolderOrderDialog) {
         ReorderDialog(
             title = "Reorder folders",
             items = folderPages.map { page ->
                 ReorderItem(key = page.orderKey(), title = page.chipTitle(folders))
             },
-            onDismiss = { showFolderOrderDialog = false },
-            onConfirm = { keys ->
-                AppSettingsStore.update { it.copy(folderOrder = keys) }
-                showFolderOrderDialog = false
-            }
+            onDismiss = { viewModel.closeFolderOrder() },
+            onConfirm = { keys -> viewModel.applyFolderOrder(keys) }
         )
     }
 
-    if (showPinnedOrderDialog) {
+    if (viewModel.showPinnedOrderDialog) {
         val pinnedEntries = entries.filter { entry -> entry.dialog.isPinnedIn(null) }
 
         ReorderDialog(
@@ -852,24 +801,8 @@ fun HomeScreen(
                     title = entry.dialog.title
                 )
             },
-            onDismiss = { showPinnedOrderDialog = false },
-            onConfirm = { keys ->
-                showPinnedOrderDialog = false
-
-                val byAccount = keys.mapNotNull { key ->
-                    val separator = key.indexOf(':')
-                    if (separator <= 0) return@mapNotNull null
-
-                    key.substring(0, separator) to key.substring(separator + 1)
-                }.groupBy({ it.first }, { it.second })
-
-                scope.launch {
-                    byAccount.forEach { (accountId, dialogIds) ->
-                        ApiManager.session(accountId)
-                            ?.reorderPinnedDialogs(dialogIds)
-                    }
-                }
-            }
+            onDismiss = { viewModel.closePinnedOrder() },
+            onConfirm = { keys -> viewModel.applyPinnedOrder(keys) }
         )
     }
 }

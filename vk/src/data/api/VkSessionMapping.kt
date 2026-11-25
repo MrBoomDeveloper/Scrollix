@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.data.vk
 
+import kotlinx.serialization.json.JsonObject
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
@@ -20,7 +21,6 @@ import com.mrboomdev.scrollix.data.vk.network.objects
 import com.mrboomdev.scrollix.data.vk.network.peerGroupId
 import com.mrboomdev.scrollix.data.vk.network.peerUserId
 import com.mrboomdev.scrollix.data.vk.network.string
-import kotlinx.serialization.json.JsonObject
 
 internal fun VkSession.mapDialog(conversation: JsonObject): Dialog? {
     val peer = conversation.obj("peer") ?: return null

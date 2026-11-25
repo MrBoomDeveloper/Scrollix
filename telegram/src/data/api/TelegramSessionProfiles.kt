@@ -1,5 +1,12 @@
 package com.mrboomdev.scrollix.data.api
 
+import dev.g000sha256.tdl.TdlResult
+import dev.g000sha256.tdl.dto.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.ChatMemberInfo
@@ -21,13 +28,6 @@ import com.mrboomdev.scrollix.data.provider.MessagePage
 import com.mrboomdev.scrollix.data.provider.MessagePageLoader
 import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
 import com.mrboomdev.scrollix.data.storage.CacheStore
-import dev.g000sha256.tdl.TdlResult
-import dev.g000sha256.tdl.dto.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withLock
 
 internal fun TelegramSession.historyFor(providerDialogId: String): MessageHistoryController? {
     val chatId = providerDialogId.toLongOrNull() ?: return null

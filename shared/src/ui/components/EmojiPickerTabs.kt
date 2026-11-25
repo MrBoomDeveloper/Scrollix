@@ -1,5 +1,12 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.model.StickerPack
+import com.mrboomdev.scrollix.data.model.StickerPackKind
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.features.home.key
+
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -50,18 +57,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.model.StickerPack
-import com.mrboomdev.scrollix.data.model.StickerPackKind
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.onSecondaryClick
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.mrboomdev.scrollix.onSecondaryClick
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

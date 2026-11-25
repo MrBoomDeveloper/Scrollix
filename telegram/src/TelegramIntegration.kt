@@ -5,6 +5,7 @@ import com.mrboomdev.scrollix.data.api.TelegramProvider
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.generated.BuildConfig
 
+
 /**
  * Registers the Telegram provider with the shared provider registry.
  *

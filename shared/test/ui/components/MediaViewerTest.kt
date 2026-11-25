@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.ui.components
 
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals

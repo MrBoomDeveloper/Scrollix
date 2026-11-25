@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.data.model.SessionErrorCode
 import com.mrboomdev.scrollix.data.model.SessionException
 import com.mrboomdev.scrollix.data.model.sessionExceptionFrom
 
+
 /**
  * VK's numeric error codes, mapped once for every call. Codes not listed fall
  * back to the text mapping so a new server error still lands on a useful code.

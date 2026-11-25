@@ -1,5 +1,20 @@
 package com.mrboomdev.scrollix.features.search
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.AccountDialogEntry
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.PostSearchQuota
+import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
+import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
+import com.mrboomdev.scrollix.features.dialog.DialogScreen
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.isTwoPaneLayout
+import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.search_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,29 +46,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AccountDialogEntry
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.model.MessageMediaKind
-import com.mrboomdev.scrollix.data.model.PostSearchQuota
-import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
-import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
-import com.mrboomdev.scrollix.data.storage.deviceDownloadsDirectory
-import com.mrboomdev.scrollix.data.storage.listDeviceDownloads
-import com.mrboomdev.scrollix.features.dialog.DialogScreen
-import com.mrboomdev.scrollix.isTwoPaneLayout
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.icons.search_icon
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.milliseconds
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 private val ChatKinds = setOf(DialogKind.Direct, DialogKind.Secret, DialogKind.Group)
 private val ChannelKinds = setOf(DialogKind.Channel)
@@ -61,7 +58,7 @@ private val BotKinds = setOf(DialogKind.Bot)
 
 internal const val SearchPageSize = 30
 
-private enum class SearchTab(val title: String, val publicKind: PublicChatSearchKind) {
+internal enum class SearchTab(val title: String, val publicKind: PublicChatSearchKind) {
     Chats("Chats", PublicChatSearchKind.Any),
     Channels("Channels", PublicChatSearchKind.Channels),
     Bots("Bots", PublicChatSearchKind.Bots),
@@ -76,7 +73,7 @@ private data class SearchSelection(
 )
 
 @Composable
-fun SearchScreen(
+internal fun SearchScreen(
     initialQuery: String = "",
     onBack: () -> Unit,
     onOpenDialog: (accountId: String, providerDialogId: String, messageId: Long?) -> Unit,
@@ -86,18 +83,18 @@ fun SearchScreen(
     selectedDialogAccountId: String? = null,
     selectedDialogProviderDialogId: String? = null,
     selectedDialogMessageId: Long? = null,
-    onSelectDialog: ((accountId: String, providerDialogId: String, messageId: Long?) -> Unit)? = null
+    onSelectDialog: ((accountId: String, providerDialogId: String, messageId: Long?) -> Unit)? = null,
+    viewModel: SearchScreenViewModel = viewModel()
 ) {
     val isTwoPane = isTwoPaneLayout()
     val entries by ApiManager.dialogs.collectAsState()
-    val scope = rememberCoroutineScope()
 
-    var query by remember(initialQuery) { mutableStateOf(initialQuery) }
-    var selectedTab by remember(initialQuery) {
-        mutableStateOf(
-            if (initialQuery.trimStart().startsWith("#")) SearchTab.Posts else SearchTab.Chats
-        )
+    LaunchedEffect(Unit) {
+        viewModel.initialize(initialQuery)
     }
+
+    val query = viewModel.query
+    val selectedTab = viewModel.selectedTab
     // Mirror the app-level selection when entering Search, so a chat opened on
     // the Home tab stays in the right pane after switching tabs.
     var selected by remember(
@@ -118,144 +115,30 @@ fun SearchScreen(
         )
     }
 
-    var remoteEntries by remember {
-        mutableStateOf<List<AccountDialogEntry>>(emptyList())
-    }
-    var isSearchingChats by remember { mutableStateOf(false) }
+    val remoteEntries = viewModel.remoteEntries
+    val isSearchingChats = viewModel.isSearchingChats
+    val postResults = viewModel.postResults
+    val postResultDialogs = viewModel.postResultDialogs
+    val postSearchQuery = viewModel.postSearchQuery
+    val postNextOffset = viewModel.postNextOffset
+    val postQuota = viewModel.postQuota
+    val postLimitsExceeded = viewModel.postLimitsExceeded
+    val postSearched = viewModel.postSearched
+    val isSearchingPosts = viewModel.isSearchingPosts
+    val postError = viewModel.postError
+    val deviceDownloads = viewModel.deviceDownloads
+    val downloadsDirectory = viewModel.downloadsDirectory
+    val isSearchingDownloads = viewModel.isSearchingDownloads
 
-    // Public post search is deliberately manual: every page may spend one of
-    // the account's free daily searches.
-    var postResults by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
-    var postResultDialogs by remember { mutableStateOf<List<Dialog>>(emptyList()) }
-    var postSearchQuery by remember { mutableStateOf<String?>(null) }
-    var postNextOffset by remember { mutableStateOf("") }
-    var postQuota by remember { mutableStateOf<PostSearchQuota?>(null) }
-    var postLimitsExceeded by remember { mutableStateOf(false) }
-    var postSearched by remember { mutableStateOf(false) }
-    var isSearchingPosts by remember { mutableStateOf(false) }
-    var postError by remember { mutableStateOf<String?>(null) }
-
-    var deviceDownloads by remember { mutableStateOf<List<DeviceDownloadedFile>>(emptyList()) }
-    var downloadsDirectory by remember { mutableStateOf("") }
-    var isSearchingDownloads by remember { mutableStateOf(false) }
-
-    val trimmedQuery = query.trim()
-
-    // Chats, channels and bots are searched both on the account and across
-    // public chats the account has not joined yet.
-    LaunchedEffect(trimmedQuery, selectedTab) {
-        if (
-            trimmedQuery.isEmpty() ||
-            selectedTab == SearchTab.Posts ||
-            selectedTab == SearchTab.Downloads
-        ) {
-            remoteEntries = emptyList()
-            isSearchingChats = false
-            return@LaunchedEffect
-        }
-
-        isSearchingChats = true
-        delay(300.milliseconds)
-        remoteEntries = ApiManager.searchChats(
-            query = trimmedQuery,
-            limit = 50,
-            publicKind = selectedTab.publicKind
-        )
-        isSearchingChats = false
-    }
-
-    // The quota is free to read, so it is refreshed for the current query.
-    // Individual searches replace it with the value from their page.
-    LaunchedEffect(selectedTab, trimmedQuery) {
-        if (selectedTab != SearchTab.Posts) return@LaunchedEffect
-
-        delay(400.milliseconds)
-        ApiManager.loadPublicPostSearchQuota(trimmedQuery)
-            .onSuccess { quota -> postQuota = quota }
-    }
-
-    // Editing the query invalidates results, but searching still needs an
-    // explicit tap so a keystroke never spends a free search.
-    LaunchedEffect(trimmedQuery, selectedTab) {
-        if (postSearchQuery == null) return@LaunchedEffect
-        if (trimmedQuery == postSearchQuery) return@LaunchedEffect
-
-        postResults = emptyList()
-        postResultDialogs = emptyList()
-        postSearchQuery = null
-        postNextOffset = ""
-        postSearched = false
-        postLimitsExceeded = false
-        postError = null
-    }
-
-    LaunchedEffect(selectedTab) {
-        if (selectedTab != SearchTab.Downloads) return@LaunchedEffect
-
-        isSearchingDownloads = true
-        downloadsDirectory = deviceDownloadsDirectory()
-        deviceDownloads = listDeviceDownloads()
-        isSearchingDownloads = false
-    }
-
-    fun launchPostSearch(loadMore: Boolean) {
-        if (isSearchingPosts) return
-
-        val searchQuery = if (loadMore) postSearchQuery ?: trimmedQuery else trimmedQuery
-        if (searchQuery.isBlank()) return
-        if (loadMore && (postNextOffset.isBlank() || postLimitsExceeded)) return
-
-        val offset = if (loadMore) postNextOffset else ""
-
-        if (!loadMore) {
-            postResults = emptyList()
-            postResultDialogs = emptyList()
-            postNextOffset = ""
-            postLimitsExceeded = false
-            postError = null
-        }
-
-        isSearchingPosts = true
-        postSearched = true
-
-        scope.launch {
-            ApiManager.searchPublicPosts(
-                query = searchQuery,
-                offset = offset,
-                limit = SearchPageSize
-            ).onSuccess { page ->
-                postSearchQuery = searchQuery
-                postResults = (if (loadMore) postResults + page.messages else page.messages)
-                    .distinctBy { message ->
-                        "${message.accountId}:${message.providerDialogId}:${message.messageId}"
-                    }
-
-                postResultDialogs = (if (loadMore) {
-                    postResultDialogs + page.dialogs
-                } else {
-                    page.dialogs
-                }).distinctBy { dialog ->
-                    "${dialog.accountId}:${dialog.providerDialogId}"
-                }
-
-                postNextOffset = page.nextOffset
-                postLimitsExceeded = page.areLimitsExceeded
-                page.quota?.let { quota -> postQuota = quota }
-            }.onFailure { error ->
-                postError = error.message ?: "Could not search posts"
-            }
-
-            isSearchingPosts = false
-        }
-    }
+    val trimmedQuery = viewModel.trimmedQuery
 
     if (!isTwoPane) {
         SearchPanel(
             modifier = Modifier.fillMaxSize(),
             query = query,
-            onQueryChange = { query = it },
+            onQueryChange = { viewModel.updateQuery(it) },
             selectedTab = selectedTab,
-            onSelectTab = { selectedTab = it },
+            onSelectTab = { viewModel.selectTab(it) },
             onBack = onBack,
             entries = entries,
             remoteEntries = remoteEntries,
@@ -272,8 +155,8 @@ fun SearchScreen(
             postLimitsExceeded = postLimitsExceeded,
             isSearchingPosts = isSearchingPosts,
             postError = postError,
-            onSearchPosts = { launchPostSearch(false) },
-            onLoadMorePosts = { launchPostSearch(true) },
+            onSearchPosts = { viewModel.searchPosts(false) },
+            onLoadMorePosts = { viewModel.searchPosts(true) },
             onOpenEntry = { entry ->
                 onOpenDialog(entry.account.id, entry.dialog.providerDialogId, null)
             },
@@ -298,9 +181,9 @@ fun SearchScreen(
                     .width(listWidth)
                     .fillMaxHeight(),
                 query = query,
-                onQueryChange = { query = it },
+                onQueryChange = { viewModel.updateQuery(it) },
                 selectedTab = selectedTab,
-                onSelectTab = { selectedTab = it },
+                onSelectTab = { viewModel.selectTab(it) },
                 onBack = onBack,
                 entries = entries,
                 remoteEntries = remoteEntries,
@@ -317,8 +200,8 @@ fun SearchScreen(
                 postLimitsExceeded = postLimitsExceeded,
                 isSearchingPosts = isSearchingPosts,
                 postError = postError,
-                onSearchPosts = { launchPostSearch(false) },
-                onLoadMorePosts = { launchPostSearch(true) },
+                onSearchPosts = { viewModel.searchPosts(false) },
+                onLoadMorePosts = { viewModel.searchPosts(true) },
                 onOpenEntry = { entry ->
                     selected = SearchSelection(
                         accountId = entry.account.id,
@@ -383,8 +266,8 @@ fun SearchScreen(
                                 )
                             },
                             onOpenHashtag = { hashtag ->
-                                query = hashtag
-                                selectedTab = SearchTab.Posts
+                                viewModel.updateQuery(hashtag)
+                                viewModel.selectTab(SearchTab.Posts)
                                 selected = null
                             },
                             onBack = { selected = null }

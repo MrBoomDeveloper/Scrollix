@@ -1,5 +1,15 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
+import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.model.MessageStickerFormat
+import com.mrboomdev.scrollix.data.model.StickerPackKind
+import com.mrboomdev.scrollix.data.model.StickerSetInfo
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.features.home.FolderEmojiImage
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,13 +50,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
-import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
-import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.model.MessageStickerFormat
-import com.mrboomdev.scrollix.data.model.StickerPackKind
-import com.mrboomdev.scrollix.data.model.StickerSetInfo
-import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.launch
 
 internal sealed interface StickerSetTarget {

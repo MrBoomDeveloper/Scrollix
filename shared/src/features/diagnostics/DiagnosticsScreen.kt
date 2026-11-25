@@ -1,5 +1,25 @@
 package com.mrboomdev.scrollix.features.diagnostics
 
+import com.mrboomdev.scrollix.data.AppMode
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.diagnostics.CrashReports
+import com.mrboomdev.scrollix.data.diagnostics.DiagnosticsFacts
+import com.mrboomdev.scrollix.data.diagnostics.DiagnosticsFileLog
+import com.mrboomdev.scrollix.data.diagnostics.LogEntry
+import com.mrboomdev.scrollix.data.diagnostics.LogLevel
+import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
+import com.mrboomdev.scrollix.data.outbox.OutboxManager
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.QuarantinedCopy
+import com.mrboomdev.scrollix.data.storage.StorageIntegrity
+import com.mrboomdev.scrollix.data.storage.createPlatformStorage
+import com.mrboomdev.scrollix.data.storage.currentTimeMillis
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.bug_report_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,24 +61,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.AppMode
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.diagnostics.AppLog
-import com.mrboomdev.scrollix.data.diagnostics.CrashReports
-import com.mrboomdev.scrollix.data.diagnostics.DiagnosticsFacts
-import com.mrboomdev.scrollix.data.diagnostics.DiagnosticsFileLog
-import com.mrboomdev.scrollix.data.diagnostics.LogEntry
-import com.mrboomdev.scrollix.data.diagnostics.LogLevel
-import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
-import com.mrboomdev.scrollix.data.outbox.OutboxManager
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.QuarantinedCopy
-import com.mrboomdev.scrollix.data.storage.StorageIntegrity
-import com.mrboomdev.scrollix.data.storage.createPlatformStorage
-import com.mrboomdev.scrollix.data.storage.currentTimeMillis
-import com.mrboomdev.scrollix.getPlatform
-import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
-import com.mrboomdev.scrollix.ui.icons.bug_report_icon
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,35 +75,21 @@ import kotlin.time.Instant
  * into a bug report. Nothing is uploaded automatically.
  */
 @Composable
-fun DiagnosticsScreen(onBack: () -> Unit) {
+internal fun DiagnosticsScreen(
+    onBack: () -> Unit,
+    viewModel: DiagnosticsScreenViewModel = viewModel()
+) {
     val entries by AppLog.entries.collectAsState()
     val accountState by ApiManager.accountState.collectAsState()
     val clipboard = LocalClipboardManager.current
-    val scope = rememberCoroutineScope()
-    var copied by remember { mutableStateOf(false) }
-    var crashReport by remember { mutableStateOf<String?>(null) }
-    var crashCopied by remember { mutableStateOf(false) }
-    var nonFatalReport by remember { mutableStateOf<String?>(null) }
-    var nonFatalCopied by remember { mutableStateOf(false) }
-    var savedLog by remember { mutableStateOf<String?>(null) }
-    var savedLogCopied by remember { mutableStateOf(false) }
-    var protocolDumps by remember {
-        mutableStateOf(AppSettingsStore.state.value.protocolDumpsEnabled)
-    }
-
-    LaunchedEffect(Unit) {
-        crashReport = withContext(Dispatchers.IO) { CrashReports.read() }
-        nonFatalReport = withContext(Dispatchers.IO) { CrashReports.readNonFatal() }
-        savedLog = withContext(Dispatchers.IO) { DiagnosticsFileLog.read() }
-    }
-
-    fun currentFacts() = DiagnosticsFacts(
-        platform = getPlatform().name,
-        edition = if (AppMode.isTestServerMode) "Test server" else "Production",
-        storageProfile = AppMode.storageProfileName,
-        accounts = accountState.accounts.size,
-        generatedAtMillis = currentTimeMillis()
-    )
+    val copied = viewModel.copied
+    val crashReport = viewModel.crashReport
+    val crashCopied = viewModel.crashCopied
+    val nonFatalReport = viewModel.nonFatalReport
+    val nonFatalCopied = viewModel.nonFatalCopied
+    val savedLog = viewModel.savedLog
+    val savedLogCopied = viewModel.savedLogCopied
+    val protocolDumps = viewModel.protocolDumps
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -127,13 +116,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                 )
 
                 TextButton(
-                    onClick = {
-                        AppLog.clear()
-                        savedLog = null
-                        savedLogCopied = false
-                        copied = false
-                        scope.launch(Dispatchers.IO) { DiagnosticsFileLog.clear() }
-                    }
+                    onClick = { viewModel.clearLog() }
                 ) {
                     Text("Clear")
                 }
@@ -157,9 +140,9 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         clipboard.setText(
-                            AnnotatedString(AppLog.report(currentFacts()))
+                            AnnotatedString(viewModel.report(accountState.accounts.size))
                         )
-                        copied = true
+                        viewModel.markCopied()
                     }
                 ) {
                     Text(if (copied) "Copied to clipboard" else "Copy debug info")
@@ -167,11 +150,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
 
                 ProtocolDumpsCard(
                     enabled = protocolDumps,
-                    onToggle = { enabled ->
-                        protocolDumps = enabled
-                        AppLog.protocolDumpsEnabled = enabled
-                        AppSettingsStore.update { it.copy(protocolDumpsEnabled = enabled) }
-                    }
+                    onToggle = { enabled -> viewModel.updateProtocolDumps(enabled) }
                 )
 
                 DiagnosticsFactsCard(
@@ -189,13 +168,9 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         copied = nonFatalCopied,
                         onCopy = {
                             clipboard.setText(AnnotatedString(report))
-                            nonFatalCopied = true
+                            viewModel.markNonFatalCopied()
                         },
-                        onDelete = {
-                            nonFatalReport = null
-                            nonFatalCopied = false
-                            scope.launch(Dispatchers.IO) { CrashReports.clearNonFatal() }
-                        }
+                        onDelete = { viewModel.deleteNonFatal() }
                     )
                 }
 
@@ -205,13 +180,9 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         copied = crashCopied,
                         onCopy = {
                             clipboard.setText(AnnotatedString(report))
-                            crashCopied = true
+                            viewModel.markCrashCopied()
                         },
-                        onDelete = {
-                            crashReport = null
-                            crashCopied = false
-                            scope.launch(Dispatchers.IO) { CrashReports.clear() }
-                        }
+                        onDelete = { viewModel.deleteCrash() }
                     )
                 }
 
@@ -221,13 +192,9 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         copied = savedLogCopied,
                         onCopy = {
                             clipboard.setText(AnnotatedString(log))
-                            savedLogCopied = true
+                            viewModel.markSavedLogCopied()
                         },
-                        onClear = {
-                            savedLog = null
-                            savedLogCopied = false
-                            scope.launch(Dispatchers.IO) { DiagnosticsFileLog.clear() }
-                        }
+                        onClear = { viewModel.clearSavedLog() }
                     )
                 }
             }

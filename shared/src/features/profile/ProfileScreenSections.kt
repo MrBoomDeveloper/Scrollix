@@ -1,5 +1,28 @@
 package com.mrboomdev.scrollix.features.profile
 
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.CommonGroup
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.UserProfileDetails
+import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
+import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.openDialer
+import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
+import com.mrboomdev.scrollix.ui.icons.block_icon
+import com.mrboomdev.scrollix.ui.icons.cake_icon
+import com.mrboomdev.scrollix.ui.icons.call_icon
+import com.mrboomdev.scrollix.ui.icons.campaign_icon
+import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
+import com.mrboomdev.scrollix.ui.icons.delete_icon
+import com.mrboomdev.scrollix.ui.icons.edit_icon
+import com.mrboomdev.scrollix.ui.icons.group_icon
+import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
+import com.mrboomdev.scrollix.ui.icons.notifications_icon
+import com.mrboomdev.scrollix.ui.icons.notifications_off_icon
+import com.mrboomdev.scrollix.ui.icons.schedule_icon
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -55,29 +78,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.getPlatform
-import com.mrboomdev.scrollix.openDialer
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.CommonGroup
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.model.UserProfileDetails
-import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
-import com.mrboomdev.scrollix.ui.components.AdaptiveGrid
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
-import com.mrboomdev.scrollix.ui.icons.cake_icon
-import com.mrboomdev.scrollix.ui.icons.block_icon
-import com.mrboomdev.scrollix.ui.icons.call_icon
-import com.mrboomdev.scrollix.ui.icons.campaign_icon
-import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
-import com.mrboomdev.scrollix.ui.icons.delete_icon
-import com.mrboomdev.scrollix.ui.icons.edit_icon
-import com.mrboomdev.scrollix.ui.icons.group_icon
-import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
-import com.mrboomdev.scrollix.ui.icons.notifications_icon
-import com.mrboomdev.scrollix.ui.icons.notifications_off_icon
-import com.mrboomdev.scrollix.ui.icons.schedule_icon
 
 @Composable
 internal fun PersonalChannelCard(

@@ -1,5 +1,13 @@
 package com.mrboomdev.scrollix.features.profile
 
+import com.mrboomdev.scrollix.data.model.ProfileTrack
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.platform.audio.createVoicePlayer
+import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.icons.music_note_icon
+import com.mrboomdev.scrollix.ui.icons.pause_icon_filled
+import com.mrboomdev.scrollix.ui.icons.play_icon_filled
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -47,17 +55,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.ProfileTrack
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.ui.components.AdaptiveGrid
-import com.mrboomdev.scrollix.ui.components.createVoicePlayer
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.mrboomdev.scrollix.ui.icons.music_note_icon
-import com.mrboomdev.scrollix.ui.icons.pause_icon_filled
-import com.mrboomdev.scrollix.ui.icons.play_icon_filled
 
 @OptIn(ExperimentalGridApi::class)
 @Composable

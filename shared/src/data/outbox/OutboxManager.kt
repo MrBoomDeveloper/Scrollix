@@ -4,11 +4,11 @@ import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
-import com.mrboomdev.scrollix.data.model.asSessionException
 import com.mrboomdev.scrollix.data.storage.DataUsageStore
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.randomId
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.random.Random
+import com.mrboomdev.scrollix.data.model.asSessionException
 
 /**
  * Owns the persisted outgoing queue. A send is attempted immediately, and

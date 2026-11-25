@@ -1,5 +1,18 @@
 package com.mrboomdev.scrollix.ui.navigation
 
+import com.mrboomdev.scrollix.DialogRecordingState
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.features.accounts.AccountsScreen
+import com.mrboomdev.scrollix.features.diagnostics.DiagnosticsScreen
+import com.mrboomdev.scrollix.features.dialog.DialogScreen
+import com.mrboomdev.scrollix.features.home.HomeScreen
+import com.mrboomdev.scrollix.features.login.LoginScreen
+import com.mrboomdev.scrollix.features.profile.ProfileScreen
+import com.mrboomdev.scrollix.features.search.SearchScreen
+import com.mrboomdev.scrollix.features.settings.SettingsScreen
+import com.mrboomdev.scrollix.isTwoPaneLayout
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,17 +39,6 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import com.mrboomdev.scrollix.DialogRecordingState
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.features.accounts.AccountsScreen
-import com.mrboomdev.scrollix.features.dialog.DialogScreen
-import com.mrboomdev.scrollix.features.diagnostics.DiagnosticsScreen
-import com.mrboomdev.scrollix.features.home.HomeScreen
-import com.mrboomdev.scrollix.features.login.LoginScreen
-import com.mrboomdev.scrollix.features.profile.ProfileScreen
-import com.mrboomdev.scrollix.features.search.SearchScreen
-import com.mrboomdev.scrollix.features.settings.SettingsScreen
-import com.mrboomdev.scrollix.isTwoPaneLayout
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)

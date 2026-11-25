@@ -1,5 +1,11 @@
 package com.mrboomdev.scrollix.ui.components
 
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.platform.media.VideoPlayback
+import com.mrboomdev.scrollix.platform.media.VideoPlaybackState
+import com.mrboomdev.scrollix.platform.media.createVideoPlayer
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,45 +39,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.provider.AccountSession
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
-
-/**
- * Playback state shared by the Android MediaPlayer and the desktop FFmpeg
- * decoder. [frame] is only populated on desktop, where frames are rendered
- * into Compose; Android renders through a TextureView.
- */
-data class VideoPlaybackState(
-    val positionMs: Long = 0L,
-    val durationMs: Long = 0L,
-    val isPlaying: Boolean = false,
-    val isBuffering: Boolean = false,
-    val frame: ImageBitmap? = null,
-    val error: String? = null
-)
-
-interface VideoPlayback {
-    val state: StateFlow<VideoPlaybackState>
-
-    /** Loads a downloaded video and optionally starts playing it. */
-    fun load(
-        bytes: ByteArray,
-        startPositionMs: Long = 0L,
-        autoPlay: Boolean = true
-    ): Boolean
-
-    fun play()
-    fun pause()
-    fun seekTo(positionMs: Long)
-    fun setMuted(muted: Boolean) {}
-    fun stop()
-}
-
-expect fun createVideoPlayer(): VideoPlayback
 
 /** Draws video output. Android attaches a TextureView; desktop draws frames. */
 @Composable

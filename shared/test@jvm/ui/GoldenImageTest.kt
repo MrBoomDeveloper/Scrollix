@@ -1,5 +1,15 @@
 package com.mrboomdev.scrollix.ui.golden
 
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.features.dialog.ComposerInputRow
+import com.mrboomdev.scrollix.features.dialog.JustifiedMediaGrid
+import com.mrboomdev.scrollix.features.dialog.JustifiedMediaItem
+import com.mrboomdev.scrollix.features.dialog.MessageBubble
+import com.mrboomdev.scrollix.features.dialog.MessageBubbleConnection
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.theme.appTypography
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,14 +34,6 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.ui.components.ComposerInputRow
-import com.mrboomdev.scrollix.ui.components.JustifiedMediaGrid
-import com.mrboomdev.scrollix.ui.components.JustifiedMediaItem
-import com.mrboomdev.scrollix.ui.components.MessageBubble
-import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
-import com.mrboomdev.scrollix.ui.theme.appTypography
 import java.util.TimeZone
 import kotlin.test.BeforeTest
 import kotlin.test.Test

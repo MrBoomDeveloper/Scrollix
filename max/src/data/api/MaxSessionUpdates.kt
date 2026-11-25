@@ -1,13 +1,5 @@
 package com.mrboomdev.scrollix.data.api
 
-import com.mrboomdev.scrollix.data.max.network.MaxPush
-import com.mrboomdev.scrollix.data.max.network.MaxRpc
-import com.mrboomdev.scrollix.data.max.network.array
-import com.mrboomdev.scrollix.data.max.network.asLongOrNull
-import com.mrboomdev.scrollix.data.max.network.long
-import com.mrboomdev.scrollix.data.max.network.obj
-import com.mrboomdev.scrollix.data.max.network.objects
-import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -18,6 +10,14 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.mrboomdev.scrollix.data.max.network.MaxPush
+import com.mrboomdev.scrollix.data.max.network.MaxRpc
+import com.mrboomdev.scrollix.data.max.network.array
+import com.mrboomdev.scrollix.data.max.network.asLongOrNull
+import com.mrboomdev.scrollix.data.max.network.long
+import com.mrboomdev.scrollix.data.max.network.obj
+import com.mrboomdev.scrollix.data.max.network.objects
+import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 
 internal fun MaxSession.startPushLoop(active: MaxRpc) {
     pushJob?.cancel()

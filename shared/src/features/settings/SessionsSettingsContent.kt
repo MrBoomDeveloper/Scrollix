@@ -1,5 +1,9 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
+import com.mrboomdev.scrollix.data.storage.currentTimeMillis
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -28,9 +32,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
-import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import kotlinx.coroutines.launch
 
 /**

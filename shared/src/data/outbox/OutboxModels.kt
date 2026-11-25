@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.outbox
 
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+
 import kotlinx.serialization.Serializable
 
 /** Delivery state shown on the pending row of a queued message. */

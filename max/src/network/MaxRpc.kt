@@ -1,8 +1,5 @@
 package com.mrboomdev.scrollix.data.max.network
 
-import com.mrboomdev.scrollix.data.diagnostics.AppLog
-import com.mrboomdev.scrollix.data.model.SessionErrorCode
-import com.mrboomdev.scrollix.data.model.SessionException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -22,6 +19,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.concurrent.atomic.AtomicInteger
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.model.SessionErrorCode
+import com.mrboomdev.scrollix.data.model.SessionException
 
 internal class MaxApiException(
     val errorCode: String?,

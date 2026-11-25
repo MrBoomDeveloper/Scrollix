@@ -1,5 +1,9 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.MessageHistory
+import com.mrboomdev.scrollix.data.storage.DialogScrollPosition
+
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -12,9 +16,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.MessageHistory
-import com.mrboomdev.scrollix.data.storage.DialogScrollPosition
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.abs
 

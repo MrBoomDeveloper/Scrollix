@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.storage
 
 import com.mrboomdev.scrollix.data.model.AccountRecord
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

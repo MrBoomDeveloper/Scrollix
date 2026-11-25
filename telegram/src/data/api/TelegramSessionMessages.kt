@@ -1,10 +1,5 @@
 package com.mrboomdev.scrollix.data.api
 
-import com.mrboomdev.scrollix.data.diagnostics.AppLog
-import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.MessageDraft
-import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import dev.g000sha256.tdl.dto.FormattedText
 import dev.g000sha256.tdl.dto.InputFileLocal
 import dev.g000sha256.tdl.dto.InputMessagePoll
@@ -14,8 +9,6 @@ import dev.g000sha256.tdl.dto.InputPollOption
 import dev.g000sha256.tdl.dto.InputPollTypeRegular
 import dev.g000sha256.tdl.dto.InputVideoNote
 import dev.g000sha256.tdl.dto.InputVoiceNote
-import com.mrboomdev.scrollix.data.storage.CacheStore
-import com.mrboomdev.scrollix.data.storage.readFileBytes
 import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.*
 import kotlinx.coroutines.CancellationException
@@ -23,6 +16,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.MessageDraft
+import com.mrboomdev.scrollix.data.model.OutgoingAttachment
+import com.mrboomdev.scrollix.data.storage.CacheStore
+import com.mrboomdev.scrollix.data.storage.readFileBytes
 
 internal suspend fun TelegramSession.loadFileImpl(fileId: Int): Result<ByteArray> {
     if (fileId == 0) {

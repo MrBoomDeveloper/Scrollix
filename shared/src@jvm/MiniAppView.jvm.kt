@@ -1,4 +1,7 @@
-package com.mrboomdev.scrollix.ui.components
+package com.mrboomdev.scrollix.features.dialog
+
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.features.login.EmbeddedBrowser
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

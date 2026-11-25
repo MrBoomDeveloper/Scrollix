@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.data.model
 
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

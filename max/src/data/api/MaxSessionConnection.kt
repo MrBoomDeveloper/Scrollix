@@ -1,11 +1,5 @@
 package com.mrboomdev.scrollix.data.api
 
-import com.mrboomdev.scrollix.data.diagnostics.AppLog
-import com.mrboomdev.scrollix.data.max.network.MaxApiException
-import com.mrboomdev.scrollix.data.max.network.MaxRpc
-import com.mrboomdev.scrollix.data.max.network.string
-import com.mrboomdev.scrollix.data.model.AuthState
-import com.mrboomdev.scrollix.data.storage.CacheStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -17,6 +11,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlin.random.Random
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.max.network.MaxApiException
+import com.mrboomdev.scrollix.data.max.network.MaxRpc
+import com.mrboomdev.scrollix.data.max.network.string
+import com.mrboomdev.scrollix.data.model.AuthState
+import com.mrboomdev.scrollix.data.storage.CacheStore
 
 internal fun MaxSession.readStoredSession(): StoredMaxSession? {
     val text = storage.readText(sessionPath) ?: return null

@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.Dialog
 
+
 /**
  * Filters the forwarding picker by chat title. Every whitespace-separated token
  * has to occur in the title, so a second word narrows the list instead of

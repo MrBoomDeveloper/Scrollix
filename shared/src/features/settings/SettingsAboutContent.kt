@@ -1,5 +1,11 @@
 package com.mrboomdev.scrollix.features.settings
 
+import com.mrboomdev.scrollix.data.AppInfo
+import com.mrboomdev.scrollix.data.AppMode
+import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
+import com.mrboomdev.scrollix.ui.icons.link_icon
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,11 +45,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.data.AppInfo
-import com.mrboomdev.scrollix.data.AppMode
-import com.mrboomdev.scrollix.getPlatform
-import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
-import com.mrboomdev.scrollix.ui.icons.link_icon
 
 internal val AboutStack = listOf(
     "Kotlin Multiplatform",

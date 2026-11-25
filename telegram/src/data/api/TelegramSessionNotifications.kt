@@ -1,13 +1,5 @@
 package com.mrboomdev.scrollix.data.api
 
-import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.ChatTopic
-import com.mrboomdev.scrollix.data.model.NotificationException
-import com.mrboomdev.scrollix.data.model.NotificationScope
-import com.mrboomdev.scrollix.data.model.NotificationSettings
 import dev.g000sha256.tdl.dto.FormattedText
 import dev.g000sha256.tdl.dto.NetworkStatisticsEntryCall
 import dev.g000sha256.tdl.dto.NetworkStatisticsEntryFile
@@ -16,12 +8,20 @@ import dev.g000sha256.tdl.dto.NetworkTypeMobile
 import dev.g000sha256.tdl.dto.NetworkTypeMobileRoaming
 import dev.g000sha256.tdl.dto.NetworkTypeOther
 import dev.g000sha256.tdl.dto.NetworkTypeWiFi
-import com.mrboomdev.scrollix.data.model.DataUsagePreset
-import com.mrboomdev.scrollix.data.model.DataUsageSummary
 import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.map
+import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
+import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.ChatTopic
+import com.mrboomdev.scrollix.data.model.NotificationException
+import com.mrboomdev.scrollix.data.model.NotificationScope
+import com.mrboomdev.scrollix.data.model.NotificationSettings
+import com.mrboomdev.scrollix.data.model.DataUsagePreset
+import com.mrboomdev.scrollix.data.model.DataUsageSummary
 
 internal suspend fun TelegramSession.loadNotificationSettingsImpl(): Result<NotificationSettings> {
     return try {

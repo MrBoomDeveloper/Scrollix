@@ -1,8 +1,5 @@
 package com.mrboomdev.scrollix.data.api
 
-import com.mrboomdev.scrollix.data.diagnostics.AppLog
-import com.mrboomdev.scrollix.data.model.DialogFolder
-import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 import dev.g000sha256.tdl.TdlResult
 import dev.g000sha256.tdl.dto.*
 import kotlinx.coroutines.cancel
@@ -10,6 +7,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 
 internal suspend fun TelegramSession.handleUpdate(update: Update) {
     AppLog.protocol("telegram", "in update", update.toString())

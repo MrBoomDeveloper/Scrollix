@@ -1,5 +1,14 @@
 package com.mrboomdev.scrollix.data.vk
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
@@ -19,15 +28,6 @@ import com.mrboomdev.scrollix.data.vk.network.parseLongPollPage
 import com.mrboomdev.scrollix.data.vk.network.string
 import com.mrboomdev.scrollix.data.vk.network.vkHttpRequest
 import com.mrboomdev.scrollix.data.vk.network.vkReadFileBytes
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 
 internal suspend fun VkSession.uploadAttachment(
     client: VkApi,

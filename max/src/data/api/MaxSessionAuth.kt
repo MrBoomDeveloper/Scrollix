@@ -1,5 +1,11 @@
 package com.mrboomdev.scrollix.data.api
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import com.mrboomdev.scrollix.data.max.network.MaxApiException
 import com.mrboomdev.scrollix.data.max.network.MaxUploadUserAgent
 import com.mrboomdev.scrollix.data.max.network.MaxRpc
@@ -16,12 +22,6 @@ import com.mrboomdev.scrollix.data.model.AuthChallenge
 import com.mrboomdev.scrollix.data.model.AuthField
 import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
-import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 
 internal suspend fun MaxSession.requestCode(rawPhone: String, type: String) {
     val phone = normalizeMaxPhone(rawPhone)

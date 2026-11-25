@@ -1,4 +1,8 @@
-package com.mrboomdev.scrollix.ui.components
+package com.mrboomdev.scrollix.data.media
+
+import com.mrboomdev.scrollix.data.media.MaxAnimationFrames
+import com.mrboomdev.scrollix.data.media.WebmAnimation
+import com.mrboomdev.scrollix.data.media.animationFrameSize
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -15,6 +19,7 @@ import org.jetbrains.skia.Image
 import org.jetbrains.skia.ImageInfo
 import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
+import com.mrboomdev.scrollix.data.media.silenceFfmpegLogs
 
 internal actual suspend fun decodeWebmAnimation(
     bytes: ByteArray,

@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.data.provider
 
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageSendState
+
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

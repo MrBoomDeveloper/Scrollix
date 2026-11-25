@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.ui.icons
 
+import com.mrboomdev.scrollix.features.settings.icon
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape

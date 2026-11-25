@@ -1,5 +1,14 @@
 package com.mrboomdev.scrollix.data.api
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.mrboomdev.scrollix.data.max.network.maxFailure
 import com.mrboomdev.scrollix.data.max.network.maxInvalidChatId
 import com.mrboomdev.scrollix.data.max.network.array
@@ -14,15 +23,6 @@ import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
 import com.mrboomdev.scrollix.media.renderStickerAnimationGif
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.first
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal suspend fun MaxSession.loadMaxStickerSets(force: Boolean = false): Map<Long, StickerSetInfo> {
     if (!force && maxStickerPacks.isNotEmpty()) return maxStickerPacks

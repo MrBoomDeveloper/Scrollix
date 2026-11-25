@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.storage
 
 import com.mrboomdev.scrollix.data.model.AccountRecord
+
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

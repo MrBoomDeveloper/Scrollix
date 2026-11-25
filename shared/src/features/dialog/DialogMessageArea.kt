@@ -1,5 +1,20 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.data.model.ChatMessage
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogKind
+import com.mrboomdev.scrollix.data.model.MessageHistory
+import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageSendState
+import com.mrboomdev.scrollix.data.model.UndiscoveredMessagesMessageId
+import com.mrboomdev.scrollix.data.outbox.OutboxManager
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettings
+import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.MediaViewer
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
@@ -35,38 +50,15 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.data.model.MessageSendState
-import com.mrboomdev.scrollix.data.model.Dialog
-import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.data.model.MessageHistory
-import com.mrboomdev.scrollix.data.model.MessageMediaKind
-import com.mrboomdev.scrollix.data.model.MessageReactionOption
-import com.mrboomdev.scrollix.data.outbox.OutboxManager
-import com.mrboomdev.scrollix.data.model.UndiscoveredMessagesMessageId
-import com.mrboomdev.scrollix.ui.components.ChatAnimationPreview
-import com.mrboomdev.scrollix.ui.components.ChatSticker
-import com.mrboomdev.scrollix.ui.components.ChatVideoPreview
-import com.mrboomdev.scrollix.ui.components.LoadingContent
-import com.mrboomdev.scrollix.ui.components.MediaViewer
-import com.mrboomdev.scrollix.ui.components.MessageGallery
-import com.mrboomdev.scrollix.ui.components.MessageDatePill
-import com.mrboomdev.scrollix.ui.components.MessageThreadRail
-import com.mrboomdev.scrollix.ui.components.MessageBubble
-import com.mrboomdev.scrollix.ui.components.MessageBubbleConnection
-import com.mrboomdev.scrollix.ui.components.VoiceMessagePlayer
-import com.mrboomdev.scrollix.ui.components.messageDate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.input.TextFieldState
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.AppSettings
 import kotlinx.coroutines.CoroutineScope
 
 @Composable
 internal fun ColumnScope.DialogMessageArea(
-    ui: DialogScreenState,
+    ui: DialogScreenViewModel,
     providerDialogId: String,
     onOpenUserProfile: (Long) -> Unit,
     onOpenHashtag: (String) -> Unit,
@@ -606,46 +598,13 @@ internal fun ColumnScope.DialogMessageArea(
                                                 message.text.isNotBlank() &&
                                                 !message.isService
                                             ) {
-                                                {
-                                                    editingMessage = message
-                                                    pendingAttachments = emptyList()
-                                                    input = message.text
-                                                    inputSelection = TextRange(message.text.length)
-                                                    inputCustomEmojis = message.customEmojis
-                                                }
+                                                { startEditing(message) }
                                             } else {
                                                 null
                                             },
 
                                             onReaction = { option ->
-                                                val isChosen = message.reactions.any { reaction ->
-                                                    reaction.isChosen && if (
-                                                        option.customEmojiId != null
-                                                    ) {
-                                                        reaction.customEmojiId == option.customEmojiId
-                                                    } else {
-                                                        reaction.customEmojiId == null &&
-                                                            reaction.emoji == option.emoji
-                                                    }
-                                                }
-
-                                                scope.launch {
-                                                    if (isChosen) {
-                                                        session?.removeMessageReaction(
-                                                            providerDialogId = providerDialogId,
-                                                            messageId = message.messageId,
-                                                            emoji = option.emoji,
-                                                            customEmojiId = option.customEmojiId
-                                                        )
-                                                    } else {
-                                                        session?.addMessageReaction(
-                                                            providerDialogId = providerDialogId,
-                                                            messageId = message.messageId,
-                                                            emoji = option.emoji,
-                                                            customEmojiId = option.customEmojiId
-                                                        )
-                                                    }
-                                                }
+                                                applyMessageReaction(message, option)
                                             },
 
                                             onHashtagClick = onOpenHashtag,
