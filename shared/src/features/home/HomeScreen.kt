@@ -97,7 +97,7 @@ internal fun HomeScreen(
     onOpenDialog: (AccountDialogEntry) -> Unit,
     selectedDialogAccountId: String? = null,
     selectedDialogProviderDialogId: String? = null,
-    viewModel: HomeScreenViewModel = viewModel()
+    viewModel: HomeScreenViewModel = viewModel { HomeScreenViewModel() }
 ) {
     val layoutInfo = currentAdaptiveLayoutInfo()
     val settings by AppSettingsStore.state.collectAsState()

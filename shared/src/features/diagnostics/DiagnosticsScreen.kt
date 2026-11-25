@@ -77,7 +77,7 @@ import kotlin.time.Instant
 @Composable
 internal fun DiagnosticsScreen(
     onBack: () -> Unit,
-    viewModel: DiagnosticsScreenViewModel = viewModel()
+    viewModel: DiagnosticsScreenViewModel = viewModel { DiagnosticsScreenViewModel() }
 ) {
     val entries by AppLog.entries.collectAsState()
     val accountState by ApiManager.accountState.collectAsState()

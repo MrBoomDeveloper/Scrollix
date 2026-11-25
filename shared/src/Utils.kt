@@ -1,11 +1,21 @@
 package com.mrboomdev.scrollix
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.window.core.layout.WindowSizeClass
 
 expect fun Modifier.onSecondaryClick(action: () -> Unit): Modifier
+
+fun Modifier.clickableNoIndication(
+    onClick: () -> Unit
+) = clickable(
+    onClick = onClick,
+    interactionSource = null,
+    indication = null
+)
 
 @Composable
 @Deprecated("Use currentAdaptiveLayoutInfo instead!")

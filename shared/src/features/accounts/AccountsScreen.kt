@@ -61,7 +61,7 @@ internal fun AccountsScreen(
     onBack: () -> Unit,
     onOpenLogin: (String) -> Unit,
     onOpenOwnProfile: (String) -> Unit = {},
-    viewModel: AccountsScreenViewModel = viewModel()
+    viewModel: AccountsScreenViewModel = viewModel { AccountsScreenViewModel() }
 ) {
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()

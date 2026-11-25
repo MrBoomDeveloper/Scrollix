@@ -84,7 +84,7 @@ internal fun SearchScreen(
     selectedDialogProviderDialogId: String? = null,
     selectedDialogMessageId: Long? = null,
     onSelectDialog: ((accountId: String, providerDialogId: String, messageId: Long?) -> Unit)? = null,
-    viewModel: SearchScreenViewModel = viewModel()
+    viewModel: SearchScreenViewModel = viewModel { SearchScreenViewModel() }
 ) {
     val isTwoPane = isTwoPaneLayout()
     val entries by ApiManager.dialogs.collectAsState()

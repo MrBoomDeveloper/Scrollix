@@ -249,7 +249,7 @@ internal fun searchSettings(
 @Composable
 internal fun SettingsScreen(
     onOpenDiagnostics: () -> Unit,
-    viewModel: SettingsScreenViewModel = viewModel()
+    viewModel: SettingsScreenViewModel = viewModel { SettingsScreenViewModel() }
 ) {
     val isTwoPane = isTwoPaneLayout()
     val settings by AppSettingsStore.state.collectAsState()

@@ -33,8 +33,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +62,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mrboomdev.scrollix.clickableNoIndication
+import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -109,7 +114,7 @@ private fun FullscreenMediaFrame(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.94f))
-            .clickable(onClick = onClose),
+            .clickableNoIndication(onClick = onClose),
         contentAlignment = Alignment.Center
     ) {
         content()
@@ -121,15 +126,16 @@ private fun FullscreenMediaFrame(
                 .padding(horizontal = 16.dp, vertical = 24.dp)
         )
 
-        Text(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-                .clickable(onClick = onClose),
-            text = "✕",
-            color = Color.White,
-            fontSize = 22.sp
-        )
+        IconButton(
+            modifier = Modifier.align(Alignment.TopEnd),
+            onClick = onClose,
+        ) {
+            Icon(
+                tint = Color.White,
+                imageVector = close_icon,
+                contentDescription = null
+            )
+        }
     }
 }
 
@@ -482,7 +488,7 @@ fun FullscreenGalleryViewer(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.96f))
-            .clickable(onClick = onClose)
+            .clickableNoIndication(onClick = onClose)
     ) {
         HorizontalPager(
             state = pagerState,
@@ -533,38 +539,34 @@ fun FullscreenGalleryViewer(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .clickable(enabled = !isDownloading) {
-                        val fileId = current.fileId ?: current.previewFileId
-                            ?: return@clickable
+            TextButton(
+                enabled = !isDownloading,
+                onClick = {
+                    val fileId = current.fileId ?: current.previewFileId
+                    ?: return@TextButton
 
-                        scope.launch {
-                            isDownloading = true
+                    scope.launch {
+                        isDownloading = true
 
-                            val bytes = session?.loadMediaBytes(
-                                fileId = fileId,
-                                uniqueId = current.fileUniqueId ?: current.previewUniqueId
-                            )
+                        val bytes = session?.loadMediaBytes(
+                            fileId = fileId,
+                            uniqueId = current.fileUniqueId ?: current.previewUniqueId
+                        )
 
-                            if (bytes != null) {
-                                downloaded = withContext(Dispatchers.IO) {
-                                    saveFileToDevice(
-                                        fileName = current.downloadFileName(),
-                                        bytes = bytes
-                                    ) != null
-                                }
+                        if(bytes != null) {
+                            downloaded = withContext(Dispatchers.IO) {
+                                saveFileToDevice(
+                                    fileName = current.downloadFileName(),
+                                    bytes = bytes
+                                ) != null
                             }
-
-                            isDownloading = false
                         }
+
+                        isDownloading = false
                     }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                }
             ) {
                 Text(
                     text = when {
@@ -572,20 +574,19 @@ fun FullscreenGalleryViewer(
                         downloaded -> "Saved"
                         else -> "Download"
                     },
-                    color = Color.White,
-                    fontSize = 13.sp
+                    color = Color.White
                 )
             }
 
-            Text(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onClose)
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                text = "✕",
-                color = Color.White,
-                fontSize = 22.sp
-            )
+            IconButton(
+                onClick = onClose,
+            ) {
+                Icon(
+                    tint = Color.White,
+                    imageVector = close_icon,
+                    contentDescription = null
+                )
+            }
         }
 
         if (currentIndex > 0) {
