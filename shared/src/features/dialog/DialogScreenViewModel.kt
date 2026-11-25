@@ -121,6 +121,8 @@ internal class DialogScreenViewModel(
     var recordingElapsedMs by mutableLongStateOf(0L)
     var recordedMedia by mutableStateOf<RecordedMedia?>(null)
     var threadRoot by mutableStateOf<ChatMessage?>(null)
+    /** Message whose text is open in the selectable-text dialog. */
+    var selectTextMessage by mutableStateOf<ChatMessage?>(null)
     var isSendingRecording by mutableStateOf(false)
     var recordingError by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
@@ -156,6 +158,13 @@ internal class DialogScreenViewModel(
     var searchResults by mutableStateOf<List<ChatMessage>>(emptyList())
         internal set
 
+    /** Raw page the server returned for the current query, before filters. */
+    var rawSearchResults by mutableStateOf<List<ChatMessage>>(emptyList())
+        internal set
+
+    var searchFilter by mutableStateOf(DialogSearchFilter.All)
+        internal set
+
     var headerStatus by mutableStateOf<DialogHeaderStatus?>(null)
         internal set
 
@@ -170,6 +179,16 @@ internal class DialogScreenViewModel(
 
     var forwardQuery by mutableStateOf("")
     var forwardFolderKey by mutableStateOf("all")
+    var forwardHideSender by mutableStateOf(false)
+    var forwardRemoveCaption by mutableStateOf(false)
+
+    /** Only providers that can re-send content without the forward header offer it. */
+    val supportsForwardOptions: Boolean
+        get() = session?.supportsForwardOptions == true
+
+    /** Only providers that can flag a chat unread offer the menu entry. */
+    val supportsMarkAsUnread: Boolean
+        get() = session?.supportsMarkAsUnread == true
 
     internal var activeRecorder: MediaRecordingController? = null
     internal var draftJob: Job? = null

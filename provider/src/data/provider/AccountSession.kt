@@ -538,15 +538,70 @@ interface AccountSession {
         text: String,
         customEmojis: List<CustomEmojiSpan> = emptyList()
     ): Result<Unit>
+    /** Whether [forwardMessages] honors [hideSender] and [removeCaption]. */
+    val supportsForwardOptions: Boolean
+        get() = false
+
+    /**
+     * Forwards [messageIds] from [providerDialogId] into [targetDialogId].
+     *
+     * [hideSender] re-sends the content without the forward header, so the
+     * message looks authored by this account, and [removeCaption] drops media
+     * captions. Providers that cannot do either keep
+     * [supportsForwardOptions] false, and the picker does not offer them.
+     */
     suspend fun forwardMessages(
         providerDialogId: String,
         messageIds: LongArray,
-        targetDialogId: String
+        targetDialogId: String,
+        hideSender: Boolean = false,
+        removeCaption: Boolean = false
     ): Result<Unit>
+    /**
+     * Deletes [messageIds]. With [forEveryone] the deletion reaches the other
+     * side and retries through the outbox; without it only this account's copy
+     * is removed, and a failure is reported instead of queued.
+     */
     suspend fun deleteMessages(
         providerDialogId: String,
-        messageIds: LongArray
+        messageIds: LongArray,
+        forEveryone: Boolean = true
     ): Result<Unit>
+
+    /**
+     * A shareable link to [messageId], when the provider can produce one.
+     * Providers without message links fail with
+     * [com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported], and the
+     * message menu hides the action.
+     */
+    /** Whether [setDialogUnread] can mark a chat unread. */
+    val supportsMarkAsUnread: Boolean
+        get() = false
+
+    /**
+     * Marks the chat as unread ([unread] = true) or clears the mark. Marking
+     * read itself happens automatically when the chat is opened with
+     * [markMessagesRead].
+     */
+    suspend fun setDialogUnread(providerDialogId: String, unread: Boolean): Result<Unit> =
+        Result.failure(
+            com.mrboomdev.scrollix.data.model.SessionException(
+                com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+                "Marking chats unread is not supported"
+            )
+        )
+
+    /** Whether [messageLink] can produce links for this provider. */
+    val supportsMessageLinks: Boolean
+        get() = false
+
+    suspend fun messageLink(providerDialogId: String, messageId: Long): Result<String> =
+        Result.failure(
+            com.mrboomdev.scrollix.data.model.SessionException(
+                com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+                "Message links are not supported"
+            )
+        )
     suspend fun setMessagePinned(
         providerDialogId: String,
         messageId: Long,

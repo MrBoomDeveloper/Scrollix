@@ -720,8 +720,18 @@ class TelegramSession(
     override suspend fun sendLocation(providerDialogId: String, latitude: Double, longitude: Double, livePeriodSeconds: Int): Result<Long> = sendLocationImpl(providerDialogId, latitude, longitude, livePeriodSeconds)
     override suspend fun stopLiveLocation(providerDialogId: String, messageId: Long): Result<Unit> = stopLiveLocationImpl(providerDialogId, messageId)
     override suspend fun sendFiles(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>): Result<Unit> = sendFilesImpl(providerDialogId, attachments, caption, replyToMessageId, customEmojis)
-    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String): Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId)
-    override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray): Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds)
+    override val supportsForwardOptions: Boolean get() = true
+
+    override val supportsMessageLinks: Boolean get() = true
+
+    override val supportsMarkAsUnread: Boolean get() = true
+
+    override suspend fun setDialogUnread(providerDialogId: String, unread: Boolean): Result<Unit> = setDialogUnreadImpl(providerDialogId, unread)
+
+    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean): Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId, hideSender, removeCaption)
+    override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray, forEveryone: Boolean): Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds, forEveryone)
+
+    override suspend fun messageLink(providerDialogId: String, messageId: Long): Result<String> = messageLinkImpl(providerDialogId, messageId)
     override suspend fun setMessagePinned(providerDialogId: String, messageId: Long, isPinned: Boolean): Result<Unit> = setMessagePinnedImpl(providerDialogId, messageId, isPinned)
     override suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?> = loadPinnedMessageIdImpl(providerDialogId)
     override suspend fun editMessage(providerDialogId: String, messageId: Long, text: String, customEmojis: List<CustomEmojiSpan>): Result<Unit> = editMessageImpl(providerDialogId, messageId, text, customEmojis)

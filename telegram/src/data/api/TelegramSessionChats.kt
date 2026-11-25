@@ -780,4 +780,24 @@ private val dialogOrder = compareByDescending<Dialog> {
     .thenByDescending { it.order }
     .thenByDescending { it.timestamp }
 
+internal suspend fun TelegramSession.setDialogUnreadImpl(
+    providerDialogId: String,
+    unread: Boolean
+): Result<Unit> {
+    val chatId = providerDialogId.toLongOrNull()
+        ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
+    return try {
+        when (val result = client.toggleChatIsMarkedAsUnread(
+            chatId = chatId,
+            isMarkedAsUnread = unread
+        )) {
+            is TdlResult.Success -> Result.success(Unit)
+            is TdlResult.Failure -> Result.failure(result.toSessionException())
+        }
+    } catch (exception: CancellationException) {
+        throw exception
+    } catch (exception: Exception) {
+        Result.failure(exception)
+    }
+}

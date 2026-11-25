@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
  * dropping a queued send. Everything runs in the view-model scope, so an action
  * survives recomposition and is cancelled with the screen.
  */
-internal fun DialogScreenViewModel.deleteMessages(messageIds: LongArray) {
+internal fun DialogScreenViewModel.deleteMessages(messageIds: LongArray, forEveryone: Boolean = true) {
     if (session == null || messageIds.isEmpty()) return
 
     // Negative ids are queued local rows that never reached the server. Cancel
@@ -32,14 +32,16 @@ internal fun DialogScreenViewModel.deleteMessages(messageIds: LongArray) {
     val currentSession = session ?: return
 
     viewModelScope.launch {
-        currentSession.deleteMessages(providerDialogId, serverIds)
+        currentSession.deleteMessages(providerDialogId, serverIds, forEveryone)
             .onSuccess {
                 selectedMessageIds = selectedMessageIds - messageIds.toSet()
             }
             .onFailure { failure ->
                 val exception = failure.asSessionException()
 
-                if (exception.retryable) {
+                // A for-me delete is never queued: the outbox entry cannot
+                // carry the flag, so a later retry would delete for everyone.
+                if (exception.retryable && forEveryone) {
                     // The server is unreachable; keep the deletion and deliver it
                     // from the outbox when the account is back.
                     OutboxManager.enqueueDelete(
@@ -55,6 +57,12 @@ internal fun DialogScreenViewModel.deleteMessages(messageIds: LongArray) {
                 }
             }
     }
+}
+
+/** Resolves a shareable link to the message; null when there is none. */
+internal suspend fun DialogScreenViewModel.messageLink(messageId: Long): String? {
+    val currentSession = session ?: return null
+    return currentSession.messageLink(providerDialogId, messageId).getOrNull()
 }
 
 /** Puts the message's text into the composer and switches it to editing. */
@@ -83,7 +91,9 @@ internal fun DialogScreenViewModel.forwardMessages(messageIds: LongArray, target
         currentSession.forwardMessages(
             providerDialogId = providerDialogId,
             messageIds = messageIds,
-            targetDialogId = targetDialogId
+            targetDialogId = targetDialogId,
+            hideSender = forwardHideSender,
+            removeCaption = forwardRemoveCaption
         ).onSuccess {
             selectedMessageIds = emptySet()
         }.onFailure {
@@ -104,6 +114,16 @@ internal fun DialogScreenViewModel.pinMessage(message: ChatMessage, isPinned: Bo
 /** Drops a queued message that has not reached the server yet. */
 internal fun DialogScreenViewModel.cancelPendingMessage(messageId: Long) {
     OutboxManager.cancelByLocalMessageId(messageId)
+}
+
+/** Flags the chat unread so it comes back to the list as new. */
+internal fun DialogScreenViewModel.markDialogUnread(unread: Boolean) {
+    val currentSession = session ?: return
+
+    viewModelScope.launch {
+        currentSession.setDialogUnread(providerDialogId, unread)
+            .onFailure { error = it.message ?: "Failed to update the chat state" }
+    }
 }
 
 internal fun DialogScreenViewModel.unpinPinnedMessage() {

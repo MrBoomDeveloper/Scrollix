@@ -113,17 +113,22 @@ can use every day.
       private and topic links
 - [ ] Replies 2.0 UI: quote selection, jump to quote, reply previews with
       media, reply in another chat
-- [~] Forwarding: picker with a title search, native/synthetic folder tabs
-      and an empty state. "Hide sender", "remove caption", preserve/copy
-      behavior and forwarding to topics are still missing
+- [~] Forwarding: picker with a title search, native/synthetic folder tabs,
+      an empty state, "hide sender" (re-sent as a copy, no forward header) and
+      "remove caption". Both options are gated on
+      `AccountSession.supportsForwardOptions`; Telegram honors them, MAX and VK
+      never show them. Forwarding to topics is still missing
 - [~] Message selection: select-all of the loaded window, batch
       forward/delete/copy. Range select by drag and per-account actions are
       still missing
-- [ ] In-chat search with filters (from, media type, date), result paging,
-      jump-to-result and highlighted matches
+- [~] In-chat search with sender and media-type filters (all / from me /
+      photos / videos / files / links) over the matched page; results replace
+      the history while a query is active. Result paging, date filters and
+      highlighted matches are still missing
 - [ ] Global message search across accounts with filters and saved queries
-- [ ] Read receipts, typing indicators, online status, last seen privacy,
-      "mark as unread", "mark all as read"
+- [~] Read receipts, typing indicators and online status are shown; "mark as
+      unread" works on Telegram (TDLib `toggleChatIsMarkedAsUnread`). "Mark all
+      as read" and last-seen privacy are still missing
 - [ ] Reactions: full picker with all server reaction types (paid included),
       reaction lists with reactors, per-chat available reactions, quick
       reaction settings, double-tap on every layout
@@ -140,8 +145,10 @@ can use every day.
       topic notifications, channel comment topics (direct-message topics)
 - [ ] Message details: edit date, permalink,
       copy link, save media
-- [ ] Per-message actions: copy text, copy link, save to device,
-      "select text", report, delete for me only
+- [~] Per-message actions: delete for me only (Telegram `revoke = false`,
+      MAX `forMe = true`, VK `delete_for_all = 0`), copy link on Telegram
+      through TDLib `getMessageLink`, and selectable text. Report is still
+      missing
 - [ ] Unread divider, unread jump button and "new messages" marker everywhere
 - [ ] Draft center: all unfinished drafts grouped per account with jump-to-chat
 - [ ] Media captions and text-only edits across providers

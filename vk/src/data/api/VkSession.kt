@@ -528,7 +528,9 @@ class VkSession(
     override suspend fun forwardMessages(
         providerDialogId: String,
         messageIds: LongArray,
-        targetDialogId: String
+        targetDialogId: String,
+        hideSender: Boolean,
+        removeCaption: Boolean
     ): Result<Unit> = runCatchingApi {
         val target = parsePeerId(targetDialogId)
             ?: throw SessionException(SessionErrorCode.InvalidRequest, "Invalid VK peer id")
@@ -550,7 +552,8 @@ class VkSession(
 
     override suspend fun deleteMessages(
         providerDialogId: String,
-        messageIds: LongArray
+        messageIds: LongArray,
+        forEveryone: Boolean
     ): Result<Unit> = runCatchingApi {
         val ids = buildJsonArray {
             messageIds.forEach { id -> add(kotlinx.serialization.json.JsonPrimitive(id)) }
@@ -560,7 +563,7 @@ class VkSession(
             "messages.delete",
             mapOf(
                 "message_ids" to ids,
-                "delete_for_all" to "1",
+                "delete_for_all" to if (forEveryone) "1" else "0",
                 "spam" to "0"
             )
         )

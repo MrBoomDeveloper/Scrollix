@@ -914,9 +914,9 @@ class MaxSession(
     internal fun MaxChat.peerUser(): MaxUser? = peerUserId()?.let(users::get)
 
     override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>) : Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis)
-    override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray) : Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds)
+    override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray, forEveryone: Boolean) : Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds, forEveryone)
 
-    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String) : Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId)
+    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean) : Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId)
     override suspend fun sendPoll(providerDialogId: String, question: String, options: List<String>, isAnonymous: Boolean, allowsMultipleAnswers: Boolean, allowsRevoting: Boolean, questionCustomEmojis: List<CustomEmojiSpan>, optionCustomEmojis: List<List<CustomEmojiSpan>>, optionMediaPaths: List<String?>, isQuiz: Boolean, correctOptionIndex: Int?, explanation: String) : Result<Unit> = sendPollImpl(providerDialogId, question, options, isAnonymous, allowsMultipleAnswers, allowsRevoting, questionCustomEmojis, optionCustomEmojis, optionMediaPaths, isQuiz, correctOptionIndex, explanation)
     override suspend fun votePoll(providerDialogId: String, messageId: Long, optionIds: List<String>) : Result<Unit> = votePollImpl(providerDialogId, messageId, optionIds)
     override suspend fun sendSticker(providerDialogId: String, sticker: MessageMedia) : Result<Unit> = sendStickerImpl(providerDialogId, sticker)

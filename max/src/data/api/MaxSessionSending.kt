@@ -656,7 +656,11 @@ internal suspend fun MaxSession.sendMessageImpl(providerDialogId: String, text: 
     }
 }
 
-internal suspend fun MaxSession.deleteMessagesImpl(providerDialogId: String, messageIds: LongArray): Result<Unit> {
+internal suspend fun MaxSession.deleteMessagesImpl(
+    providerDialogId: String,
+    messageIds: LongArray,
+    forEveryone: Boolean = true
+): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(maxInvalidChatId())
 
@@ -672,11 +676,14 @@ internal suspend fun MaxSession.deleteMessagesImpl(providerDialogId: String, mes
 
     var lastFailure: Throwable? = null
 
-    // Deleting is always meant for every participant, so forMe=false is
-    // tried first. MAX only cascades older messages when a CHAT_ACTIVITY
-    // (92) watermark was set right before the delete; this client never
-    // sends 92 (reads go through CHAT_READ, 50), so the delete is safe.
-    for (forMe in listOf(false, true)) {
+    // MAX only cascades older messages when a CHAT_ACTIVITY (92) watermark
+    // was set right before the delete; this client never sends 92 (reads go
+    // through CHAT_READ, 50), so both modes are safe. A delete for everyone
+    // still falls back to the for-me shape when the server rejects it, while a
+    // for-me delete never turns into one that reaches the other side.
+    val forMeModes = if (forEveryone) listOf(false, true) else listOf(true)
+
+    for (forMe in forMeModes) {
         for (ids in idShapes) {
             val payload = buildJsonObject {
                 put("chatId", chatId)

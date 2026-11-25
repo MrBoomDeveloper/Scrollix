@@ -385,6 +385,7 @@ internal fun DialogScreenViewModel.runSearch(query: String) {
     val trimmed = query.trim()
 
     if (trimmed.isEmpty() || session == null) {
+        rawSearchResults = emptyList()
         searchResults = emptyList()
         isSearchPending = false
         recomputeDerived()
@@ -396,9 +397,11 @@ internal fun DialogScreenViewModel.runSearch(query: String) {
     viewModelScope.launch {
         delay(300.milliseconds)
 
-        searchResults = session?.searchMessages(providerDialogId, trimmed)
+        rawSearchResults = session?.searchMessages(providerDialogId, trimmed)
             ?.getOrDefault(emptyList())
             ?: emptyList()
+
+        searchResults = filterSearchMessages(rawSearchResults, searchFilter)
 
         isSearchPending = false
         recomputeDerived()

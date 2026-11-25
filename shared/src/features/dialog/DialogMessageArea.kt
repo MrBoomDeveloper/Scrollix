@@ -46,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -84,6 +86,7 @@ internal fun ColumnScope.DialogMessageArea(
     onCancelPendingMessage: (Long) -> Unit,
     composer: @Composable BoxScope.() -> Unit = {},
 ) = with(ui) {
+    val clipboard = LocalClipboardManager.current
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -599,6 +602,30 @@ internal fun ColumnScope.DialogMessageArea(
                                                 !message.isService
                                             ) {
                                                 { startEditing(message) }
+                                            } else {
+                                                null
+                                            },
+
+                                            onSelectText = if (message.text.isNotBlank()) {
+                                                { selectTextMessage = message }
+                                            } else {
+                                                null
+                                            },
+
+                                            onCopyLink = if (
+                                                session?.supportsMessageLinks == true
+                                            ) {
+                                                {
+                                                    scope.launch {
+                                                        val link = messageLink(message.messageId)
+
+                                                        if (link != null) {
+                                                            clipboard.setText(AnnotatedString(link))
+                                                        } else {
+                                                            error = "This message has no link"
+                                                        }
+                                                    }
+                                                }
                                             } else {
                                                 null
                                             },

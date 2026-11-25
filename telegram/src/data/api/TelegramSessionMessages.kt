@@ -556,7 +556,13 @@ internal suspend fun TelegramSession.sendFilesImpl(providerDialogId: String, att
     }
 }
 
-internal suspend fun TelegramSession.forwardMessagesImpl(providerDialogId: String, messageIds: LongArray, targetDialogId: String): Result<Unit> {
+internal suspend fun TelegramSession.forwardMessagesImpl(
+    providerDialogId: String,
+    messageIds: LongArray,
+    targetDialogId: String,
+    hideSender: Boolean = false,
+    removeCaption: Boolean = false
+): Result<Unit> {
     val fromChatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
     val targetChatId = targetDialogId.toLongOrNull()
@@ -569,8 +575,10 @@ internal suspend fun TelegramSession.forwardMessagesImpl(providerDialogId: Strin
             chatId = targetChatId,
             fromChatId = fromChatId,
             messageIds = messageIds.sortedArray(),
-            sendCopy = false,
-            removeCaption = false
+            // TDLib copies the content instead of referencing the original
+            // message when sendCopy is set, which is what "hide sender" means.
+            sendCopy = hideSender,
+            removeCaption = removeCaption
         )) {
             is TdlResult.Success -> Result.success(Unit)
             is TdlResult.Failure -> Result.failure(result.toSessionException())
@@ -582,7 +590,38 @@ internal suspend fun TelegramSession.forwardMessagesImpl(providerDialogId: Strin
     }
 }
 
-internal suspend fun TelegramSession.deleteMessagesImpl(providerDialogId: String, messageIds: LongArray): Result<Unit> {
+internal suspend fun TelegramSession.messageLinkImpl(
+    providerDialogId: String,
+    messageId: Long
+): Result<String> {
+    val chatId = providerDialogId.toLongOrNull()
+        ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+    return try {
+        when (val result = client.getMessageLink(
+            chatId = chatId,
+            messageId = messageId,
+            mediaTimestamp = 0,
+            checklistTaskId = 0,
+            pollOptionId = "",
+            forAlbum = false,
+            inMessageThread = false
+        )) {
+            is TdlResult.Success -> Result.success(result.result.link)
+            is TdlResult.Failure -> Result.failure(result.toSessionException())
+        }
+    } catch (exception: CancellationException) {
+        throw exception
+    } catch (exception: Exception) {
+        Result.failure(exception)
+    }
+}
+
+internal suspend fun TelegramSession.deleteMessagesImpl(
+    providerDialogId: String,
+    messageIds: LongArray,
+    forEveryone: Boolean = true
+): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
@@ -598,7 +637,7 @@ internal suspend fun TelegramSession.deleteMessagesImpl(providerDialogId: String
         when (val result = client.deleteMessages(
             chatId = chatId,
             messageIds = messageIds,
-            revoke = true
+            revoke = forEveryone
         )) {
             is TdlResult.Success -> {
                 removeMessages(chatId, messageIds)

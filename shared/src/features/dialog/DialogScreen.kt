@@ -54,6 +54,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -273,47 +274,7 @@ internal fun DialogScreen(
                 )
             }
 
-            AnimatedVisibility(visible = searchOpen) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        modifier = Modifier.weight(1f).defaultMinSize(minHeight = Dp.Unspecified),
-                        state = searchQuery,
-                        lineLimits = TextFieldLineLimits.SingleLine,
-                        contentPadding = PaddingValues(),
-                        placeholder = { Text("Search in chat") }
-                    )
-
-                    if (searchQuery.text.isNotBlank()) {
-                        Text(
-                            text = if (isSearchPending) {
-                                "Searching..."
-                            } else {
-                                "${visibleMessages.size}\nresults"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            searchOpen = false
-                            searchQuery.clearText()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = close_icon,
-                            contentDescription = null
-                        )
-                    }
-                }
-            }
+            DialogSearchBar(ui = ui)
 
             Box(
                 modifier = Modifier
@@ -622,8 +583,48 @@ private fun DialogHeader(
                         scrollRequest = ScrollRequest.First
                     }
                 )
+
+                if (supportsMarkAsUnread && dialog?.isSavedMessages != true) {
+                    val isMarkedUnread = dialog?.isMarkedAsUnread == true
+
+                    DropdownMenuItem(
+                        text = {
+                            Text(if (isMarkedUnread) "Mark as read" else "Mark as unread")
+                        },
+                        onClick = {
+                            showMoreMenu = false
+                            markDialogUnread(!isMarkedUnread)
+                        }
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ForwardOptionRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 8.dp)
+        )
     }
 }
 
@@ -636,6 +637,13 @@ private fun DialogChatOverlays(
     filePicker: com.mrboomdev.scrollix.platform.files.FilePicker,
     onSend: () -> Unit
 ) = with(ui) {
+    selectTextMessage?.let { message ->
+        MessageTextSelectionDialog(
+            text = message.text,
+            onDismiss = { selectTextMessage = null }
+        )
+    }
+
     forwardingMessageIds?.let { messageIds ->
         AlertDialog(
             onDismissRequest = { forwardingMessageIds = null },
@@ -687,6 +695,22 @@ private fun DialogChatOverlays(
                                 )
                             }
                         }
+                    }
+
+                    // Providers that can re-send content without the forward
+                    // header offer both options; the rest never show them.
+                    if (supportsForwardOptions) {
+                        ForwardOptionRow(
+                            label = "Hide sender",
+                            checked = forwardHideSender,
+                            onCheckedChange = { checked -> forwardHideSender = checked }
+                        )
+
+                        ForwardOptionRow(
+                            label = "Remove caption",
+                            checked = forwardRemoveCaption,
+                            onCheckedChange = { checked -> forwardRemoveCaption = checked }
+                        )
                     }
 
                     if (filteredForwardTargets.isEmpty()) {
@@ -753,15 +777,16 @@ private fun DialogChatOverlays(
             title = {
                 Text(
                     if (messageIds.size == 1) {
-                        "Delete for everyone?"
+                        "Delete this message?"
                     } else {
-                        "Delete ${messageIds.size} messages for everyone?"
+                        "Delete ${messageIds.size} messages?"
                     }
                 )
             },
             text = {
                 Text(
-                    "The message disappears for every participant." +
+                    "Deleting for everyone removes the message for every" +
+                        " participant. Deleting for me only hides it here." +
                         " This cannot be undone."
                 )
             },
@@ -769,15 +794,26 @@ private fun DialogChatOverlays(
                 TextButton(
                     onClick = {
                         deleteConfirmationIds = null
-                        deleteMessages(messageIds)
+                        deleteMessages(messageIds, forEveryone = true)
                     }
                 ) {
-                    Text("Delete")
+                    Text("Delete for everyone")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteConfirmationIds = null }) {
-                    Text("Cancel")
+                Row {
+                    TextButton(onClick = { deleteConfirmationIds = null }) {
+                        Text("Cancel")
+                    }
+
+                    TextButton(
+                        onClick = {
+                            deleteConfirmationIds = null
+                            deleteMessages(messageIds, forEveryone = false)
+                        }
+                    ) {
+                        Text("Delete for me")
+                    }
                 }
             }
         )

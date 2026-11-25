@@ -101,6 +101,10 @@ fun MessageBubble(
     onOpenThread: (() -> Unit)? = null,
     onForward: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    /** Copies a shareable link to the message; null when the provider has none. */
+    onCopyLink: (() -> Unit)? = null,
+    /** Opens the text in a selectable block; null for non-text messages. */
+    onSelectText: (() -> Unit)? = null,
     onPin: (() -> Unit)? = null,
     onReaction: ((MessageReactionOption) -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
@@ -782,6 +786,22 @@ fun MessageBubble(
                                     onClick = {
                                         clipboard.setText(AnnotatedString(message.text))
                                     }
+                                )
+                            }
+
+                            if (onCopyLink != null) {
+                                action(
+                                    text = "Copy link",
+                                    icon = content_copy_icon,
+                                    onClick = onCopyLink
+                                )
+                            }
+
+                            if (onSelectText != null) {
+                                action(
+                                    text = "Select text",
+                                    icon = content_copy_icon,
+                                    onClick = onSelectText
                                 )
                             }
                         }

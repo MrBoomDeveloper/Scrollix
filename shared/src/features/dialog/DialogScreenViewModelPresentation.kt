@@ -73,6 +73,8 @@ internal fun DialogScreenViewModel.openForwardPicker(messageIds: LongArray) {
     forwardingMessageIds = messageIds
     forwardQuery = ""
     forwardFolderKey = "all"
+    forwardHideSender = false
+    forwardRemoveCaption = false
 
     // Only chats that accept messages can be a forwarding target, so MAX
     // channels the account cannot post into and read-only chats are not offered.
