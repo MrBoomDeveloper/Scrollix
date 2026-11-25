@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix
 
 import android.app.Application
+import com.mrboomdev.scrollix.data.diagnostics.CrashReports
 import com.mrboomdev.scrollix.data.max.MaxIntegration
 import com.mrboomdev.scrollix.data.storage.AndroidAppContext
 import com.mrboomdev.scrollix.data.telegram.TelegramIntegration
@@ -14,6 +15,7 @@ class ScrollixApplication : Application() {
         TelegramIntegration.init()
         MaxIntegration.init()
         VkIntegration.init()
+        CrashReports.install()
         ScrollixNotificationService.start(this)
     }
 }

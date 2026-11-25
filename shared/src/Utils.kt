@@ -18,6 +18,19 @@ fun isWideLayout(): Boolean {
 }
 
 /**
+ * Returns a copy of the list with the item at [from] moved to [to]. Invalid
+ * indices return the list unchanged, so a move button at either edge is
+ * harmless and the caller does not need bounds checks.
+ */
+fun <T> List<T>.moved(from: Int, to: Int): List<T> {
+    if (from == to || from !in indices || to !in indices) return this
+
+    val result = toMutableList()
+    result.add(to, result.removeAt(from))
+    return result
+}
+
+/**
  * @param condition Return true to not remove an item
  */
 fun <T> MutableIterable<T>.clearExcept(condition: (T) -> Boolean) {

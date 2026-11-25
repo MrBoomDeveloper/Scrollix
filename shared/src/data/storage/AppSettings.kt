@@ -8,6 +8,15 @@ import kotlinx.serialization.json.Json
 
 val DefaultQuickReactions = listOf("👍", "❤️", "🔥", "🎉", "😁", "😢")
 
+/** 0 disables the media cache limit. */
+const val UnlimitedMediaCacheBytes: Long = 0L
+
+/** Default budget for cached stickers, custom emoji and avatars. */
+const val DefaultMediaCacheLimitBytes: Long = 512L * 1024 * 1024
+
+/** Presets offered in Settings; each value is in megabytes. */
+val MediaCacheLimitOptionsMb = listOf(128L, 256L, 512L, 1024L, 2048L)
+
 /**
  * A reaction that can be either a Unicode emoji or a custom emoji sticker.
  * Stored in settings so pinned reactions and the double-tap reaction survive
@@ -52,13 +61,65 @@ data class AppSettings(
     val useNativeFolders: Boolean = true,
     val hasCustomWallpaper: Boolean = false,
     val wallpaperUpdatedAt: Long = 0,
-    val emojiPickerTab: Int = 0
+    val emojiPickerTab: Int = 0,
+    /**
+     * Budget for the media cache (stickers, custom emoji, avatars). Oldest
+     * entries are evicted when it is exceeded. [UnlimitedMediaCacheBytes]
+     * disables the budget.
+     */
+    val mediaCacheLimitBytes: Long = DefaultMediaCacheLimitBytes,
+    /**
+     * Local data-saver policy: what the app may load without a tap. This is
+     * deliberately not a provider setting, so each install controls it.
+     */
+    val dataSaving: DataSavingSettings = DataSavingSettings(),
+    /**
+     * Accessibility: skip the chat appearance animation and the shared-element
+     * profile transitions. Nothing else depends on it, so a screen that forgets
+     * to read it still works correctly.
+     */
+    val reduceMotion: Boolean = false,
+    /**
+     * Opt-in: write a crash report with recent log lines to this device when
+     * the process crashes. Reports are never uploaded automatically.
+     */
+    val crashReportsEnabled: Boolean = false,
+    /**
+     * Opt-in: record redacted provider protocol frames in the diagnostics log.
+     * Off by default because frames can contain message text and identifiers.
+     */
+    val protocolDumpsEnabled: Boolean = false,
+    /**
+     * Chats whose cached media is exempt from the media cache limit, keyed by
+     * [keepMediaKey]. Only media referenced by the chat's cached messages is
+     * protected; pages that are no longer cached can still be evicted.
+     */
+    val keepMediaDialogIds: Set<String> = emptySet()
 )
 
-private const val CurrentSettingsVersion = 1
+/** Stable settings key for a chat's keep-media flag. */
+fun keepMediaKey(accountId: String, providerDialogId: String): String =
+    "$accountId:$providerDialogId"
+
+internal const val CurrentSettingsVersion = 1
+
+/**
+ * Upgrades settings written by an older build. Pure so every migration step is
+ * covered by tests and can be applied to imported backups as well.
+ */
+internal fun migrateSettings(settings: AppSettings): AppSettings {
+    if (settings.settingsVersion >= CurrentSettingsVersion) return settings
+
+    // Older files stored "all" as the implicit default. Preserve explicit
+    // choices of the other tabs while moving the untouched default to DM.
+    return settings.copy(
+        defaultHomeTab = if (settings.defaultHomeTab == "all") "direct" else settings.defaultHomeTab,
+        settingsVersion = CurrentSettingsVersion
+    )
+}
 
 object AppSettingsStore {
-    private const val FILE_NAME = "settings.json"
+    private const val FILE_NAME = SettingsFileName
     private const val WALLPAPER_FILE = "wallpaper.img"
 
     private val json = Json {
@@ -100,19 +161,31 @@ object AppSettingsStore {
         return json.encodeToString(AppSettings.serializer(), _state.value)
     }
 
-    /** Applies settings from a backup, returning false when it can't be read. */
-    fun importJson(text: String): Boolean {
-        return runCatching {
-            val restored = json.decodeFromString(AppSettings.serializer(), text)
+    /** Reads a backup without writing anything, so the UI can show its changes. */
+    internal fun previewImport(text: String): SettingsImportPreview {
+        return previewSettingsBackup(json, text, _state.value)
+    }
 
-            // Wallpapers aren't part of the backup file, so only claim one
-            // when this device actually has it.
-            update {
-                restored.copy(
-                    hasCustomWallpaper = restored.hasCustomWallpaper && readWallpaper() != null
-                )
-            }
-        }.isSuccess
+    /** Writes settings the user already saw in a preview. */
+    internal fun applyImport(settings: AppSettings) {
+        // Wallpapers aren't part of the backup file, so only claim one when
+        // this device actually has it.
+        update {
+            settings.copy(
+                hasCustomWallpaper = settings.hasCustomWallpaper && readWallpaper() != null
+            )
+        }
+    }
+
+    /**
+     * Applies settings from a backup, returning false when it can't be read or
+     * comes from a newer build.
+     */
+    fun importJson(text: String): Boolean {
+        val preview = previewImport(text)
+        if (preview !is SettingsImportPreview.Ready) return false
+        applyImport(preview.settings)
+        return true
     }
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -128,19 +201,30 @@ object AppSettingsStore {
     }
 
     private fun read(): AppSettings {
-        val settings = runCatching {
-            val text = storage.readText(FILE_NAME) ?: return@runCatching null
+        val defaults = AppSettings().copy(settingsVersion = CurrentSettingsVersion)
+
+        val text = runCatching { storage.readText(FILE_NAME) }.getOrNull()
+            ?: return defaults
+
+        val decoded = runCatching {
             json.decodeFromString(AppSettings.serializer(), text)
-        }.getOrNull() ?: return AppSettings().copy(settingsVersion = CurrentSettingsVersion)
+        }
 
-        if (settings.settingsVersion >= CurrentSettingsVersion) return settings
+        if (decoded.isFailure) {
+            // Do not let the next save overwrite settings the user might still
+            // want; keep a copy and start from defaults instead.
+            StorageIntegrity.quarantine(
+                storage = storage,
+                fileName = FILE_NAME,
+                content = text,
+                reason = decoded.exceptionOrNull()?.message ?: "unreadable settings"
+            )
+            return defaults
+        }
 
-        // Older files stored "all" as the implicit default. Preserve explicit
-        // choices of the other tabs while moving the untouched default to DM.
-        val migrated = settings.copy(
-            defaultHomeTab = if (settings.defaultHomeTab == "all") "direct" else settings.defaultHomeTab,
-            settingsVersion = CurrentSettingsVersion
-        )
+        val settings = decoded.getOrThrow()
+        val migrated = migrateSettings(settings)
+        if (migrated == settings) return settings
 
         runCatching {
             storage.writeText(FILE_NAME, json.encodeToString(AppSettings.serializer(), migrated))

@@ -11,11 +11,40 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+internal const val CurrentAccountStoreVersion = 1
+
 @Serializable
 data class AccountStoreState(
+    /** Schema version; files written before versioning decode as 0. */
+    val version: Int = 0,
     val accounts: List<AccountRecord> = emptyList(),
     val activeAccountId: String? = null
 )
+
+/**
+ * Upgrades `accounts.json`. Duplicate ids (possible after an interrupted
+ * write) collapse to the newest record, and an active account that no longer
+ * exists falls back to the first one. Pure for migration tests.
+ */
+internal fun migrateAccountStore(state: AccountStoreState): AccountStoreState {
+    // A newer build owns this file; an older one must not rewrite it.
+    if (state.version > CurrentAccountStoreVersion) return state
+
+    val seen = mutableSetOf<String>()
+    val accounts = state.accounts.asReversed()
+        .filter { account -> seen.add(account.id) }
+        .asReversed()
+
+    val active = state.activeAccountId?.takeIf { id ->
+        accounts.any { account -> account.id == id }
+    } ?: accounts.firstOrNull()?.id
+
+    return state.copy(
+        version = CurrentAccountStoreVersion,
+        accounts = accounts,
+        activeAccountId = active
+    )
+}
 
 class AccountStore(
     private val storage: PlatformStorage,
@@ -98,13 +127,22 @@ class AccountStore(
 
     private fun load(): AccountStoreState {
         val stored = runCatching { storage.readText(file) }.getOrNull()
-            ?: return AccountStoreState()
+            ?: return migrateAccountStore(AccountStoreState())
 
         return runCatching {
-            normalize(json.decodeFromString<AccountStoreState>(stored))
+            val decoded = json.decodeFromString<AccountStoreState>(stored)
+            val migrated = migrateAccountStore(decoded)
+
+            // Persist the upgraded shape once, so a legacy file is not
+            // re-migrated on every launch.
+            if (migrated != decoded) {
+                runCatching { persist(migrated) }
+            }
+
+            migrated
         }.getOrElse {
             println("WARNING: Failed to read $file: ${it.message}")
-            AccountStoreState()
+            migrateAccountStore(AccountStoreState())
         }
     }
 
@@ -112,11 +150,6 @@ class AccountStore(
         storage.writeText(file, json.encodeToString(state))
     }
 
-    private fun normalize(state: AccountStoreState): AccountStoreState {
-        val active = state.activeAccountId?.takeIf { candidate ->
-            state.accounts.any { it.id == candidate }
-        } ?: state.accounts.firstOrNull()?.id
-
-        return state.copy(activeAccountId = active)
-    }
+    private fun normalize(state: AccountStoreState): AccountStoreState =
+        migrateAccountStore(state)
 }

@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.data.vk.network
 
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.model.SessionException
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -15,23 +17,27 @@ private const val VkUploadMultipartBoundaryPrefix = "----ScrollixVk"
 
 /** Error envelope returned by `api.vk.com`. */
 internal class VkApiException(
-    val code: Int,
+    val apiCode: Int,
     val reason: String,
     /** Set when VK wants a captcha solved before the call is repeated. */
     val captchaSid: String? = null,
     val captchaImageUrl: String? = null
-) : Exception(reason) {
+) : SessionException(
+    code = vkSessionErrorCode(apiCode, reason),
+    message = reason,
+    retryable = vkSessionErrorCode(apiCode, reason).retryable || apiCode == 6 || apiCode == 10
+) {
     /** 5 = invalid token, 28 = application authorization failed. */
-    val isAuthError: Boolean get() = code == 5 || code == 28
+    val isAuthError: Boolean get() = apiCode == 5 || apiCode == 28
 
     /** 9 = too many requests per second. */
-    val isFlood: Boolean get() = code == 9
+    val isFlood: Boolean get() = apiCode == 9
 
     /** 14 = captcha needed; 17 = validation required. */
-    val needsCaptcha: Boolean get() = code == 14
+    val needsCaptcha: Boolean get() = apiCode == 14
 
     /** 6 = too many requests per second (legacy), 10 = internal server error. */
-    val isRetryable: Boolean get() = code == 6 || code == 10
+    val isRetryable: Boolean get() = retryable
 }
 
 /**
@@ -49,11 +55,15 @@ internal class VkApi(
         method: String,
         params: Map<String, String> = emptyMap()
     ): JsonElement {
+        AppLog.protocol("vk", "out method=$method", params.toString())
+
         val response = try {
             request(method, params)
         } catch (exception: CancellationException) {
             throw exception
         }
+
+        AppLog.protocol("vk", "in method=$method", response)
 
         val root = response?.let { body ->
             runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
@@ -62,7 +72,7 @@ internal class VkApi(
         root["error"]?.let { element ->
             val error = element.jsonObject
             throw VkApiException(
-                code = error["error_code"].asLongOrNull()?.toInt() ?: -1,
+                apiCode = error["error_code"].asLongOrNull()?.toInt() ?: -1,
                 reason = error.string("error_msg") ?: "VK error",
                 captchaSid = error.string("captcha_sid"),
                 captchaImageUrl = error.string("captcha_img")

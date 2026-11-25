@@ -1,12 +1,15 @@
 package com.mrboomdev.scrollix.data.provider
 
 import com.mrboomdev.scrollix.data.model.AccountProfile
+import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
 import com.mrboomdev.scrollix.data.model.AuthAction
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.DataUsagePreset
+import com.mrboomdev.scrollix.data.model.DataUsageSummary
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DownloadedFile
@@ -566,6 +569,35 @@ interface AccountSession {
         messageId: Long
     ): Result<List<MessageReactionOption>>
     suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?>
+    /**
+     * Devices currently signed in to this account. Telegram calls these active
+     * sessions; providers without a server-side device list keep the failure.
+     */
+    suspend fun loadActiveSessions(): Result<List<ActiveSessionInfo>> =
+        Result.failure(UnsupportedOperationException("Session management is not supported"))
+
+    /** Signs one other device out of this account. */
+    suspend fun terminateSession(sessionId: Long): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Session management is not supported"))
+
+    /** Signs every device except the current one out of this account. */
+    suspend fun terminateOtherSessions(): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Session management is not supported"))
+
+    /** Traffic counted by the provider for this account's session. */
+    suspend fun loadDataUsage(): Result<DataUsageSummary> =
+        Result.failure(UnsupportedOperationException("Data usage is not supported by this provider"))
+
+    /** Clears the provider's local traffic counters, not any server-side data. */
+    suspend fun resetDataUsageStatistics(): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Data usage is not supported by this provider"))
+
+    /** Applies a low/medium/high auto-download profile to every network type. */
+    suspend fun applyDataUsagePreset(preset: DataUsagePreset): Result<Unit> =
+        Result.failure(
+            UnsupportedOperationException("Data usage presets are not supported by this provider")
+        )
+
     suspend fun logout()
     suspend fun close()
 }

@@ -44,6 +44,12 @@ private class AndroidPlatformStorage : PlatformStorage {
         }
     }
 
+    override fun appendText(relativePath: String, text: String) {
+        val file = file(relativePath)
+        file.parentFile?.mkdirs()
+        file.appendText(text)
+    }
+
     override fun readBytes(relativePath: String): ByteArray? {
         val file = file(relativePath)
         return if (file.isFile) file.readBytes() else null
@@ -84,6 +90,22 @@ private class AndroidPlatformStorage : PlatformStorage {
         return directory.walkTopDown()
             .filter { it.isFile }
             .sumOf { it.length() }
+    }
+
+    override fun listEntries(relativePath: String): List<StorageFileEntry> {
+        val directory = file(relativePath)
+        if (!directory.isDirectory) return emptyList()
+
+        return directory.walkTopDown()
+            .filter { it.isFile }
+            .map { entry ->
+                StorageFileEntry(
+                    relativePath = entry.relativeTo(directory).path.replace(File.separatorChar, '/'),
+                    sizeBytes = entry.length(),
+                    lastModifiedAt = entry.lastModified()
+                )
+            }
+            .toList()
     }
 }
 

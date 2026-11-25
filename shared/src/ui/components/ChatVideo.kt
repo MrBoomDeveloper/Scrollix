@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -64,6 +65,8 @@ fun ChatVideoPreview(
     var isLoading by remember(media.fileId, session, isRound) {
         mutableStateOf(isRound)
     }
+    // Data saver → round video notes are not loaded until allowed again.
+    val videoNotesAllowed = AppSettingsStore.state.value.dataSaving.videoNotes
     var revealed by remember(media.fileId, media.fileUniqueId) {
         mutableStateOf(!media.isSpoiler)
     }
@@ -77,7 +80,8 @@ fun ChatVideoPreview(
         media.fileId,
         session,
         isRound,
-        roundSizePx
+        roundSizePx,
+        videoNotesAllowed
     ) {
         thumbnail = media.minithumbnail?.let { bytes ->
             withContext(Dispatchers.Default) {
@@ -98,7 +102,7 @@ fun ChatVideoPreview(
             }
         }
 
-        if (isRound) {
+        if (isRound && videoNotesAllowed) {
             val fileId = media.fileId
 
             if (fileId != null) {

@@ -30,6 +30,7 @@ import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.features.accounts.AccountsScreen
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
+import com.mrboomdev.scrollix.features.diagnostics.DiagnosticsScreen
 import com.mrboomdev.scrollix.features.home.HomeScreen
 import com.mrboomdev.scrollix.features.login.LoginScreen
 import com.mrboomdev.scrollix.features.profile.ProfileScreen
@@ -188,7 +189,15 @@ fun rememberAppEntryProvider(
 
         entry<Route.Settings> {
             SettingsScreen(
-                onOpenAccountsScreen = { backStack += Route.Accounts }
+                onOpenDiagnostics = { backStack += Route.Diagnostics }
+            )
+        }
+
+        entry<Route.Diagnostics> {
+            DiagnosticsScreen(
+                onBack = {
+                    backStack.removeLastOrNull()
+                }
             )
         }
 

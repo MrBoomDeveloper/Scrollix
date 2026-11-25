@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.data.api
 
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.diagnostics.DiagnosticsFileLog
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.AccountDialogFolder
 import com.mrboomdev.scrollix.data.model.AccountDownloadedFile
@@ -13,26 +15,35 @@ import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.PostSearchPage
 import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
+import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.DialogAggregator
 import com.mrboomdev.scrollix.data.provider.MessengerProvider
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.data.storage.AccountStore
 import com.mrboomdev.scrollix.data.storage.AccountStoreState
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.CacheStore
+import com.mrboomdev.scrollix.data.storage.DataUsageStore
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.randomId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -44,6 +55,15 @@ object ApiManager {
 
     private val _dialogs = MutableStateFlow<List<AccountDialogEntry>>(emptyList())
     val dialogs: StateFlow<List<AccountDialogEntry>> = _dialogs.asStateFlow()
+
+    /**
+     * Total unread across every account. OS surfaces such as the desktop tray
+     * only need the number and must not depend on provider dialog models.
+     */
+    val unreadCount: Flow<Int> = dialogs.map { entries ->
+        entries.sumOf { entry -> entry.dialog.unreadCount }
+    }
+
 
     private val _folders = MutableStateFlow<List<AccountDialogFolder>>(emptyList())
     val folders: StateFlow<List<AccountDialogFolder>> = _folders.asStateFlow()
@@ -61,6 +81,22 @@ object ApiManager {
 
     /** Every live account session, used by the cross-provider sticker picker. */
     val sessions: StateFlow<Map<String, AccountSession>> = _sessions.asStateFlow()
+
+    /**
+     * Live connection flag per account with a running session. Accounts that
+     * are not in the map are still signing in, so an absent entry is not
+     * "offline". Used by the offline banner.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val connectionStates: Flow<Map<String, Boolean>> = sessions.flatMapLatest { live ->
+        if (live.isEmpty()) {
+            flowOf(emptyMap())
+        } else {
+            combine(live.map { (accountId, session) ->
+                session.isConnected.map { connected -> accountId to connected }
+            }) { pairs -> pairs.toMap() }
+        }
+    }
     private val _dialogsByAccount = MutableStateFlow<Map<String, List<Dialog>>>(emptyMap())
     private val _foldersByAccount = MutableStateFlow<Map<String, List<DialogFolder>>>(emptyMap())
     private val _downloadsByAccount = MutableStateFlow<Map<String, List<DownloadedFile>>>(emptyMap())
@@ -81,6 +117,7 @@ object ApiManager {
         }
 
         val storage = runCatching { createPlatformStorage() }.getOrElse { exception ->
+            AppLog.error("storage", "Failed to create app storage", exception)
             println("Failed to create app storage: ${exception.message}")
             return
         }
@@ -90,12 +127,39 @@ object ApiManager {
         accountStore = store
         initialized = true
 
+        // Persist diagnostics from this point on. It is a rotating local file;
+        // the diagnostics screen exposes copy and clear actions.
+        DiagnosticsFileLog.install(storage)
+        AppLog.protocolDumpsEnabled = AppSettingsStore.state.value.protocolDumpsEnabled
+
+        // Resume text messages queued before the last shutdown, and retry
+        // messages queued while offline.
+        OutboxManager.start()
+
         // Files cached by older builds were keyed by TDLib file ids, which are
         // not stable across restarts and could surface another file's bytes.
         // Only those legacy entries are pruned; the current media cache, keyed
         // by remote unique ids, is kept.
         CacheStore.pruneLegacyMedia()
+
+        // Keep the media cache within its budget after a restart, in case the
+        // limit was lowered while the app was closed. Scanning the cache tree
+        // must not delay the first frame.
+        appScope.launch(Dispatchers.IO) {
+            // Kept chats must be known before the first eviction, otherwise
+            // their media could be deleted before the toggle is re-read.
+            CacheStore.refreshMediaProtection()
+            CacheStore.enforceMediaLimit(AppSettingsStore.state.value.mediaCacheLimitBytes)
+        }
         _accountState.value = store.state.value
+
+        // A queued message of an account that is no longer on this device can
+        // never be delivered. Only prune once the account list is known to be
+        // non-empty, so an unreadable account file cannot wipe the queue.
+        val knownAccounts = store.state.value.accounts.map { account -> account.id }.toSet()
+        if (knownAccounts.isNotEmpty()) {
+            appScope.launch { OutboxManager.pruneUnknownAccounts(knownAccounts) }
+        }
 
         appScope.launch {
             store.state.collect { state ->
@@ -198,6 +262,8 @@ object ApiManager {
         _downloadsByAccount.update { it - accountId }
         platformStorage?.delete("accounts/$accountId")
         CacheStore.clearAccount(accountId)
+        DataUsageStore.removeAccount(accountId)
+        OutboxManager.removeAccount(accountId)
         accountStore?.remove(accountId)
         recomputeDialogs()
         recomputeFolders()
@@ -448,6 +514,8 @@ object ApiManager {
     }
 
     suspend fun shutdown() {
+        OutboxManager.stop()
+
         val sessions = _sessions.value.values.toList()
 
         for (session in sessions) {
@@ -484,6 +552,12 @@ object ApiManager {
 
             val session = createSession(account) ?: continue
             runCatching { session.start() }.onFailure { exception ->
+                AppLog.error(
+                    "session",
+                    "Failed to start the ${account.providerId} session for ${account.displayName}",
+                    exception
+                )
+
                 _sessionStates.update {
                     it + (account.id to AuthState.Error(
                         exception.message ?: "Failed to start account session"
@@ -500,7 +574,13 @@ object ApiManager {
         if (store.account(account.id) == null) return null
 
         val storage = platformStorage ?: return null
-        val provider = ProviderRegistry.get(account.providerId) ?: return null
+        val provider = ProviderRegistry.get(account.providerId) ?: run {
+            AppLog.error(
+                "session",
+                "No provider is registered for ${account.providerId}"
+            )
+            return null
+        }
 
         val session = provider.createSession(
             account = account,

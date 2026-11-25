@@ -2,6 +2,9 @@ package com.mrboomdev.scrollix.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -35,9 +39,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.data.model.MessageMedia
@@ -52,9 +62,10 @@ import kotlinx.coroutines.withContext
 fun FullscreenImageViewer(
     media: MessageMedia,
     session: AccountSession?,
+    caption: String = "",
     onClose: () -> Unit
 ) {
-    FullscreenMediaFrame(onClose = onClose) {
+    FullscreenMediaFrame(onClose = onClose, caption = caption) {
         FullscreenImageContent(
             media = media,
             session = session,
@@ -69,9 +80,10 @@ fun FullscreenImageViewer(
 fun FullscreenVideoViewer(
     media: MessageMedia,
     session: AccountSession?,
+    caption: String = "",
     onClose: () -> Unit
 ) {
-    FullscreenMediaFrame(onClose = onClose) {
+    FullscreenMediaFrame(onClose = onClose, caption = caption) {
         FullscreenVideoContent(
             media = media,
             session = session,
@@ -85,6 +97,7 @@ fun FullscreenVideoViewer(
 @Composable
 private fun FullscreenMediaFrame(
     onClose: () -> Unit,
+    caption: String = "",
     content: @Composable () -> Unit
 ) {
     Box(
@@ -95,6 +108,13 @@ private fun FullscreenMediaFrame(
         contentAlignment = Alignment.Center
     ) {
         content()
+
+        MediaCaption(
+            caption = caption,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 24.dp)
+        )
 
         Text(
             modifier = Modifier
@@ -108,11 +128,37 @@ private fun FullscreenMediaFrame(
     }
 }
 
+/**
+ * Caption of the message the media belongs to, drawn on a scrim so it stays
+ * readable over bright photos. Long captions are clamped instead of covering
+ * the whole picture; the full text is in the chat bubble behind the viewer.
+ */
+@Composable
+private fun MediaCaption(caption: String, modifier: Modifier = Modifier) {
+    if (caption.isBlank()) return
+
+    Text(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black.copy(alpha = 0.45f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        text = caption,
+        color = Color.White,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 4,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
 @Composable
 private fun FullscreenImageContent(
     media: MessageMedia,
     session: AccountSession?,
-    modifier: Modifier
+    modifier: Modifier,
+    /** Whether this page is the one the viewer shows; pages reset when inactive. */
+    active: Boolean = true,
+    /** Reports whether the photo is zoomed in, so the pager can stop paging. */
+    onZoomChange: (Boolean) -> Unit = {}
 ) {
     var image by remember(media.fileId, media.previewFileId, media.minithumbnail, session) {
         mutableStateOf<ImageBitmap?>(null)
@@ -140,20 +186,133 @@ private fun FullscreenImageContent(
     val bitmap = image
 
     if (bitmap != null) {
-        Image(
+        ZoomableImage(
             bitmap = bitmap,
-            contentDescription = null,
-            // Taps on the media itself are swallowed; only the backdrop and
-            // the close button dismiss the viewer.
-            modifier = modifier
-                .alpha(rememberFadeIn(bitmap))
-                .clickable {},
-            contentScale = ContentScale.Fit
+            modifier = modifier.alpha(rememberFadeIn(bitmap)),
+            active = active,
+            onZoomChange = onZoomChange
         )
     } else {
         CircularProgressIndicator()
     }
 }
+
+/**
+ * A photo the user can pinch to zoom, drag while zoomed and double-tap to toggle
+ * between fitted and 2.5x. Gestures are clamped to the container, so the photo
+ * cannot be dragged off screen, and panning is disabled at 1x so a horizontal
+ * swipe still pages the gallery.
+ *
+ * Taps on the photo are swallowed (only the backdrop and the close button
+ * dismiss the viewer), which is also why single taps are consumed here instead
+ * of with a clickable modifier that would eat the first tap of a double tap.
+ */
+@Composable
+private fun ZoomableImage(
+    bitmap: ImageBitmap,
+    modifier: Modifier = Modifier,
+    active: Boolean = true,
+    onZoomChange: (Boolean) -> Unit = {}
+) {
+    var scale by remember(bitmap) { mutableFloatStateOf(1f) }
+    var offset by remember(bitmap) { mutableStateOf(Offset.Zero) }
+    var container by remember { mutableStateOf(IntSize.Zero) }
+
+    fun clamp(target: Offset, value: Float): Offset {
+        return clampZoomOffset(
+            target = target,
+            scale = value,
+            containerWidth = container.width,
+            containerHeight = container.height
+        )
+    }
+
+    fun reset() {
+        scale = 1f
+        offset = Offset.Zero
+        onZoomChange(false)
+    }
+
+    // Leaving the page resets the zoom, so coming back starts fitted again.
+    LaunchedEffect(active) {
+        if (!active) reset()
+    }
+
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val next = (scale * zoomChange).coerceIn(MinZoom, MaxZoom)
+
+        scale = next
+        offset = if (next <= MinZoom) Offset.Zero else clamp(offset + panChange, next)
+        onZoomChange(next > MinZoom)
+    }
+
+    Image(
+        bitmap = bitmap,
+        contentDescription = null,
+        modifier = modifier
+            .onSizeChanged { size -> container = size }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offset.x
+                translationY = offset.y
+            }
+            .transformable(
+                state = transformState,
+                canPan = { scale > MinZoom },
+                lockRotationOnZoomPan = true
+            )
+            .pointerInput(bitmap) {
+                detectTapGestures(
+                    onTap = { /* swallowed: only the backdrop and ✕ close */ },
+                    onDoubleTap = { position ->
+                        if (scale > MinZoom) {
+                            reset()
+                        } else {
+                            // Zoom in around the tapped point instead of the
+                            // center, the way the official viewers behave.
+                            val focus = Offset(
+                                x = (container.width / 2f - position.x) * (DoubleTapZoom - 1f),
+                                y = (container.height / 2f - position.y) * (DoubleTapZoom - 1f)
+                            )
+
+                            scale = DoubleTapZoom
+                            offset = clamp(focus, DoubleTapZoom)
+                            onZoomChange(true)
+                        }
+                    }
+                )
+            },
+        contentScale = ContentScale.Fit
+    )
+}
+
+/**
+ * Keeps a zoomed photo inside its container. At [scale] the content extends
+ * `(scale - 1) / 2` of the container size to each side, which is the largest
+ * translation that still shows no gap. Pure so the bounds are covered by tests.
+ */
+internal fun clampZoomOffset(
+    target: Offset,
+    scale: Float,
+    containerWidth: Int,
+    containerHeight: Int
+): Offset {
+    if (scale <= 1f) return Offset.Zero
+
+    val maxX = (containerWidth * (scale - 1f) / 2f).coerceAtLeast(0f)
+    val maxY = (containerHeight * (scale - 1f) / 2f).coerceAtLeast(0f)
+
+    return Offset(
+        x = target.x.coerceIn(-maxX, maxX),
+        y = target.y.coerceIn(-maxY, maxY)
+    )
+}
+
+/** Fitted zoom; below this the photo is not considered zoomed in. */
+private const val MinZoom = 1f
+private const val MaxZoom = 5f
+private const val DoubleTapZoom = 2.5f
 
 @Composable
 private fun LegacyFullscreenVideoContent(
@@ -287,6 +446,7 @@ fun FullscreenGalleryViewer(
     media: List<MessageMedia>,
     initialIndex: Int,
     session: AccountSession?,
+    caption: String = "",
     onClose: () -> Unit
 ) {
     if (media.isEmpty()) return
@@ -305,6 +465,13 @@ fun FullscreenGalleryViewer(
     var downloaded by remember(current.fileId, current.previewFileId) {
         mutableStateOf(false)
     }
+    // While the photo is zoomed, a horizontal drag pans it instead of paging.
+    // The pager is blocked so a pan at the edge cannot flip the page.
+    var isZoomed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pagerState.currentPage) {
+        isZoomed = false
+    }
 
     Box(
         modifier = Modifier
@@ -314,7 +481,8 @@ fun FullscreenGalleryViewer(
     ) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = !isZoomed
         ) { page ->
             val item = media[page]
 
@@ -335,7 +503,13 @@ fun FullscreenGalleryViewer(
                     FullscreenImageContent(
                         media = item,
                         session = session,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        active = page == currentIndex,
+                        onZoomChange = { zoomed ->
+                            // Only the visible page may block paging; an
+                            // off-screen page still holds its own zoom state.
+                            if (page == currentIndex) isZoomed = zoomed
+                        }
                     )
                 }
             }
@@ -420,6 +594,14 @@ fun FullscreenGalleryViewer(
                 scope.launch { pagerState.animateScrollToPage(currentIndex + 1) }
             }
         }
+
+        // Sits above the thumbnail strip, which is reserved by the page padding.
+        MediaCaption(
+            caption = caption,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(start = 16.dp, end = 16.dp, bottom = 108.dp)
+        )
 
         LazyRow(
             modifier = Modifier

@@ -1,5 +1,8 @@
 package com.mrboomdev.scrollix.data.max.network
 
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
+import com.mrboomdev.scrollix.data.model.SessionErrorCode
+import com.mrboomdev.scrollix.data.model.SessionException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -23,7 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger
 internal class MaxApiException(
     val errorCode: String?,
     val description: String?
-) : Exception(description ?: errorCode ?: "MAX request failed") {
+) : SessionException(
+    code = maxSessionErrorCode(errorCode, description),
+    message = description ?: errorCode ?: "MAX request failed"
+) {
     val isAuthError: Boolean
         get() = errorCode?.startsWith("auth.") == true
 }
@@ -35,8 +41,9 @@ internal class MaxApiException(
  */
 internal class MaxConnectionClosedException(
     val reason: String?
-) : IllegalStateException(
-    "MAX connection was lost. Please try again." + (reason?.let { " ($it)" } ?: "")
+) : SessionException(
+    code = SessionErrorCode.Network,
+    message = "MAX connection was lost. Please try again." + (reason?.let { " ($it)" } ?: "")
 )
 
 internal data class MaxPush(
@@ -140,6 +147,14 @@ internal class MaxRpc(
         val seq = nextSequence()
         val response = CompletableDeferred<JsonElement?>()
 
+        if (opcode != 1) {
+            AppLog.protocol(
+                provider = "max",
+                direction = "out opcode=$opcode seq=$seq",
+                payload = payload?.toString()
+            )
+        }
+
         pendingMutex.withLock { pending[seq] = response }
 
         try {
@@ -222,6 +237,14 @@ internal class MaxRpc(
     private suspend fun handleFrame(bytes: ByteArray) {
         val frame = runCatching { parseMaxFrame(bytes) }.getOrNull() ?: return
         val payload = frame.payload as? JsonObject
+
+        if (frame.opcode != 1) {
+            AppLog.protocol(
+                provider = "max",
+                direction = "in cmd=${frame.cmd} opcode=${frame.opcode} seq=${frame.seq}",
+                payload = frame.payload?.toString()
+            )
+        }
 
         when (frame.cmd) {
             0 -> {

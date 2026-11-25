@@ -5,7 +5,11 @@ import com.mrboomdev.scrollix.data.cache.CachedDialogsEntity
 import com.mrboomdev.scrollix.data.cache.CachedMessagesEntity
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.MessageMedia
+import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageSendState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
@@ -28,6 +32,19 @@ object CacheStore {
     /** Only the newest messages are kept, older pages are fetched again. */
     private const val MaxCachedMessages = 100
     private const val MediaDirectory = "cache/media"
+
+    // Scanning the media tree after every sticker would be wasteful, so the
+    // budget is checked after a few megabytes or a minute of caching.
+    private const val MediaLimitCheckBytes = 4L * 1024 * 1024
+    private const val MediaLimitCheckIntervalMillis = 60_000L
+    private var mediaBytesSinceLimitCheck = 0L
+    private var lastLimitCheckMillis = 0L
+
+    /**
+     * Media referenced by a chat the user marked as "Keep media". These paths
+     * still count toward the budget but are never selected for eviction.
+     */
+    private val protectedMedia = MutableStateFlow<Set<String>>(emptySet())
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -88,20 +105,7 @@ object CacheStore {
             json.decodeFromString(ListSerializer(ChatMessage.serializer()), payload)
                 .filter { message -> message.sendState == MessageSendState.Sent }
                 .takeLast(limit)
-                .map { message ->
-                    // Cached messages written before service rows were modelled
-                    // still carry the old unsupported-content dump. They must
-                    // not expose Copy/Edit even though the cache lacks the flag.
-                    val isLegacyUnsupported = message.text.startsWith(
-                        "This message is not supported"
-                    )
-
-                    message.copy(
-                        senderAvatar = message.senderAvatar?.copy(image = null),
-                        forwardedFromAvatar = message.forwardedFromAvatar?.copy(image = null),
-                        isService = message.isService || isLegacyUnsupported
-                    )
-                }
+                .map { message -> migrateCachedMessage(message) }
         } catch (exception: Exception) {
             println("Dropping unreadable message cache: ${exception.message}")
             runCatching { dao.deleteMessages(accountId, providerDialogId) }
@@ -147,6 +151,13 @@ object CacheStore {
                     updatedAt = currentTimeMillis()
                 )
             )
+
+            if (keepMediaKey(accountId, providerDialogId) in
+                AppSettingsStore.state.value.keepMediaDialogIds
+            ) {
+                val paths = mediaPaths(accountId, cached)
+                protectedMedia.update { current -> current + paths }
+            }
         }
     }
 
@@ -166,7 +177,87 @@ object CacheStore {
 
     fun saveMedia(accountId: String, remoteUniqueId: String, bytes: ByteArray) {
         if (remoteUniqueId.isBlank() || bytes.isEmpty()) return
-        runCatching { storage.writeBytes(mediaPath(accountId, remoteUniqueId), bytes) }
+
+        runCatching {
+            storage.writeBytes(mediaPath(accountId, remoteUniqueId), bytes)
+        }.onSuccess {
+            // Every cached media file was downloaded by this device, so it is
+            // the one place a received-traffic counter can see the bytes.
+            DataUsageStore.record(accountId, receivedBytes = bytes.size.toLong())
+
+            mediaBytesSinceLimitCheck += bytes.size
+            val now = currentTimeMillis()
+
+            if (
+                mediaBytesSinceLimitCheck >= MediaLimitCheckBytes ||
+                now - lastLimitCheckMillis >= MediaLimitCheckIntervalMillis
+            ) {
+                mediaBytesSinceLimitCheck = 0L
+                lastLimitCheckMillis = now
+                runCatching {
+                    enforceMediaLimit(AppSettingsStore.state.value.mediaCacheLimitBytes)
+                }
+            }
+        }
+    }
+
+    /** Media files currently cached, with the metadata eviction orders by. */
+    fun mediaEntries(): List<MediaCacheEntry> {
+        return runCatching {
+            storage.listEntries(MediaDirectory).map { entry ->
+                MediaCacheEntry(
+                    relativePath = entry.relativePath,
+                    sizeBytes = entry.sizeBytes,
+                    lastModifiedAt = entry.lastModifiedAt
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Deletes the oldest cached media until the directory fits [limitBytes].
+     * Returns the number of bytes freed. A non-positive limit means unlimited.
+     */
+    fun enforceMediaLimit(limitBytes: Long): Long {
+        if (limitBytes <= 0L) return 0L
+
+        val evicted = selectMediaForEviction(
+            entries = mediaEntries(),
+            limitBytes = limitBytes,
+            protectedPaths = protectedMedia.value
+        )
+        var freedBytes = 0L
+
+        evicted.forEach { entry ->
+            val deleted = runCatching {
+                storage.delete("$MediaDirectory/${entry.relativePath}")
+            }.isSuccess
+
+            if (deleted) freedBytes += entry.sizeBytes
+        }
+
+        return freedBytes
+    }
+
+    /**
+     * Recomputes which cached media belongs to a kept chat from the last
+     * cached window of every kept chat. Call it after startup and after the
+     * kept set changes; new messages of a kept chat are protected as they are
+     * cached, so this does not need to run on every save.
+     */
+    suspend fun refreshMediaProtection() {
+        val paths = mutableSetOf<String>()
+
+        AppSettingsStore.state.value.keepMediaDialogIds.forEach { key ->
+            val separator = key.indexOf(':')
+            if (separator <= 0 || separator == key.lastIndex) return@forEach
+
+            val accountId = key.substring(0, separator)
+            val dialogId = key.substring(separator + 1)
+            paths += mediaPaths(accountId, loadMessages(accountId, dialogId))
+        }
+
+        protectedMedia.value = paths
     }
 
     suspend fun size(category: Category): Long {
@@ -218,10 +309,24 @@ object CacheStore {
         runCatching { dao.deleteDialogs(accountId) }
         runCatching { dao.deleteMessages(accountId) }
         runCatching { storage.delete("$MediaDirectory/${safeName(accountId)}") }
+
+        val accountPrefix = "${safeName(accountId)}/"
+        protectedMedia.update { paths ->
+            paths.filterNot { path -> path.startsWith(accountPrefix) }.toSet()
+        }
     }
 
     private fun mediaPath(accountId: String, remoteUniqueId: String): String {
         return "$MediaDirectory/${safeName(accountId)}/${hexName(remoteUniqueId)}"
+    }
+
+    /** Relative paths (below the media directory) of a chat's cached media. */
+    private fun mediaPaths(accountId: String, messages: List<ChatMessage>): Set<String> {
+        val account = safeName(accountId)
+
+        return mediaUniqueIds(messages).mapTo(mutableSetOf()) { uniqueId ->
+            "$account/${hexName(uniqueId)}"
+        }
     }
 
     /**
@@ -238,4 +343,94 @@ object CacheStore {
     private fun safeName(value: String): String {
         return value.replace(Regex("[^A-Za-z0-9._-]"), "_")
     }
+}
+
+/** One cached media file considered by the budget manager. */
+data class MediaCacheEntry(
+    val relativePath: String,
+    val sizeBytes: Long,
+    val lastModifiedAt: Long
+)
+
+/**
+ * Oldest-first eviction until [limitBytes] fits. Pure so the order is covered
+ * by tests; equal timestamps fall back to the path for a stable result.
+ */
+internal fun selectMediaForEviction(
+    entries: List<MediaCacheEntry>,
+    limitBytes: Long,
+    protectedPaths: Set<String> = emptySet()
+): List<MediaCacheEntry> {
+    if (limitBytes <= 0L) return emptyList()
+
+    var totalBytes = entries.sumOf { entry -> entry.sizeBytes }
+    if (totalBytes <= limitBytes) return emptyList()
+
+    val evicted = mutableListOf<MediaCacheEntry>()
+    val oldestFirst = entries.sortedWith(
+        compareBy({ entry -> entry.lastModifiedAt }, { entry -> entry.relativePath })
+    )
+
+    oldestFirst.forEach { entry ->
+        if (totalBytes <= limitBytes) return@forEach
+        if (entry.relativePath in protectedPaths) return@forEach
+
+        evicted += entry
+        totalBytes -= entry.sizeBytes
+    }
+
+    return evicted
+}
+
+/**
+ * Normalizes a message read from the cache. Older builds stored unsupported
+ * content as text and kept avatar bitmaps; neither may leak Copy/Edit actions
+ * or stale bytes into the restored history.
+ */
+internal fun migrateCachedMessage(message: ChatMessage): ChatMessage {
+    val isLegacyUnsupported = message.text.startsWith("This message is not supported")
+
+    return message.copy(
+        senderAvatar = message.senderAvatar?.copy(image = null),
+        forwardedFromAvatar = message.forwardedFromAvatar?.copy(image = null),
+        isService = message.isService || isLegacyUnsupported
+    )
+}
+
+/**
+ * Durable media ids referenced by messages, including albums, replies, poll
+ * options and media embedded in rich text. Runtime file ids are deliberately
+ * ignored: only these ids can be trusted after a restart.
+ */
+internal fun mediaUniqueIds(messages: List<ChatMessage>): Set<String> {
+    val ids = mutableSetOf<String>()
+
+    fun add(media: MessageMedia?) {
+        media ?: return
+
+        listOf(media.previewUniqueId, media.fileUniqueId, media.stickerUniqueId)
+            .filterNotNull()
+            .filter { uniqueId -> uniqueId.isNotBlank() }
+            .forEach { uniqueId -> ids += uniqueId }
+
+        media.videoQualities.forEach { quality ->
+            quality.fileUniqueId
+                ?.takeIf { uniqueId -> uniqueId.isNotBlank() }
+                ?.let { uniqueId -> ids += uniqueId }
+        }
+    }
+
+    messages.forEach { message ->
+        message.allMedia.forEach { media -> add(media) }
+        message.replyTo?.media?.let { media -> add(media) }
+        message.poll?.options?.forEach { option -> add(option.media) }
+
+        message.richBlocks.forEach { block ->
+            if (block is MessageRichBlock.Media) {
+                add(block.media)
+            }
+        }
+    }
+
+    return ids
 }

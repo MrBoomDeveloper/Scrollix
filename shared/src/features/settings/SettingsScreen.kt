@@ -1,112 +1,259 @@
 package com.mrboomdev.scrollix.features.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.mrboomdev.scrollix.data.AppMode
-import com.mrboomdev.scrollix.data.api.ApiManager
-import com.mrboomdev.scrollix.data.model.AuthState
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.NotificationException
 import com.mrboomdev.scrollix.data.model.NotificationScope
-import com.mrboomdev.scrollix.data.model.NotificationSettings
-import com.mrboomdev.scrollix.data.model.StickerPackKind
-import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.ReactionPreference
-import com.mrboomdev.scrollix.data.storage.CacheStore
-import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
 import com.mrboomdev.scrollix.data.storage.readFileBytes
-import com.mrboomdev.scrollix.data.storage.saveFileToDevice
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.EmojiCatalog
-import com.mrboomdev.scrollix.ui.components.EmojiPicker
-import com.mrboomdev.scrollix.ui.components.ReorderDialog
-import com.mrboomdev.scrollix.ui.components.ReorderItem
-import com.mrboomdev.scrollix.ui.components.orderedStickerPacks
 import com.mrboomdev.scrollix.ui.components.rememberFilePicker
-import com.mrboomdev.scrollix.getPlatform
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.backup_icon
+import com.mrboomdev.scrollix.ui.icons.bug_report_icon
+import com.mrboomdev.scrollix.ui.icons.campaign_icon
 import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
-import com.mrboomdev.scrollix.ui.icons.link_icon
+import com.mrboomdev.scrollix.ui.icons.close_icon
+import com.mrboomdev.scrollix.ui.icons.data_usage_icon
+import com.mrboomdev.scrollix.ui.icons.devices_icon
+import com.mrboomdev.scrollix.ui.icons.group_icon
+import com.mrboomdev.scrollix.ui.icons.info_icon
+import com.mrboomdev.scrollix.ui.icons.notifications_icon
+import com.mrboomdev.scrollix.ui.icons.search_icon
+import com.mrboomdev.scrollix.ui.icons.storage_icon
+import com.mrboomdev.scrollix.ui.icons.touch_app_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.mrboomdev.scrollix.isTwoPaneLayout
 
-private enum class SettingsCategory(
+/**
+ * A settings section. [keywords] name things the section owns that its title
+ * does not say, so a category-level hit still works for a broad word.
+ */
+internal enum class SettingsCategory(
     val title: String,
-    val description: String
+    val description: String,
+    val keywords: List<String>
 ) {
-    ChatList("Chat list", "Folders, filters and chat sorting"),
-    Notifications("Notifications", "Mutes, alerts and double-tap reaction"),
-    Backup("Backup", "Export or import your settings"),
-    Storage("Storage", "Cached data and disk usage"),
-    Accounts("Accounts", "Connected messaging accounts"),
-    About("About", "Application information")
+    ChatList(
+        "Chat list",
+        "Folders, filters and chat sorting",
+        listOf(
+            "wallpaper", "folders", "filters", "tabs", "merge duplicate chats",
+            "sticker packs", "emoji packs", "recent emoji", "system emoji",
+            "quick reactions"
+        )
+    ),
+    Accessibility(
+        "Accessibility",
+        "Motion and readability",
+        listOf("reduce motion", "animation", "accessibility")
+    ),
+    Storage(
+        "Storage",
+        "Cached data and disk usage",
+        listOf("cache", "media cache limit", "clear cache", "keep media", "disk usage")
+    ),
+    DataUsage(
+        "Data and network",
+        "Traffic, data saver and auto-download",
+        listOf("traffic", "reset statistics", "auto-download", "network", "roaming", "data saver")
+    ),
+    Backup(
+        "Backup",
+        "Export or import your settings",
+        listOf("export", "import", "restore", "settings file")
+    ),
+    Notifications(
+        "Notifications",
+        "Mutes, alerts and double-tap reaction",
+        listOf("mute", "muted scopes", "exceptions", "alerts")
+    ),
+    Sessions(
+        "Sessions",
+        "Devices signed in to your account",
+        listOf("devices", "terminate", "sign out", "active sessions")
+    ),
+    About(
+        "About",
+        "Application information",
+        listOf("version", "licenses", "source code", "github", "edition")
+    ),
+    Diagnostics(
+        "Diagnostics",
+        "Debug log and environment details",
+        listOf("log", "crash reports", "protocol dumps", "errors", "environment")
+    )
+}
+
+/**
+ * One searchable setting inside a section. The index covers every row of every
+ * section, including rows of screens that have not been opened in this session,
+ * so the search field can find a single switch instead of only its section.
+ */
+internal data class SettingsEntry(
+    val category: SettingsCategory,
+    val title: String,
+    val keywords: List<String> = emptyList()
+)
+
+internal val SettingsEntries: List<SettingsEntry> = listOf(
+    // Chat list
+    SettingsEntry(SettingsCategory.ChatList, "Chat wallpaper", listOf("wallpaper", "background", "chat background")),
+    SettingsEntry(SettingsCategory.ChatList, "Show the \"All\" tab", listOf("tabs", "chips")),
+    SettingsEntry(SettingsCategory.ChatList, "Single row filters", listOf("tabs", "folders", "chips")),
+    SettingsEntry(SettingsCategory.ChatList, "Merge duplicate chats", listOf("duplicates", "accounts")),
+    SettingsEntry(SettingsCategory.ChatList, "Use Telegram folders", listOf("folders", "filters", "native")),
+    SettingsEntry(SettingsCategory.ChatList, "Recent emoji and stickers", listOf("recent")),
+    SettingsEntry(SettingsCategory.ChatList, "System emoji", listOf("emoji", "picker")),
+    SettingsEntry(SettingsCategory.ChatList, "Choose emoji", listOf("disabled emoji", "hide emoji")),
+    SettingsEntry(SettingsCategory.ChatList, "Quick reactions", listOf("reactions", "action menu")),
+    SettingsEntry(SettingsCategory.ChatList, "Pinned reactions", listOf("reactions", "custom emoji")),
+    SettingsEntry(SettingsCategory.ChatList, "Double-tap reaction", listOf("reaction", "gesture")),
+    SettingsEntry(SettingsCategory.ChatList, "Default home tab", listOf("tabs", "start")),
+    SettingsEntry(SettingsCategory.ChatList, "Reorder sticker packs", listOf("stickers", "order")),
+    SettingsEntry(SettingsCategory.ChatList, "Reorder emoji packs", listOf("emoji", "order")),
+
+    // Accessibility
+    SettingsEntry(
+        SettingsCategory.Accessibility,
+        "Reduce motion",
+        listOf("animation", "transition", "motion", "accessibility")
+    ),
+
+    // Notifications
+    SettingsEntry(SettingsCategory.Notifications, "Account notifications", listOf("mute", "alerts", "account")),
+    SettingsEntry(SettingsCategory.Notifications, "Muted scopes", listOf("private chats", "groups", "channels", "mute")),
+    SettingsEntry(SettingsCategory.Notifications, "Notification exceptions", listOf("exceptions", "muted chats")),
+
+    // Backup
+    SettingsEntry(SettingsCategory.Backup, "Export settings", listOf("backup", "save", "file")),
+    SettingsEntry(SettingsCategory.Backup, "Import settings", listOf("restore", "backup", "file")),
+
+    // Storage
+    SettingsEntry(SettingsCategory.Storage, "Media cache limit", listOf("cache", "size", "limit", "budget")),
+    SettingsEntry(SettingsCategory.Storage, "Keep media", listOf("keep media", "kept chats", "protection")),
+    SettingsEntry(SettingsCategory.Storage, "Clear cache", listOf("clear", "delete", "disk usage")),
+    SettingsEntry(SettingsCategory.Storage, "Clear all", listOf("clear", "delete", "everything")),
+
+    // Sessions
+    SettingsEntry(SettingsCategory.Sessions, "Active sessions", listOf("devices", "sign out", "terminate")),
+    SettingsEntry(SettingsCategory.Sessions, "Terminate sessions", listOf("sign out", "devices")),
+
+    // Data and network
+    SettingsEntry(SettingsCategory.DataUsage, "Traffic statistics", listOf("data usage", "sent", "received")),
+    SettingsEntry(SettingsCategory.DataUsage, "Reset statistics", listOf("traffic", "reset")),
+    SettingsEntry(SettingsCategory.DataUsage, "Data saver presets", listOf("auto-download", "low", "medium", "high")),
+    SettingsEntry(SettingsCategory.DataUsage, "Auto-play media", listOf("animations", "gifs", "video notes", "data saver")),
+
+    // Diagnostics
+    SettingsEntry(SettingsCategory.Diagnostics, "Save crash reports", listOf("crash", "report", "errors")),
+    SettingsEntry(SettingsCategory.Diagnostics, "Open diagnostics", listOf("log", "debug", "protocol dumps")),
+    SettingsEntry(SettingsCategory.Diagnostics, "Protocol dumps", listOf("log", "debug", "network")),
+
+    // About
+    SettingsEntry(SettingsCategory.About, "Version", listOf("build", "edition")),
+    SettingsEntry(SettingsCategory.About, "Source code", listOf("github", "repository", "licenses")),
+    SettingsEntry(SettingsCategory.About, "Storage profile", listOf("diagnostics", "test server"))
+)
+
+/**
+ * Finds the rows matching a query. Every whitespace-separated token has to occur
+ * in the row title, its keywords or its section, so a second word narrows the
+ * result instead of widening it. A section whose own title matches but has no
+ * matching row is returned as a single result, so "storage" still finds the
+ * section. An empty query returns nothing: the category list is shown instead.
+ */
+internal fun searchSettings(
+    query: String,
+    entries: List<SettingsEntry> = SettingsEntries
+): List<SettingsEntry> {
+    val tokens = query.trim().lowercase()
+        .split(Regex("\\s+"))
+        .filter { token -> token.isNotEmpty() }
+
+    if (tokens.isEmpty()) return emptyList()
+
+    fun String.containsAllTokens() = tokens.all { token -> lowercase().contains(token) }
+
+    val rows = entries.filter { entry ->
+        val haystack = buildString {
+            append(entry.title)
+
+            entry.keywords.forEach { keyword ->
+                append(' ')
+                append(keyword)
+            }
+        }
+
+        haystack.containsAllTokens()
+    }
+
+    val covered = rows.mapTo(mutableSetOf()) { entry -> entry.category }
+
+    val sections = SettingsCategory.entries
+        .filter { category -> category !in covered }
+        .filter { category ->
+            // Rows carry the descriptions, so the fallback only needs the
+            // section's own title and keywords here.
+            val haystack = buildString {
+                append(category.title)
+
+                category.keywords.forEach { keyword ->
+                    append(' ')
+                    append(keyword)
+                }
+            }
+
+            haystack.containsAllTokens()
+        }
+        .map { category -> SettingsEntry(category, category.title) }
+
+    // Rows keep the order of the index, which is grouped by section already.
+    return rows + sections
 }
 
 @Composable
-fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
+fun SettingsScreen(
+    onOpenDiagnostics: () -> Unit
+) {
     val isTwoPane = isTwoPaneLayout()
     val settings by AppSettingsStore.state.collectAsState()
     val scope = rememberCoroutineScope()
+    var categoryQuery by rememberSaveable { mutableStateOf("") }
     val filePicker = rememberFilePicker(
         onImagesPicked = { picked ->
             picked.firstOrNull()?.let { file ->
@@ -125,7 +272,13 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
     )
 
     if (isTwoPane) {
-        var selected by remember { mutableStateOf(SettingsCategory.ChatList) }
+        // rememberSaveable keeps the open section across navigation and
+        // activity recreation; the enum itself is stored by name so the value
+        // is a plain string.
+        var selectedName by rememberSaveable { mutableStateOf(SettingsCategory.ChatList.name) }
+        val selected = SettingsCategory.entries
+            .firstOrNull { category -> category.name == selectedName }
+            ?: SettingsCategory.ChatList
 
         Row(Modifier.fillMaxSize()) {
             SettingsCategories(
@@ -133,7 +286,9 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                     .width(280.dp)
                     .fillMaxHeight(),
                 selected = selected,
-                onSelect = { selected = it }
+                query = categoryQuery,
+                onQueryChange = { categoryQuery = it },
+                onSelect = { selectedName = it.name }
             )
 
             VerticalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
@@ -145,21 +300,23 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                 category = selected,
                 settings = settings,
                 onPickWallpaper = { filePicker.pickImages() },
-                onOpenAccountsScreen = onOpenAccountsScreen
+                onOpenDiagnostics = onOpenDiagnostics
             )
         }
 
         return
     }
 
-    var openedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
-    val category = openedCategory
+    var openedName by rememberSaveable { mutableStateOf("") }
+    val category = SettingsCategory.entries.firstOrNull { it.name == openedName }
 
     if (category == null) {
         SettingsCategories(
             modifier = Modifier.fillMaxSize(),
             selected = null,
-            onSelect = { openedCategory = it }
+            query = categoryQuery,
+            onQueryChange = { categoryQuery = it },
+            onSelect = { category -> openedName = category.name }
         )
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -169,7 +326,7 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { openedCategory = null }) {
+                IconButton(onClick = { openedName = "" }) {
                     Icon(
                         imageVector = arrow_back_icon,
                         contentDescription = "Back"
@@ -186,16 +343,18 @@ fun SettingsScreen(onOpenAccountsScreen: () -> Unit) {
                 category = category,
                 settings = settings,
                 onPickWallpaper = { filePicker.pickImages() },
-                onOpenAccountsScreen = onOpenAccountsScreen
+                onOpenDiagnostics = onOpenDiagnostics
             )
         }
     }
 }
 
 @Composable
-private fun SettingsCategories(
+internal fun SettingsCategories(
     modifier: Modifier = Modifier,
     selected: SettingsCategory?,
+    query: String,
+    onQueryChange: (String) -> Unit,
     onSelect: (SettingsCategory) -> Unit
 ) {
     Column(modifier.verticalScroll(rememberScrollState())) {
@@ -205,1464 +364,207 @@ private fun SettingsCategories(
             style = MaterialTheme.typography.titleLarge
         )
 
-        SettingsCategory.entries.forEach { category ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = if (selected == category) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                } else {
-                    Color.Transparent
-                },
-                onClick = { onSelect(category) }
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        text = category.title,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    Text(
-                        text = category.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+        OutlinedTextField(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            value = query,
+            onValueChange = onQueryChange,
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            placeholder = { Text("Search settings") },
+            leadingIcon = {
+                Icon(
+                    imageVector = search_icon,
+                    contentDescription = null
+                )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = close_icon,
+                            contentDescription = "Clear search"
+                        )
+                    }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun SettingsCategoryContent(
-    modifier: Modifier = Modifier,
-    category: SettingsCategory,
-    settings: AppSettings,
-    onPickWallpaper: () -> Unit,
-    onOpenAccountsScreen: () -> Unit
-) {
-    Column(
-        modifier = modifier
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = category.title,
-            style = MaterialTheme.typography.titleLarge
         )
 
-        when (category) {
-            SettingsCategory.ChatList -> {
-                Text(
-                    text = "Chat wallpaper",
-                    style = MaterialTheme.typography.titleMedium
+        if (query.isBlank()) {
+            SettingsCategory.entries.forEach { category ->
+                SettingsNavRow(
+                    icon = category.icon,
+                    title = category.title,
+                    subtitle = category.description,
+                    selected = selected == category,
+                    onClick = { onSelect(category) }
                 )
-
-                Text(
-                    text = if (settings.hasCustomWallpaper) {
-                        "A custom wallpaper is used in chats without their own."
-                    } else {
-                        "The default wallpaper is used in chats without their own."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onPickWallpaper) {
-                        Text("Pick wallpaper")
-                    }
-
-                    if (settings.hasCustomWallpaper) {
-                        Button(onClick = { AppSettingsStore.removeWallpaper() }) {
-                            Text("Remove")
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                SettingsSwitch(
-                    title = "Show the \"All\" tab",
-                    description = "Add a chip that displays every chat at once.",
-                    checked = settings.showAllChatsTab,
-                    onCheckedChange = { value ->
-                        AppSettingsStore.update { it.copy(showAllChatsTab = value) }
-                    }
-                )
-
-                SettingsSwitch(
-                    title = "Single row filters",
-                    description = "Lay out folder chips in one scrollable row.",
-                    checked = settings.singleRowFilters,
-                    onCheckedChange = { value ->
-                        AppSettingsStore.update { it.copy(singleRowFilters = value) }
-                    }
-                )
-
-                SettingsSwitch(
-                    title = "Merge duplicate chats",
-                    description = "Show the same chat from several accounts as one " +
-                        "row with all account avatars and pick the account on tap.",
-                    checked = settings.mergeDuplicateDialogs,
-                    onCheckedChange = { value ->
-                        AppSettingsStore.update { it.copy(mergeDuplicateDialogs = value) }
-                    }
-                )
-
-                SettingsSwitch(
-                    title = "Use Telegram folders",
-                    description = "Show native server-side chat folders.",
-                    checked = settings.useNativeFolders,
-                    onCheckedChange = { value ->
-                        AppSettingsStore.update { it.copy(useNativeFolders = value) }
-                    }
-                )
-
-                val accountState by ApiManager.accountState.collectAsState()
-                var selectedAccountId by remember {
-                    mutableStateOf(
-                        accountState.activeAccountId
-                            ?: accountState.accounts.firstOrNull()?.id
-                    )
-                }
-                val selectedSession = remember(selectedAccountId) {
-                    selectedAccountId?.let { accountId -> ApiManager.session(accountId) }
-                }
-                var reorderKind by remember { mutableStateOf<StickerPackKind?>(null) }
-
-                if (accountState.accounts.size > 1) {
-                    Text(
-                        text = "Account for pack settings",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        accountState.accounts.forEach { account ->
-                            if (account.id == selectedAccountId) {
-                                Button(onClick = {}) { Text(account.displayName) }
-                            } else {
-                                TextButton(onClick = { selectedAccountId = account.id }) {
-                                    Text(account.displayName)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { reorderKind = StickerPackKind.Sticker }) {
-                        Text("Reorder sticker packs")
-                    }
-
-                    Button(onClick = { reorderKind = StickerPackKind.CustomEmoji }) {
-                        Text("Reorder emoji packs")
-                    }
-                }
-
-                reorderKind?.let { kind ->
-                    PackOrderDialog(
-                        kind = kind,
-                        session = selectedSession,
-                        order = if (kind == StickerPackKind.Sticker) {
-                            settings.stickerPackOrders[selectedAccountId].orEmpty()
-                        } else {
-                            settings.emojiPackOrders[selectedAccountId].orEmpty()
-                        },
-                        onDismiss = { reorderKind = null },
-                        onSave = { orderedIds ->
-                            val accountId = selectedAccountId
-                                ?: return@PackOrderDialog
-
-                            AppSettingsStore.update { current ->
-                                if (kind == StickerPackKind.Sticker) {
-                                    current.copy(
-                                        stickerPackOrders = current.stickerPackOrders +
-                                            (accountId to orderedIds)
-                                    )
-                                } else {
-                                    current.copy(
-                                        emojiPackOrders = current.emojiPackOrders +
-                                            (accountId to orderedIds)
-                                    )
-                                }
-                            }
-                            reorderKind = null
-                        }
-                    )
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                SettingsSwitch(
-                    title = "Recent emoji and stickers",
-                    description = "Show recently used emoji and stickers at the top of the picker.",
-                    checked = settings.showRecentStickersAndEmojis,
-                    onCheckedChange = { value ->
-                        AppSettingsStore.update {
-                            it.copy(showRecentStickersAndEmojis = value)
-                        }
-                    }
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                SettingsSwitch(
-                    title = "System emoji",
-                    description = "Show the standard emoji categories in the picker.",
-                    checked = settings.showSystemEmojis,
-                    onCheckedChange = { value ->
-                        AppSettingsStore.update { it.copy(showSystemEmojis = value) }
-                    }
-                )
-
-                var emojiEditorOpen by remember { mutableStateOf(false) }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { emojiEditorOpen = true },
-                        enabled = settings.showSystemEmojis
-                    ) {
-                        Text("Choose emoji")
-                    }
-
-                    if (settings.disabledEmojis.isNotEmpty()) {
-                        Button(
-                            onClick = {
-                                AppSettingsStore.update { it.copy(disabledEmojis = emptySet()) }
-                            },
-                            enabled = settings.showSystemEmojis
-                        ) {
-                            Text("Enable all")
-                        }
-                    }
-                }
-
-                if (emojiEditorOpen) {
-                    SystemEmojiDialog(
-                        disabled = settings.disabledEmojis,
-                        onToggle = { emoji ->
-                            AppSettingsStore.update { current ->
-                                val disabled = if (emoji in current.disabledEmojis) {
-                                    current.disabledEmojis - emoji
-                                } else {
-                                    current.disabledEmojis + emoji
-                                }
-
-                                current.copy(disabledEmojis = disabled)
-                            }
-                        },
-                        onDismiss = { emojiEditorOpen = false }
-                    )
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                Text(
-                    text = "Quick reactions",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Text(
-                    text = "The emoji shown above a message's action menu.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-
-                Text(
-                    text = settings.quickReactions.joinToString("  "),
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                var reactionsEditorOpen by remember { mutableStateOf(false) }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { reactionsEditorOpen = true }) {
-                        Text("Choose reactions")
-                    }
-
-                    if (settings.quickReactions != DefaultQuickReactions) {
-                        Button(
-                            onClick = {
-                                AppSettingsStore.update { current ->
-                                    current.copy(quickReactions = DefaultQuickReactions)
-                                }
-                            }
-                        ) {
-                            Text("Reset")
-                        }
-                    }
-                }
-
-                if (reactionsEditorOpen) {
-                    QuickReactionsDialog(
-                        selected = settings.quickReactions,
-                        onToggle = { emoji ->
-                            AppSettingsStore.update { current ->
-                                val updated = if (emoji in current.quickReactions) {
-                                    current.quickReactions - emoji
-                                } else {
-                                    current.quickReactions + emoji
-                                }
-
-                                // Keep at least one emoji so the row never vanishes.
-                                if (updated.isEmpty()) current else current.copy(
-                                    quickReactions = updated
-                                )
-                            }
-                        },
-                        onDismiss = { reactionsEditorOpen = false }
-                    )
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                PinnedReactionsEditor()
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                DoubleTapReactionEditor()
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                Text(
-                    text = "Default home tab",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Text(
-                    text = "The tab selected when the chat list opens.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    HomeTabOptions.forEach { (key, label) ->
-                        if (settings.defaultHomeTab == key) {
-                            Button(onClick = {}) {
-                                Text(label)
-                            }
-                        } else {
-                            TextButton(
-                                onClick = {
-                                    AppSettingsStore.update { current ->
-                                        current.copy(defaultHomeTab = key)
-                                    }
-                                }
-                            ) {
-                                Text(label)
-                            }
-                        }
-                    }
-                }
             }
+        } else {
+            // A query searches every row of every section, including sections
+            // that were never opened, so a specific switch can be found by name.
+            val results = searchSettings(query)
 
-            SettingsCategory.Notifications -> SettingsNotificationsContent()
-
-            SettingsCategory.Backup -> SettingsBackupContent()
-
-            SettingsCategory.Storage -> SettingsStorageContent()
-
-            SettingsCategory.Accounts -> {
+            if (results.isEmpty()) {
                 Text(
-                    text = "Manage the accounts Scrollix connects to.",
+                    modifier = Modifier.padding(16.dp),
+                    text = "No settings match \"$query\".",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary
                 )
-
-                Button(onClick = onOpenAccountsScreen) {
-                    Text("Manage accounts")
-                }
             }
 
-            SettingsCategory.About -> SettingsAboutContent()
+            results.forEach { entry ->
+                SettingsNavRow(
+                    icon = entry.category.icon,
+                    title = entry.title,
+                    subtitle = entry.category.title,
+                    selected = false,
+                    onClick = { onSelect(entry.category) }
+                )
+            }
         }
     }
 }
 
-private const val ScrollixGitHubUrl = "https://github.com/MrBoomDeveloper/Scrollix"
-
-private val AboutStack = listOf(
-    "Kotlin Multiplatform",
-    "Compose Multiplatform",
-    "TDLib",
-    "Material 3"
-)
-
-/**
- * The About page: a branded hero card, a link to the source repository and a
- * few facts about this install. It is laid out with Material 3 cards, tonal
- * surfaces and pill-shaped labels so it feels at home in the rest of Settings.
- */
 @Composable
-private fun SettingsAboutContent() {
-    val uriHandler = LocalUriHandler.current
-
-    Card(
+internal fun SettingsNavRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.tertiary
-                        )
-                    )
-                )
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        modifier = Modifier.size(30.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        imageVector = chat_bubble_icon,
-                        contentDescription = null
-                    )
-                }
-
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "Scrollix",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-
-                    Text(
-                        text = "A multi-provider messenger",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
-                    )
-                }
-            }
-
-            Text(
-                text = "Scrollix brings Telegram, MAX and VK into one native-feeling app " +
-                    "for Android and desktop. One Compose Multiplatform UI, a shared " +
-                    "multi-account chat list, server-side folders, topics, media " +
-                    "galleries, and settings that stay in sync with your accounts.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.92f)
-            )
-
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                for (label in AboutStack) {
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f)
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            text = label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .clickable { uriHandler.openUri(ScrollixGitHubUrl) },
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
+        shape = MaterialTheme.shapes.large,
+        
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else Color.Transparent,
+        
+        onClick = onClick
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(
+                        if(selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainer
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     modifier = Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                    imageVector = link_icon,
+                    imageVector = icon,
+                    tint = if (selected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
                     contentDescription = null
                 )
             }
 
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "Source code on GitHub",
-                    style = MaterialTheme.typography.titleSmall
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium
                 )
 
                 Text(
-                    text = "github.com/MrBoomDeveloper/Scrollix",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    color = if(selected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else MaterialTheme.colorScheme.secondary
                 )
             }
-
-            OutlinedButton(onClick = { uriHandler.openUri(ScrollixGitHubUrl) }) {
-                Text("Open")
-            }
         }
     }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            AboutFact(label = "Platform", value = getPlatform().name)
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-
-            AboutFact(
-                label = "Edition",
-                value = if (AppMode.isTestServerMode) "Test server" else "Production"
-            )
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-
-            AboutFact(label = "Storage profile", value = AppMode.storageProfileName)
-        }
-    }
-
-    Text(
-        modifier = Modifier.padding(horizontal = 4.dp),
-        text = "Contributions, bug reports and feature requests are welcome on GitHub. " +
-            "Scrollix is an independent client and is not affiliated with Telegram, " +
-            "MAX or VK.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary
-    )
 }
 
+internal val SettingsCategory.icon: ImageVector
+    get() = when (this) {
+        SettingsCategory.ChatList -> chat_bubble_icon
+        SettingsCategory.Accessibility -> touch_app_icon
+        SettingsCategory.Notifications -> notifications_icon
+        SettingsCategory.Backup -> backup_icon
+        SettingsCategory.Storage -> storage_icon
+        SettingsCategory.Sessions -> devices_icon
+        SettingsCategory.DataUsage -> data_usage_icon
+        SettingsCategory.Diagnostics -> bug_report_icon
+        SettingsCategory.About -> info_icon
+    }
+
+internal val NotificationScope.icon: ImageVector
+    get() = when (this) {
+        NotificationScope.PrivateChats -> chat_bubble_icon
+        NotificationScope.Groups -> group_icon
+        NotificationScope.Channels -> campaign_icon
+    }
+
+/** Section heading with the icon of the setting it introduces. */
 @Composable
-private fun AboutFact(label: String, value: String) {
+internal fun SettingsSectionTitle(icon: ImageVector, title: String) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            modifier = Modifier.weight(1f),
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary
+        Icon(
+            modifier = Modifier.size(20.dp),
+            imageVector = icon,
+            tint = MaterialTheme.colorScheme.primary,
+            contentDescription = null
         )
 
         Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            text = title,
+            style = MaterialTheme.typography.titleMedium
         )
     }
 }
 
 @Composable
-private fun SettingsStorageContent() {
-    val scope = rememberCoroutineScope()
-    var refreshKey by remember { mutableStateOf(0) }
-    var sizes by remember { mutableStateOf<Map<CacheStore.Category, Long>>(emptyMap()) }
-
-    LaunchedEffect(refreshKey) {
-        sizes = withContext(Dispatchers.IO) {
-            CacheStore.Category.entries.associateWith { category ->
-                CacheStore.size(category)
-            }
-        }
-    }
-
-    Text(
-        text = "Dialogs, recently opened messages, stickers, custom emoji and " +
-            "avatars are kept on this device so they appear instantly after a restart.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary
-    )
-
-    CacheStore.Category.entries.forEach { category ->
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = category.title,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-
-                Text(
-                    text = formatCacheSize(sizes[category] ?: 0),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-            }
-
-            TextButton(
-                onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) { CacheStore.clear(category) }
-                        refreshKey++
-                    }
-                }
-            ) {
-                Text("Clear")
-            }
-        }
-    }
-
-    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            modifier = Modifier.weight(1f),
-            text = "Total: ${formatCacheSize(sizes.values.sum())}",
-            style = MaterialTheme.typography.bodyLarge
-        )
-
-        TextButton(
-            onClick = {
-                scope.launch {
-                    withContext(Dispatchers.IO) { CacheStore.clearAll() }
-                    refreshKey++
-                }
-            }
-        ) {
-            Text("Clear all")
-        }
-    }
-}
-
-@Composable
-private fun PackOrderDialog(
-    kind: StickerPackKind,
-    session: AccountSession?,
-    order: List<Long>,
-    onDismiss: () -> Unit,
-    onSave: (List<Long>) -> Unit
-) {
-    var items by remember(kind, session) { mutableStateOf<List<ReorderItem>?>(null) }
-
-    LaunchedEffect(kind, session, order) {
-        val packs = session?.loadStickerPacks(kind)
-            ?.getOrDefault(emptyList())
-            .orEmpty()
-
-        items = orderedStickerPacks(packs, order).map { pack ->
-            ReorderItem(key = pack.id.toString(), title = pack.title)
-        }
-    }
-
-    val loadedItems = items
-
-    when {
-        loadedItems == null -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("Loading packs") },
-            text = { CircularProgressIndicator() },
-            confirmButton = {}
-        )
-
-        loadedItems.isEmpty() -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("No packs installed") },
-            text = { Text("Install a pack in Telegram to reorder it here.") },
-            confirmButton = {
-                TextButton(onClick = onDismiss) { Text("OK") }
-            }
-        )
-
-        else -> ReorderDialog(
-            title = if (kind == StickerPackKind.Sticker) {
-                "Sticker packs"
-            } else {
-                "Emoji packs"
-            },
-            items = loadedItems,
-            onDismiss = onDismiss,
-            onConfirm = { keys ->
-                onSave(keys.mapNotNull { key -> key.toLongOrNull() })
-            }
-        )
-    }
-}
-
-private fun formatCacheSize(bytes: Long): String {
-    return when {
-        bytes <= 0 -> "0 B"
-        bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-        bytes < 1024L * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
-        else -> "${bytes / (1024 * 1024 * 1024)} GB"
-    }
-}
-
-@Composable
-private fun SettingsBackupContent() {
-    val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf<String?>(null) }
-
-    val filePicker = rememberFilePicker(
-        onImagesPicked = {},
-        onFilesPicked = { picked ->
-            picked.firstOrNull()?.let { file ->
-                scope.launch {
-                    val text = withContext(Dispatchers.IO) {
-                        readFileBytes(file.path)?.decodeToString()
-                    }
-
-                    message = if (text != null && AppSettingsStore.importJson(text)) {
-                        "Restored settings from ${file.name}."
-                    } else {
-                        "Could not restore settings from ${file.name}."
-                    }
-                }
-            }
-        }
-    )
-
-    Text(
-        text = "The backup keeps your chat list preferences, quick reactions, " +
-            "emoji settings and the default home tab. Wallpapers and accounts " +
-            "are not included.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary
-    )
-
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-            onClick = {
-                scope.launch {
-                    val path = saveFileToDevice(
-                        fileName = "scrollix-settings.json",
-                        bytes = AppSettingsStore.exportJson().encodeToByteArray()
-                    )
-
-                    message = if (path != null) {
-                        "Backup saved to $path"
-                    } else {
-                        "Could not save the backup."
-                    }
-                }
-            }
-        ) {
-            Text("Back up settings")
-        }
-
-        Button(onClick = { filePicker.pickFiles() }) {
-            Text("Restore")
-        }
-    }
-
-    message?.let { text ->
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.secondary
-        )
-    }
-}
-
-@Composable
-private fun SystemEmojiDialog(
-    disabled: Set<String>,
-    onToggle: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("System emoji") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Tap an emoji to hide it from the picker.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-
-                LazyVerticalGrid(
-                    modifier = Modifier.height(360.dp),
-                    columns = GridCells.Adaptive(40.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    EmojiCatalog.forEach { category ->
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Text(
-                                modifier = Modifier.padding(top = 6.dp),
-                                text = category.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-
-                        items(category.emojis) { emoji ->
-                            val isDisabled = emoji in disabled
-
-                            Box(
-                                modifier = Modifier
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(
-                                        if (isDisabled) {
-                                            MaterialTheme.colorScheme.surfaceContainerHigh
-                                        } else {
-                                            Color.Transparent
-                                        }
-                                    )
-                                    .clickable { onToggle(emoji) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = emoji,
-                                    fontSize = 20.sp,
-                                    modifier = Modifier.alpha(if (isDisabled) 0.3f else 1f)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done")
-            }
-        }
-    )
-}
-
-@Composable
-private fun QuickReactionsDialog(
-    selected: List<String>,
-    onToggle: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Quick reactions") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Tap an emoji to show or hide it above the message menu.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-
-                LazyVerticalGrid(
-                    modifier = Modifier.height(360.dp),
-                    columns = GridCells.Adaptive(40.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    items(ReactionCatalog) { emoji ->
-                        val isSelected = emoji in selected
-
-                        Box(
-                            modifier = Modifier
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (isSelected) {
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
-                                    } else {
-                                        Color.Transparent
-                                    }
-                                )
-                                .clickable { onToggle(emoji) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = emoji,
-                                fontSize = 20.sp
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done")
-            }
-        }
-    )
-}
-
-@Composable
-private fun PinnedReactionsEditor() {
-    val settings by AppSettingsStore.state.collectAsState()
-    val accountState by ApiManager.accountState.collectAsState()
-    var accountId by remember {
-        mutableStateOf(
-            accountState.activeAccountId ?: accountState.accounts.firstOrNull()?.id
-        )
-    }
-    val session = remember(accountId) {
-        accountId?.let { id -> ApiManager.session(id) }
-    }
-    var pickerOpen by remember { mutableStateOf(false) }
-
-    if (accountState.accounts.size > 1) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            accountState.accounts.forEach { account ->
-                if (account.id == accountId) {
-                    Button(onClick = {}) { Text(account.displayName) }
-                } else {
-                    TextButton(onClick = { accountId = account.id }) {
-                        Text(account.displayName)
-                    }
-                }
-            }
-        }
-    }
-
-    Text(
-        text = "Pinned reactions",
-        style = MaterialTheme.typography.titleMedium
-    )
-
-    Text(
-        text = "These reactions stay one tap away above a message's action menu. " +
-            "Custom emoji reactions are supported too.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary
-    )
-
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        settings.pinnedCustomReactions.forEach { preference ->
-            OutlinedButton(
-                onClick = {
-                    AppSettingsStore.update { current ->
-                        current.copy(
-                            pinnedCustomReactions = current.pinnedCustomReactions
-                                .filterNot { it.key == preference.key }
-                        )
-                    }
-                }
-            ) {
-                Text(preference.emoji.ifBlank { "Custom emoji" })
-                Text("  ✕", color = MaterialTheme.colorScheme.secondary)
-            }
-        }
-    }
-
-    Button(
-        enabled = session != null,
-        onClick = { pickerOpen = true }
-    ) {
-        Text("Add custom reaction")
-    }
-
-    if (pickerOpen && session != null) {
-        Dialog(
-            onDismissRequest = { pickerOpen = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Surface(
-                modifier = Modifier.padding(24.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                EmojiPicker(
-                    session = session,
-                    onEmojiSelected = { emoji ->
-                        AppSettingsStore.update { current ->
-                            current.copy(
-                                pinnedCustomReactions = current.pinnedCustomReactions +
-                                    ReactionPreference(emoji = emoji)
-                            )
-                        }
-                        pickerOpen = false
-                    },
-                    onCustomEmojiSelected = { emojiId, fallback ->
-                        AppSettingsStore.update { current ->
-                            current.copy(
-                                pinnedCustomReactions = current.pinnedCustomReactions +
-                                    ReactionPreference(emoji = fallback, customEmojiId = emojiId)
-                            )
-                        }
-                        pickerOpen = false
-                    },
-                    onStickerSelected = { pickerOpen = false },
-                    onAnimationSelected = { pickerOpen = false }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DoubleTapReactionEditor() {
-    val settings by AppSettingsStore.state.collectAsState()
-    var emojiPickerOpen by remember { mutableStateOf(false) }
-
-    Text(
-        text = "Double-tap reaction",
-        style = MaterialTheme.typography.titleMedium
-    )
-
-    Text(
-        text = "Sent when a message is double-tapped on a phone. " +
-            "Without an explicit choice the first pinned reaction is used.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary
-    )
-
-    val pinned = settings.quickReactions.map { emoji -> ReactionPreference(emoji) } +
-        settings.pinnedCustomReactions
-    val current = settings.doubleTapReaction
-
-    Text(
-        text = current?.emoji?.ifBlank { "Custom emoji" }
-            ?: pinned.firstOrNull()?.emoji?.ifBlank { "Custom emoji" }
-            ?: "Default",
-        style = MaterialTheme.typography.titleMedium
-    )
-
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        pinned.forEach { preference ->
-            val selected = current?.key == preference.key
-
-            OutlinedButton(
-                onClick = {
-                    AppSettingsStore.update { it.copy(doubleTapReaction = preference) }
-                }
-            ) {
-                Text(
-                    text = preference.emoji.ifBlank { "Custom" },
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                )
-            }
-        }
-
-        TextButton(
-            onClick = {
-                AppSettingsStore.update { it.copy(doubleTapReaction = null) }
-            }
-        ) {
-            Text("First pinned")
-        }
-    }
-
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { emojiPickerOpen = true }) {
-            Text("Choose another emoji")
-        }
-
-        if (current != null) {
-            TextButton(
-                onClick = {
-                    AppSettingsStore.update { it.copy(doubleTapReaction = null) }
-                }
-            ) {
-                Text("Reset")
-            }
-        }
-    }
-
-    if (emojiPickerOpen) {
-        AlertDialog(
-            onDismissRequest = { emojiPickerOpen = false },
-            title = { Text("Double-tap reaction") },
-            text = {
-                LazyVerticalGrid(
-                    modifier = Modifier.height(360.dp),
-                    columns = GridCells.Adaptive(40.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    items(ReactionCatalog) { emoji ->
-                        Box(
-                            modifier = Modifier
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable {
-                                    AppSettingsStore.update {
-                                        it.copy(
-                                            doubleTapReaction = ReactionPreference(emoji = emoji)
-                                        )
-                                    }
-                                    emojiPickerOpen = false
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = emoji, fontSize = 20.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { emojiPickerOpen = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun SettingsNotificationsContent() {
-    val accountState by ApiManager.accountState.collectAsState()
-    val sessionStates by ApiManager.sessionStates.collectAsState()
-    val accounts = accountState.accounts.filter { account ->
-        sessionStates[account.id] is AuthState.Ready
-    }
-
-    Text(
-        text = "Notification settings are stored on Telegram's servers and apply " +
-            "to every device signed in to the account.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary
-    )
-
-    if (accounts.isEmpty()) {
-        Text(
-            text = "Sign in to an account to change its notification settings.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary
-        )
-        return
-    }
-
-    accounts.forEach { account ->
-        AccountNotificationSettings(account.id, account.displayName)
-    }
-}
-
-@Composable
-private fun AccountNotificationSettings(accountId: String, displayName: String) {
-    val session = remember(accountId) { ApiManager.session(accountId) }
-    val scope = rememberCoroutineScope()
-    var settings by remember(accountId) { mutableStateOf<NotificationSettings?>(null) }
-    var busy by remember(accountId) { mutableStateOf(false) }
-    var refreshKey by remember(accountId) { mutableStateOf(0) }
-    var exceptions by remember(accountId) {
-        mutableStateOf<Map<NotificationScope, List<NotificationException>>>(emptyMap())
-    }
-    var loadingExceptions by remember(accountId) {
-        mutableStateOf<Set<NotificationScope>>(emptySet())
-    }
-    var busyExceptionId by remember(accountId) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(accountId, refreshKey) {
-        settings = session?.loadNotificationSettings()?.getOrNull()
-    }
-
-    // Per-chat overrides are listed under the category they belong to, so the
-    // settings screen shows exactly which chats are excluded from the scope.
-    LaunchedEffect(accountId, settings) {
-        val currentSession = session ?: return@LaunchedEffect
-
-        NotificationScope.entries.forEach { scopeValue ->
-            if (scopeValue in exceptions) return@forEach
-
-            loadingExceptions = loadingExceptions + scopeValue
-
-            currentSession.loadNotificationExceptions(scopeValue).onSuccess { loaded ->
-                exceptions = exceptions + (scopeValue to loaded)
-            }
-
-            loadingExceptions = loadingExceptions - scopeValue
-        }
-    }
-
-    fun updateException(
-        providerDialogId: String,
-        transform: (NotificationException) -> NotificationException?
-    ) {
-        exceptions = exceptions.mapValues { (_, list) ->
-            list.mapNotNull { exception ->
-                if (exception.providerDialogId == providerDialogId) {
-                    transform(exception)
-                } else {
-                    exception
-                }
-            }
-        }
-    }
-
-    fun toggleException(exception: NotificationException, muted: Boolean) {
-        val currentSession = session ?: return
-        if (busyExceptionId != null) return
-
-        busyExceptionId = exception.providerDialogId
-
-        scope.launch {
-            currentSession.setDialogMuted(exception.providerDialogId, muted)
-                .onSuccess {
-                    updateException(exception.providerDialogId) { current ->
-                        current.copy(isMuted = muted)
-                    }
-                }
-
-            busyExceptionId = null
-        }
-    }
-
-    fun resetException(exception: NotificationException) {
-        val currentSession = session ?: return
-        if (busyExceptionId != null) return
-
-        busyExceptionId = exception.providerDialogId
-
-        scope.launch {
-            currentSession.resetDialogNotificationSettings(exception.providerDialogId)
-                .onSuccess {
-                    // Following the scope defaults again removes the chat from
-                    // the exceptions list instead of leaving a muted row.
-                    updateException(exception.providerDialogId) { null }
-                }
-
-            busyExceptionId = null
-        }
-    }
-
-    fun setScope(scopeValue: NotificationScope, muted: Boolean) {
-        val currentSession = session ?: return
-        if (busy) return
-
-        busy = true
-        scope.launch {
-            currentSession.setScopeMuted(scopeValue, muted).onSuccess {
-                settings = settings?.let { current ->
-                    current.copy(
-                        mutedScopes = if (muted) {
-                            current.mutedScopes + scopeValue
-                        } else {
-                            current.mutedScopes - scopeValue
-                        }
-                    )
-                }
-            }
-            busy = false
-        }
-    }
-
-    fun setAll(muted: Boolean) {
-        val currentSession = session ?: return
-        if (busy) return
-
-        busy = true
-        scope.launch {
-            NotificationScope.entries.forEach { scopeValue ->
-                currentSession.setScopeMuted(scopeValue, muted)
-            }
-            busy = false
-            refreshKey++
-        }
-    }
-
-    Text(
-        modifier = Modifier.padding(top = 8.dp),
-        text = displayName,
-        style = MaterialTheme.typography.titleMedium
-    )
-
-    val loaded = settings
-    val allMuted = loaded?.allMuted == true
-
-    SettingsSwitch(
-        title = "All notifications from this account",
-        description = "Mute private chats, groups and channels at once.",
-        checked = loaded != null && !allMuted,
-        onCheckedChange = { enabled -> setAll(!enabled) }
-    )
-
-    NotificationScope.entries.forEach { notificationScope ->
-        SettingsSwitch(
-            title = notificationScope.title,
-            description = if (loaded == null) {
-                "Loading server settings..."
-            } else if (loaded.isMuted(notificationScope)) {
-                "Muted on the server."
-            } else {
-                "Notifications are enabled."
-            },
-            checked = loaded?.isMuted(notificationScope) != true,
-            onCheckedChange = { enabled -> setScope(notificationScope, !enabled) }
-        )
-
-        NotificationExceptionsList(
-            scope = notificationScope,
-            exceptions = exceptions[notificationScope].orEmpty(),
-            isLoading = notificationScope in loadingExceptions,
-            busyId = busyExceptionId,
-            onToggleMute = ::toggleException,
-            onReset = ::resetException
-        )
-    }
-
-    if (busy) {
-        CircularProgressIndicator(modifier = Modifier.height(20.dp))
-    }
-
-    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-}
-
-@Composable
-private fun NotificationExceptionsList(
-    scope: NotificationScope,
-    exceptions: List<NotificationException>,
-    isLoading: Boolean,
-    busyId: String?,
-    onToggleMute: (NotificationException, Boolean) -> Unit,
-    onReset: (NotificationException) -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(
-            modifier = Modifier.padding(top = 4.dp),
-            text = "${scope.title} exceptions",
-            style = MaterialTheme.typography.titleSmall
-        )
-
-        when {
-            isLoading && exceptions.isEmpty() -> Text(
-                text = "Loading exceptions...",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary
-            )
-
-            exceptions.isEmpty() -> Text(
-                text = "Every chat follows these settings.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary
-            )
-
-            else -> exceptions.forEach { exception ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AvatarImage(
-                        avatar = exception.avatar
-                            ?: Avatar.fromName(exception.title),
-                        size = 32.dp
-                    )
-
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = exception.title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Text(
-                            text = if (exception.isMuted) {
-                                "Muted for this chat."
-                            } else {
-                                "Has its own alert settings."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-
-                    TextButton(
-                        enabled = busyId == null,
-                        onClick = { onReset(exception) }
-                    ) {
-                        Text("Reset")
-                    }
-
-                    Switch(
-                        checked = exception.isMuted,
-                        enabled = busyId == null,
-                        onCheckedChange = { muted -> onToggleMute(exception, muted) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-private val HomeTabOptions = listOf(
-    "all" to "All",
-    "direct" to "DM",
-    "groups" to "Groups",
-    "channels" to "Channels",
-    "bots" to "Bots"
-)
-
-private val ReactionCatalog = listOf(
-    "👍", "❤️", "🔥", "🎉", "😁", "😂", "🥰", "😍", "🤩", "😎",
-    "🤔", "😮", "😢", "😡", "🙏", "👏", "💯", "✅", "❌", "⭐",
-    "👀", "🤝", "💔", "🍾", "🤯", "😴", "🌚", "🤡", "🗿", "❤️‍🔥"
-)
-
-@Composable
-private fun SettingsSwitch(
+internal fun SettingsSwitch(
     title: String,
     description: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    icon: ImageVector? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (icon != null) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    modifier = Modifier.size(20.dp),
+                    imageVector = icon,
+                    tint = MaterialTheme.colorScheme.primary,
+                    contentDescription = null
+                )
+            }
+        }
+
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,

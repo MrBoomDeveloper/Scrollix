@@ -73,10 +73,18 @@ internal interface CacheDao {
     suspend fun clearMessages()
 }
 
+/**
+ * Schema version of the cache database. Bumping it requires an explicit Room
+ * migration (or a deliberate destructive fallback); the cache is rebuildable,
+ * but losing it on upgrade must be a decision, not a side effect. Payload
+ * changes are part of the schema too, because rows store serialized models.
+ */
+internal const val CacheDatabaseVersion = 1
+
 @Database(
     entities = [CachedDialogsEntity::class, CachedMessagesEntity::class],
-    version = 1,
-    exportSchema = false
+    version = CacheDatabaseVersion,
+    exportSchema = true
 )
 @ConstructedBy(ScrollixCacheDatabaseConstructor::class)
 internal abstract class ScrollixCacheDatabase : RoomDatabase() {

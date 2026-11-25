@@ -12,13 +12,17 @@ import kotlinx.coroutines.flow.asStateFlow
 data class MediaViewerRequest(
     val media: MessageMedia,
     val session: AccountSession?,
-    val isVideo: Boolean
+    val isVideo: Boolean,
+    /** Caption of the message the media belongs to; empty when it has none. */
+    val caption: String = ""
 )
 
 data class MediaGalleryRequest(
     val media: List<MessageMedia>,
     val initialIndex: Int,
-    val session: AccountSession?
+    val session: AccountSession?,
+    /** Caption of the album's message, shown over every attachment. */
+    val caption: String = ""
 )
 
 object MediaViewer {
@@ -28,20 +32,39 @@ object MediaViewer {
     private val _gallery = MutableStateFlow<MediaGalleryRequest?>(null)
     val gallery: StateFlow<MediaGalleryRequest?> = _gallery.asStateFlow()
 
-    fun showImage(media: MessageMedia, session: AccountSession?) {
+    fun showImage(
+        media: MessageMedia,
+        session: AccountSession?,
+        caption: String = ""
+    ) {
         _gallery.value = null
-        _request.value = MediaViewerRequest(media = media, session = session, isVideo = false)
+        _request.value = MediaViewerRequest(
+            media = media,
+            session = session,
+            isVideo = false,
+            caption = caption
+        )
     }
 
-    fun showVideo(media: MessageMedia, session: AccountSession?) {
+    fun showVideo(
+        media: MessageMedia,
+        session: AccountSession?,
+        caption: String = ""
+    ) {
         _gallery.value = null
-        _request.value = MediaViewerRequest(media = media, session = session, isVideo = true)
+        _request.value = MediaViewerRequest(
+            media = media,
+            session = session,
+            isVideo = true,
+            caption = caption
+        )
     }
 
     fun showGallery(
         media: List<MessageMedia>,
         initialIndex: Int,
-        session: AccountSession?
+        session: AccountSession?,
+        caption: String = ""
     ) {
         if (media.isEmpty()) return
 
@@ -49,7 +72,8 @@ object MediaViewer {
         _gallery.value = MediaGalleryRequest(
             media = media,
             initialIndex = initialIndex.coerceIn(0, media.lastIndex),
-            session = session
+            session = session,
+            caption = caption
         )
     }
 
@@ -78,6 +102,7 @@ fun MediaViewerOverlay() {
             media = currentGallery.media,
             initialIndex = currentGallery.initialIndex,
             session = currentGallery.session,
+            caption = currentGallery.caption,
             onClose = MediaViewer::close
         )
 
@@ -90,12 +115,14 @@ fun MediaViewerOverlay() {
         FullscreenVideoViewer(
             media = currentRequest.media,
             session = currentRequest.session,
+            caption = currentRequest.caption,
             onClose = MediaViewer::close
         )
     } else {
         FullscreenImageViewer(
             media = currentRequest.media,
             session = currentRequest.session,
+            caption = currentRequest.caption,
             onClose = MediaViewer::close
         )
     }

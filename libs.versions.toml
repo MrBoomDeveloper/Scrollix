@@ -9,6 +9,7 @@ okhttp = "4.12.0"
 compose-webview = "2.0.3"
 kcef = "2025.03.23"
 lottie = "6.7.1"
+reorderable = "3.1.0"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version = "1.6.2" }
@@ -28,6 +29,7 @@ tdlib = { module = "dev.g000sha256:tdl-coroutines", version = "18.0.0" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 androidx-room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room3" }
 androidx-room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3" }
+androidx-room3-testing = { module = "androidx.room3:room3-testing", version.ref = "room3" }
 androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 qrose = { module = "io.github.alexzhirkevich:qrose", version.ref = "qrose" }
 haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
@@ -35,3 +37,4 @@ haze-blur = { module = "dev.chrisbanes.haze:haze-blur", version.ref = "haze" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 compose-webview-multiplatform = { module = "io.github.kevinnzou:compose-webview-multiplatform", version.ref = "compose-webview" }
 kcef = { module = "dev.datlag:kcef", version.ref = "kcef" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }

@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -45,6 +46,10 @@ fun ChatAnimationPreview(
         mutableStateOf<WebmAnimation?>(null)
     }
     var isLoading by remember(media.fileId, session) { mutableStateOf(true) }
+    // Data saver → GIFs and animated stickers are not loaded until the user
+    // allows them again. The still preview stays visible instead. Read once
+    // instead of collecting: a bubble does not need to react while it is open.
+    val animationsAllowed = AppSettingsStore.state.value.dataSaving.animations
     var revealed by remember(media.fileId, media.fileUniqueId) {
         mutableStateOf(!media.isSpoiler)
     }
@@ -78,10 +83,10 @@ fun ChatAnimationPreview(
         }
     }
 
-    LaunchedEffect(media.fileId, session, widthPx, heightPx) {
+    LaunchedEffect(media.fileId, session, widthPx, heightPx, animationsAllowed) {
         val fileId = media.fileId
 
-        if (fileId != null) {
+        if (fileId != null && animationsAllowed) {
             val bytes = session?.loadMediaBytes(fileId, media.fileUniqueId)
 
             if (bytes != null) {

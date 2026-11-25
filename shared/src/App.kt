@@ -57,11 +57,14 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.savedstate.serialization.SavedStateConfiguration
 import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
+import com.mrboomdev.scrollix.features.home.adjacentDialogEntry
+import com.mrboomdev.scrollix.features.home.firstUnreadEntry
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.explore_icon
@@ -73,6 +76,7 @@ import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
 import com.mrboomdev.scrollix.ui.components.QrScannerDialog
+import com.mrboomdev.scrollix.ui.components.ShortcutCheatSheetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetTarget
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
@@ -143,11 +147,13 @@ fun App() {
         mutableStateOf<Route.Dialog?>(null)
     }
     var showQrScanner by remember { mutableStateOf(false) }
+    var showShortcuts by remember { mutableStateOf(false) }
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
     val pendingDeepLink by DeepLinkHandler.pending.collectAsState()
     val pendingChatOpen by ChatOpenHandler.pending.collectAsState()
     val backRequests by BackNavigation.requests.collectAsState()
+    val shortcutRequests by KeyboardShortcuts.requests.collectAsState()
     val isRecording by DialogRecordingState.isRecording.collectAsState()
     val currentRoute = backStack.lastOrNull()
     val uriHandler = LocalUriHandler.current
@@ -304,6 +310,11 @@ fun App() {
                 runCatching { uriHandler.openUri(request.url) }.isSuccess
 
             if (!openedInBrowser) {
+                AppLog.warning(
+                    "deeplink",
+                    "Could not open ${request.url}: ${lastError ?: "unknown error"}"
+                )
+
                 snackbarHostState.showSnackbar(
                     lastError ?: "This link could not be opened"
                 )
@@ -346,12 +357,83 @@ fun App() {
         if (isRecording) return@LaunchedEffect
 
         when {
+            showShortcuts -> showShortcuts = false
             MediaViewer.isShowing -> MediaViewer.close()
             stickerSetOverlay != null -> stickerSetOverlay = null
             showQrScanner -> showQrScanner = false
 
             backStack.size > 1 -> backStack.removeAt(backStack.lastIndex)
             else -> selectedDialog.value = null
+        }
+    }
+
+    // Desktop keyboard commands. Login owns the whole window, so shortcuts must
+    // not stack a route on top of it, and a recording owns the back gesture too.
+    LaunchedEffect(shortcutRequests, isRecording, currentRoute) {
+        val request = shortcutRequests ?: return@LaunchedEffect
+        if (isRecording) return@LaunchedEffect
+        if (currentRoute is Route.Login) return@LaunchedEffect
+
+        // The cheat sheet is modal; navigation keys must not act behind it.
+        if (showShortcuts) return@LaunchedEffect
+
+        KeyboardShortcuts.consume()
+
+        when (request.shortcut) {
+            AppShortcut.Search -> {
+                if (backStack.lastOrNull() != Route.Search()) {
+                    backStack.add(Route.Search())
+                }
+            }
+
+            AppShortcut.Settings -> {
+                if (backStack.lastOrNull() != Route.Settings) {
+                    backStack.add(Route.Settings)
+                }
+            }
+
+            AppShortcut.ShortcutCheatSheet -> showShortcuts = true
+
+            AppShortcut.NextChat,
+            AppShortcut.PreviousChat,
+            AppShortcut.JumpToUnread -> {
+                val entries = ApiManager.dialogs.value
+                val current = backStack.lastOrNull() as? Route.Dialog
+                    ?: selectedDialog.value
+
+                // The aggregated list is already sorted the way the chat list
+                // is displayed, so the keyboard moves through what the user sees.
+                val target = when (request.shortcut) {
+                    AppShortcut.JumpToUnread -> firstUnreadEntry(entries)
+
+                    else -> adjacentDialogEntry(
+                        entries = entries,
+                        currentAccountId = current?.accountId,
+                        currentProviderDialogId = current?.providerDialogId,
+                        step = if (request.shortcut == AppShortcut.NextChat) 1 else -1
+                    )
+                }
+
+                if (target == null) {
+                    if (request.shortcut == AppShortcut.JumpToUnread) {
+                        snackbarHostState.showSnackbar("No unread chats")
+                    }
+                } else {
+                    val route = Route.Dialog(
+                        accountId = target.account.id,
+                        providerDialogId = target.dialog.providerDialogId
+                    )
+
+                    // Replace the open conversation instead of stacking one
+                    // history entry per key press.
+                    if (backStack.lastOrNull() is Route.Dialog) {
+                        backStack.removeLastOrNull()
+                    }
+
+                    selectedDialog.value = null
+                    backStack.add(route)
+                }
+            }
         }
     }
 
@@ -671,6 +753,10 @@ fun App() {
                         session = activeSession,
                         onDismiss = { showQrScanner = false }
                     )
+                }
+
+                if (showShortcuts) {
+                    ShortcutCheatSheetDialog(onDismiss = { showShortcuts = false })
                 }
 
                 SnackbarHost(

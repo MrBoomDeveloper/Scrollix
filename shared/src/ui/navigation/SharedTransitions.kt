@@ -8,9 +8,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 
 /** Provides the app-wide shared transition scope to pushed screens. */
 val LocalSharedTransitionScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
@@ -31,6 +34,8 @@ fun SharedProfileElement(
 ) {
     val sharedScope = LocalSharedTransitionScope.current
     val visibleState = remember { MutableTransitionState(true) }
+    // Reduce motion keeps the element in place: no flying avatar or name.
+    val settings by AppSettingsStore.state.collectAsState()
 
     AnimatedVisibility(
         visibleState = visibleState,
@@ -38,7 +43,7 @@ fun SharedProfileElement(
         exit = fadeOut()
     ) {
         val visibilityScope = this
-        val sharedModifier = if (sharedScope == null) {
+        val sharedModifier = if (sharedScope == null || settings.reduceMotion) {
             Modifier
         } else {
             with(sharedScope) {

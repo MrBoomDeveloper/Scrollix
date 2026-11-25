@@ -1,6 +1,7 @@
 modules:
   - androidApp
   - build-config
+  - contract
   - desktopApp
   - max
   - provider

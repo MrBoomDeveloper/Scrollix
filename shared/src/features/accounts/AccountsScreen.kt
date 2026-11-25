@@ -43,12 +43,18 @@ import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.outbox.OutboxEntry
+import com.mrboomdev.scrollix.data.outbox.OutboxEntryKind
+import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
+import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.send_icon
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -60,6 +66,11 @@ fun AccountsScreen(
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
     val dialogsLoading by ApiManager.dialogsLoading.collectAsState()
+    val connectionStates by remember {
+        ApiManager.connectionStates
+    }.collectAsState(initial = emptyMap())
+    val queue by OutboxManager.entries.collectAsState()
+    var confirmDiscard by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     var isAdding by remember { mutableStateOf(false) }
@@ -217,12 +228,21 @@ fun AccountsScreen(
                     account = account,
                     isActive = account.id == accountState.activeAccountId,
                     authState = sessionStates[account.id],
+                    isConnected = connectionStates[account.id],
                     isRemoving = account.id in removingIds,
                     isActivating = false,
                     isDialogsLoading = account.id in dialogsLoading,
                     onOpenLogin = onOpenLogin,
                     onOpenOwnProfile = { onOpenOwnProfile(account.id) },
                     onRemove = { removeAccount(account.id) }
+                )
+            }
+
+            item(key = "outgoing-queue") {
+                OutgoingQueueCard(
+                    entries = queue,
+                    onRetryAll = { OutboxManager.retryAll() },
+                    onDiscardAll = { confirmDiscard = true }
                 )
             }
 
@@ -250,6 +270,34 @@ fun AccountsScreen(
             }
         }
     }
+
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard the queue?") },
+            text = {
+                Text(
+                    "${queue.size} queued operation(s) are removed and will " +
+                        "not be sent. This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDiscard = false
+                        OutboxManager.discardAll()
+                    }
+                ) {
+                    Text("Discard")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -257,6 +305,7 @@ private fun AccountRow(
     account: AccountRecord,
     isActive: Boolean,
     authState: AuthState?,
+    isConnected: Boolean?,
     isRemoving: Boolean,
     isActivating: Boolean,
     isDialogsLoading: Boolean,
@@ -357,6 +406,7 @@ private fun AccountRow(
 
                 AccountStatus(
                     authState = authState,
+                    isConnected = isConnected,
                     isActivating = isActivating,
                     isDialogsLoading = isDialogsLoading
                 )
@@ -370,6 +420,7 @@ private fun AccountRow(
 @Composable
 private fun AccountStatus(
     authState: AuthState?,
+    isConnected: Boolean?,
     isActivating: Boolean,
     isDialogsLoading: Boolean
 ) {
@@ -378,14 +429,18 @@ private fun AccountStatus(
         authState == null ||
         authState is AuthState.Initializing
 
+    val isOffline = authState is AuthState.Ready && isConnected == false
+
     val text = when {
         isActivating -> "Activating..."
         isDialogsLoading -> "Loading chats..."
+        isOffline -> "Offline — messages stay queued"
         else -> authState.statusText()
     }
 
     val color = when {
         isActivating || isDialogsLoading -> MaterialTheme.colorScheme.secondary
+        isOffline -> MaterialTheme.colorScheme.error
         authState is AuthState.Error -> MaterialTheme.colorScheme.error
         authState is AuthState.Ready -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.secondary
@@ -411,6 +466,147 @@ private fun AccountStatus(
         )
     }
 }
+
+/**
+ * The queue used to live in Settings → Offline. It sits next to the accounts
+ * now: the same rows show which account is disconnected, and the queue is what
+ * keeps its messages waiting, so both belong on one screen.
+ */
+@Composable
+private fun OutgoingQueueCard(
+    entries: List<OutboxEntry>,
+    onRetryAll: () -> Unit,
+    onDiscardAll: () -> Unit
+) {
+    val sending = entries.count { entry -> entry.state == OutboxEntryState.Sending }
+    val failed = entries.count { entry -> entry.state == OutboxEntryState.Failed }
+    val waiting = entries.size - sending - failed
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp),
+        color = Color.Transparent,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    modifier = Modifier.size(18.dp),
+                    imageVector = send_icon,
+                    tint = MaterialTheme.colorScheme.primary,
+                    contentDescription = null
+                )
+
+                Text(
+                    text = "Outgoing queue",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+
+            Text(
+                text = when {
+                    entries.isEmpty() ->
+                        "Nothing is waiting. Messages go out immediately while a " +
+                            "connection is available."
+
+                    else -> buildString {
+                        append(waiting)
+                        append(if (waiting == 1) " message waiting" else " messages waiting")
+
+                        if (sending > 0) {
+                            append(", ")
+                            append(sending)
+                            append(if (sending == 1) " message sending" else " messages sending")
+                        }
+
+                        if (failed > 0) {
+                            append(", ")
+                            append(failed)
+                            append(" failed")
+                        }
+
+                        append('.')
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+
+            // The newest few rows name what is stuck; the rest is summarized above.
+            for (entry in entries.takeLast(4).reversed()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        modifier = Modifier.weight(1f),
+                        text = entry.pendingText.ifBlank { entry.kind.queueLabel },
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Text(
+                        text = entry.state.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (entry.state == OutboxEntryState.Failed) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.secondary
+                        }
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onRetryAll,
+                    enabled = entries.any { entry -> entry.state != OutboxEntryState.Sending }
+                ) {
+                    Text("Retry all")
+                }
+
+                OutlinedButton(
+                    onClick = onDiscardAll,
+                    enabled = entries.isNotEmpty()
+                ) {
+                    Text("Discard all")
+                }
+            }
+
+            Text(
+                text = "Discarding removes the queued operations from this device. " +
+                    "A message that already reached the server is not deleted.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+    }
+}
+
+private val OutboxEntryState.label: String
+    get() = when (this) {
+        OutboxEntryState.Queued -> "Waiting"
+        OutboxEntryState.Sending -> "Sending"
+        OutboxEntryState.Failed -> "Failed"
+    }
+
+private val OutboxEntryKind.queueLabel: String
+    get() = when (this) {
+        OutboxEntryKind.Text -> "Message"
+        OutboxEntryKind.Files -> "Files"
+        OutboxEntryKind.Edit -> "Edit"
+        OutboxEntryKind.Delete -> "Deletion"
+    }
 
 private fun AuthState?.statusText(): String {
     return when (this) {

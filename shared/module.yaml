@@ -26,6 +26,7 @@ dependencies:
   - $libs.haze
   - $libs.haze.blur
   - $libs.compottie
+  - $libs.reorderable
   - nl.jacobras:Human-Readable:2.0.0
   - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0
   - $libs.androidx.room3.runtime
@@ -44,6 +45,15 @@ dependencies@android:
   - $libs.lottie.android
   - $libs.alpha.video
   - $libs.alpha.video.vpx
+
+test-dependencies:
+  # Validates exported Room schemas and migrations on the JVM.
+  - $libs.androidx.room3.testing
+
+test-dependencies@jvm:
+  # Offscreen Compose rendering for the golden-image tests.
+  - $compose.uiTest
+  - $compose.desktop.currentOs
 
 dependencies@jvm:
   # Desktop captcha: an embedded Chromium browser (KCEF) wrapped by Compose.
@@ -74,3 +84,7 @@ settings:
     ksp:
       processors:
         - $libs.androidx.room3.compiler
+      # Exported schemas are committed under shared/schemas so migration tests
+      # can create older versions and validate the current one.
+      processorOptions:
+        room.schemaLocation: ./schemas

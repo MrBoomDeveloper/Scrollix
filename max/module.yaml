@@ -14,6 +14,9 @@ dependencies@android:
 dependencies@jvm:
   - $libs.okhttp
 
+test-dependencies:
+  - //contract
+
 settings:
   kotlin:
     serialization: enabled
