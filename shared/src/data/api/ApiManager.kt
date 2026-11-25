@@ -136,6 +136,10 @@ object ApiManager {
         // messages queued while offline.
         OutboxManager.start()
 
+        // While an account stays disconnected, retry its queue every ten
+        // seconds instead of waiting out the outbox backoff.
+        ConnectionRetry.start(appScope)
+
         // Files cached by older builds were keyed by TDLib file ids, which are
         // not stable across restarts and could surface another file's bytes.
         // Only those legacy entries are pruned; the current media cache, keyed

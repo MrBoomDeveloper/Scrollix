@@ -22,6 +22,8 @@ class AndroidPlatform : Platform {
 
 actual fun getPlatform(): Platform = AndroidPlatform()
 
+actual fun isDesktopPlatform(): Boolean = false
+
 actual fun tdlibDeviceModel(): String = Build.MODEL ?: "Android"
 
 actual fun tdlibSystemVersion(): String = "SDK ${Build.VERSION.SDK_INT}"

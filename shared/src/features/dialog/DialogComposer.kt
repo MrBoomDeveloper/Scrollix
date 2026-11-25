@@ -97,7 +97,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Rect
+import com.mrboomdev.scrollix.isDesktopPlatform
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -247,6 +249,17 @@ internal fun BoxScope.DialogComposer(
     send: () -> Unit,
     sendRecording: (RecordedMedia) -> Unit
 ) = with(ui) {
+    val inputFocusRequester = remember { FocusRequester() }
+
+    // Desktop opens a chat ready for typing; mobile keeps its keyboard hidden
+    // until the field is tapped.
+    LaunchedEffect(providerDialogId) {
+        if (!isDesktopPlatform()) return@LaunchedEffect
+
+        withFrameNanos { }
+        runCatching { inputFocusRequester.requestFocus() }
+    }
+
             Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -494,7 +507,9 @@ internal fun BoxScope.DialogComposer(
                         videoMessageMode = !videoMessageMode
                     },
                     onBeginRecording = { kind -> beginRecording(kind) },
-                    onSend = send
+                    onSend = send,
+                    focusRequester = inputFocusRequester,
+                    autoFocus = isDesktopPlatform()
                 )
                 }
 

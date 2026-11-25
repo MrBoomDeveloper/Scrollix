@@ -400,6 +400,23 @@ fun rememberDialogMessageListState(
         }
     }
 
+    // Sending a message appends a pending row, and the composer's measured
+    // height changes when the keyboard opens. While the user is at the bottom,
+    // re-anchor after every such change so the newest row stays flush with the
+    // composer instead of drifting a few pixels up.
+    LaunchedEffect(
+        providerDialogId,
+        state.isReady,
+        latestDisplayMessages.value.size
+    ) {
+        if (!state.isReady) return@LaunchedEffect
+        if (!state.isAtBottom) return@LaunchedEffect
+        if (latestDisplayMessages.value.isEmpty()) return@LaunchedEffect
+
+        withFrameNanos { }
+        listState.scrollToItem(latestDisplayMessages.value.lastIndex, Int.MAX_VALUE)
+    }
+
     LaunchedEffect(providerDialogId, listState) {
         snapshotFlow {
             val info = listState.layoutInfo

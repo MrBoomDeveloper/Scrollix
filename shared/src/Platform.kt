@@ -7,6 +7,13 @@ interface Platform {
 expect fun getPlatform(): Platform
 
 /**
+ * Whether the app runs as a desktop window. Desktop chats autofocus the
+ * composer so typing starts immediately; mobile keeps the keyboard hidden
+ * until the field is tapped.
+ */
+expect fun isDesktopPlatform(): Boolean
+
+/**
  * TDLib `device_model`: the hardware model on Android (`Build.MODEL`) and
  * `Desktop` elsewhere, matching what the official Telegram clients report.
  */

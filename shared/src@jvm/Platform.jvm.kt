@@ -11,6 +11,8 @@ class JVMPlatform : Platform {
 
 actual fun getPlatform(): Platform = JVMPlatform()
 
+actual fun isDesktopPlatform(): Boolean = true
+
 // The desktop build reports the same TDLib parameters an Android 16 (API 36)
 // phone sends, so the session shows up as a regular mobile device instead of
 // a JVM desktop entry.

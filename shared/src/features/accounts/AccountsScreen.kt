@@ -70,6 +70,9 @@ fun AccountsScreen(
         ApiManager.connectionStates
     }.collectAsState(initial = emptyMap())
     val queue by OutboxManager.entries.collectAsState()
+    val accountNames = remember(accountState.accounts) {
+        accountState.accounts.associate { account -> account.id to account.displayName }
+    }
     var confirmDiscard by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
@@ -220,6 +223,17 @@ fun AccountsScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             contentPadding = PaddingValues(16.dp)
         ) {
+            // Above the accounts, so waiting messages are visible without
+            // scrolling past a long account list.
+            item(key = "outgoing-queue") {
+                OutgoingQueueCard(
+                    entries = queue,
+                    accountNames = accountNames,
+                    onRetryAll = { OutboxManager.retryAll() },
+                    onDiscardAll = { confirmDiscard = true }
+                )
+            }
+
             items(
                 items = accountState.accounts,
                 key = { it.id }
@@ -235,14 +249,6 @@ fun AccountsScreen(
                     onOpenLogin = onOpenLogin,
                     onOpenOwnProfile = { onOpenOwnProfile(account.id) },
                     onRemove = { removeAccount(account.id) }
-                )
-            }
-
-            item(key = "outgoing-queue") {
-                OutgoingQueueCard(
-                    entries = queue,
-                    onRetryAll = { OutboxManager.retryAll() },
-                    onDiscardAll = { confirmDiscard = true }
                 )
             }
 
@@ -475,6 +481,7 @@ private fun AccountStatus(
 @Composable
 private fun OutgoingQueueCard(
     entries: List<OutboxEntry>,
+    accountNames: Map<String, String>,
     onRetryAll: () -> Unit,
     onDiscardAll: () -> Unit
 ) {
@@ -540,30 +547,55 @@ private fun OutgoingQueueCard(
                 color = MaterialTheme.colorScheme.secondary
             )
 
-            // The newest few rows name what is stuck; the rest is summarized above.
-            for (entry in entries.takeLast(4).reversed()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            // Every waiting row is listed with its account, so a message
+            // queued in another account is not hidden behind a summary.
+            for (entry in entries.reversed()) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            modifier = Modifier.weight(1f),
+                            text = entry.pendingText.ifBlank { entry.kind.queueLabel },
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Text(
+                            text = entry.state.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (entry.state == OutboxEntryState.Failed) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.secondary
+                            }
+                        )
+                    }
+
                     Text(
-                        modifier = Modifier.weight(1f),
-                        text = entry.pendingText.ifBlank { entry.kind.queueLabel },
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = buildString {
+                            append(accountNames[entry.accountId] ?: entry.accountId)
+                            append(" · ")
+                            append(entry.kind.queueLabel)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Text(
-                        text = entry.state.label,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (entry.state == OutboxEntryState.Failed) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.secondary
-                        }
-                    )
+                    entry.lastError?.let { reason ->
+                        Text(
+                            text = reason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 

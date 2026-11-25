@@ -430,8 +430,12 @@ Index: **Media & cache** · **Sessions, auth & data** · **Composer, outbox & se
   attempt is appended to `OutboxEntry.attemptHistory` (capped by
   `appendOutboxAttempt`) and shown as a retry timeline in Diagnostics. While a
   signed-in account is disconnected, `ConnectionBanner` above the chat list
-  names it, shows the queued count from `OutboxManager.entries` and runs
-  `OutboxManager.retryAll()` on "Retry now"; `ApiManager.connectionStates`
+  names it, shows the queued count from `OutboxManager.entries` and a progress
+  bar counting down to the next automatic retry. `ConnectionRetry` restarts the
+  whole waiting queue every 10 seconds while any account is offline, so a
+  message goes out as soon as the provider reconnects instead of waiting out the
+  outbox backoff (which still applies between those pulses);
+  `ApiManager.connectionStates`
   combines each session's `isConnected` flow and omits accounts without a
   session, so signing in is never reported as offline.
 - **Attachment review.** Picking one or more files opens a blocking,
@@ -536,8 +540,12 @@ Index: **Media & cache** · **Sessions, auth & data** · **Composer, outbox & se
 - **Settings sections and search.** Sections are `SettingsCategory`; the
   search field matches `SettingsEntries`, a hand-maintained index of every row
   (including rows of screens that were never opened), and falls back to a
-  single section result when only its title/keywords match. Add a row to the
-  index when adding a setting. The open section is `rememberSaveable` in both
+  single section result when only its title/keywords match. Clicking a result
+  opens its section, scrolls to the row and tints it via `settingsAnchor` /
+  `SettingsRowGroup`, and the section clears that highlight after a couple of
+  seconds. Adding a setting means rendering the row with `settingsAnchor(title)`
+  (or wrapping it in `SettingsRowGroup(title)`) and adding one `SettingsEntry`
+  with the same title; no navigation or section-layout branch has to change. The open section is `rememberSaveable` in both
   the one-pane and two-pane layouts, so it survives navigation and recreation.
   There is no per-section reset. Accounts and the outgoing queue are not
   settings sections: `Route.Accounts` owns the account list, per-account

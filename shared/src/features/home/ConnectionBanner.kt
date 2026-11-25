@@ -1,15 +1,17 @@
 package com.mrboomdev.scrollix.features.home
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.api.ConnectionRetry
 import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.ui.icons.wifi_off_icon
@@ -51,8 +54,9 @@ internal fun offlineBannerMessage(
 
 /**
  * Persistent strip above the chat list while an account has lost its
- * connection. The provider reconnects on its own; the action only restarts the
- * outbox backoff, so queued work does not sit until the next scheduled attempt.
+ * connection. The provider reconnects on its own and the queue is retried on a
+ * fixed ten-second pulse, so the strip shows that countdown instead of an
+ * action the user has to keep pressing.
  */
 @Composable
 fun ConnectionBanner(modifier: Modifier = Modifier) {
@@ -60,6 +64,7 @@ fun ConnectionBanner(modifier: Modifier = Modifier) {
     val sessions by ApiManager.sessions.collectAsState()
     val connections by ApiManager.connectionStates.collectAsState(initial = emptyMap())
     val queued by OutboxManager.entries.collectAsState()
+    val remainingMillis by ConnectionRetry.remainingMillis.collectAsState()
 
     // An account without a live session is still signing in, not offline.
     val offlineNames = accountState.accounts
@@ -75,33 +80,40 @@ fun ConnectionBanner(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.errorContainer
     ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onErrorContainer,
-                imageVector = wifi_off_icon,
-                contentDescription = null
-            )
+        Column {
+            Row(
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    imageVector = wifi_off_icon,
+                    contentDescription = null
+                )
 
-            Text(
-                modifier = Modifier.weight(1f),
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            TextButton(onClick = { OutboxManager.retryAll() }) {
                 Text(
-                    text = "Retry now",
-                    color = MaterialTheme.colorScheme.onErrorContainer
+                    modifier = Modifier.weight(1f),
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+
+            // Counts down to the next retry, then refills: the bar is the
+            // timer the banner used to expose as a "Retry now" button.
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .height(3.dp),
+                progress = { remainingMillis / ConnectionRetry.IntervalMillis.toFloat() },
+                color = MaterialTheme.colorScheme.error,
+                trackColor = MaterialTheme.colorScheme.errorContainer
+            )
         }
     }
 }

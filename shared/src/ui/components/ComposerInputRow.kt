@@ -31,9 +31,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -94,8 +98,19 @@ fun ComposerInputRow(
     onToggleVideoMessageMode: () -> Unit,
     onBeginRecording: (MediaRecordingKind) -> Unit,
     onSend: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+    autoFocus: Boolean = false
 ) {
+    // Desktop requests focus after the row exists, so a freshly opened chat
+    // accepts typing without a click. Mobile waits for a tap instead.
+    LaunchedEffect(autoFocus, focusRequester) {
+        if (!autoFocus || focusRequester == null) return@LaunchedEffect
+
+        withFrameNanos { }
+        runCatching { focusRequester.requestFocus() }
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -179,6 +194,11 @@ fun ComposerInputRow(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 35.dp)
+                    .then(
+                        focusRequester?.let { requester ->
+                            Modifier.focusRequester(requester)
+                        } ?: Modifier
+                    )
                     .onPreviewKeyEvent { event ->
                         val isPaste = event.type == KeyEventType.KeyDown &&
                             event.isCtrlPressed && event.key == Key.V

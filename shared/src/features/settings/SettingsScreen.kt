@@ -254,6 +254,7 @@ fun SettingsScreen(
     val settings by AppSettingsStore.state.collectAsState()
     val scope = rememberCoroutineScope()
     var categoryQuery by rememberSaveable { mutableStateOf("") }
+    var highlightTitle by rememberSaveable { mutableStateOf<String?>(null) }
     val filePicker = rememberFilePicker(
         onImagesPicked = { picked ->
             picked.firstOrNull()?.let { file ->
@@ -288,7 +289,10 @@ fun SettingsScreen(
                 selected = selected,
                 query = categoryQuery,
                 onQueryChange = { categoryQuery = it },
-                onSelect = { selectedName = it.name }
+                onSelect = { category, entry ->
+                    selectedName = category.name
+                    highlightTitle = entry?.title
+                }
             )
 
             VerticalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
@@ -299,6 +303,8 @@ fun SettingsScreen(
                     .fillMaxHeight(),
                 category = selected,
                 settings = settings,
+                highlightTitle = highlightTitle,
+                onHighlightDismiss = { highlightTitle = null },
                 onPickWallpaper = { filePicker.pickImages() },
                 onOpenDiagnostics = onOpenDiagnostics
             )
@@ -316,7 +322,10 @@ fun SettingsScreen(
             selected = null,
             query = categoryQuery,
             onQueryChange = { categoryQuery = it },
-            onSelect = { category -> openedName = category.name }
+            onSelect = { category, entry ->
+                openedName = category.name
+                highlightTitle = entry?.title
+            }
         )
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -342,6 +351,8 @@ fun SettingsScreen(
                     .fillMaxWidth(),
                 category = category,
                 settings = settings,
+                highlightTitle = highlightTitle,
+                onHighlightDismiss = { highlightTitle = null },
                 onPickWallpaper = { filePicker.pickImages() },
                 onOpenDiagnostics = onOpenDiagnostics
             )
@@ -355,7 +366,7 @@ internal fun SettingsCategories(
     selected: SettingsCategory?,
     query: String,
     onQueryChange: (String) -> Unit,
-    onSelect: (SettingsCategory) -> Unit
+    onSelect: (SettingsCategory, SettingsEntry?) -> Unit
 ) {
     Column(modifier.verticalScroll(rememberScrollState())) {
         Text(
@@ -398,7 +409,7 @@ internal fun SettingsCategories(
                     title = category.title,
                     subtitle = category.description,
                     selected = selected == category,
-                    onClick = { onSelect(category) }
+                    onClick = { onSelect(category, null) }
                 )
             }
         } else {
@@ -421,7 +432,7 @@ internal fun SettingsCategories(
                     title = entry.title,
                     subtitle = entry.category.title,
                     selected = false,
-                    onClick = { onSelect(entry.category) }
+                    onClick = { onSelect(entry.category, entry) }
                 )
             }
         }
@@ -518,6 +529,7 @@ internal val NotificationScope.icon: ImageVector
 @Composable
 internal fun SettingsSectionTitle(icon: ImageVector, title: String) {
     Row(
+        modifier = Modifier.settingsAnchor(title),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -544,7 +556,9 @@ internal fun SettingsSwitch(
     icon: ImageVector? = null
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .settingsAnchor(title),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {

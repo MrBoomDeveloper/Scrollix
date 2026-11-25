@@ -14,11 +14,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.data.api.ApiManager
@@ -43,12 +47,42 @@ internal fun SettingsCategoryContent(
     category: SettingsCategory,
     settings: AppSettings,
     onPickWallpaper: () -> Unit,
-    onOpenDiagnostics: () -> Unit
+    onOpenDiagnostics: () -> Unit,
+    highlightTitle: String? = null,
+    onHighlightDismiss: () -> Unit = {}
 ) {
+    val scrollState = rememberScrollState()
+    val rowOffsets = remember { mutableMapOf<String, Int>() }
+
+    // A search result opens this section with the row title it matched. Rows
+    // register their offset while composing, so the section scrolls to that
+    // row and tints it briefly instead of dropping the user at the top.
+    LaunchedEffect(category, highlightTitle) {
+        if (highlightTitle == null) return@LaunchedEffect
+
+        withFrameNanos { }
+
+        val offset = rowOffsets.entries
+            .filter { (title, _) -> title.matchesSettingsQuery(highlightTitle) }
+            .maxByOrNull { (title, _) -> title.length }
+            ?.value
+
+        if (offset != null) {
+            scrollState.animateScrollTo((offset - 24).coerceAtLeast(0))
+        }
+
+        delay(2_500L)
+        onHighlightDismiss()
+    }
+
+    CompositionLocalProvider(
+        LocalSettingsHighlightTitle provides highlightTitle,
+        LocalSettingsRowOffsets provides rowOffsets
+    ) {
     Column(
         modifier = modifier
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
@@ -161,12 +195,16 @@ internal fun SettingsCategoryContent(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { reorderKind = StickerPackKind.Sticker }) {
-                        Text("Reorder sticker packs")
+                                        SettingsRowGroup(title = "Reorder sticker packs") {
+    Button(onClick = { reorderKind = StickerPackKind.Sticker }) {
+                            Text("Reorder sticker packs")
+                        }
                     }
 
-                    Button(onClick = { reorderKind = StickerPackKind.CustomEmoji }) {
-                        Text("Reorder emoji packs")
+                                        SettingsRowGroup(title = "Reorder emoji packs") {
+    Button(onClick = { reorderKind = StickerPackKind.CustomEmoji }) {
+                            Text("Reorder emoji packs")
+                        }
                     }
                 }
 
@@ -231,11 +269,13 @@ internal fun SettingsCategoryContent(
                 var emojiEditorOpen by remember { mutableStateOf(false) }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { emojiEditorOpen = true },
-                        enabled = settings.showSystemEmojis
-                    ) {
-                        Text("Choose emoji")
+                                        SettingsRowGroup(title = "Choose emoji") {
+    Button(
+                            onClick = { emojiEditorOpen = true },
+                            enabled = settings.showSystemEmojis
+                        ) {
+                            Text("Choose emoji")
+                        }
                     }
 
                     if (settings.disabledEmojis.isNotEmpty()) {
@@ -270,10 +310,12 @@ internal fun SettingsCategoryContent(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
-                Text(
-                    text = "Quick reactions",
-                    style = MaterialTheme.typography.titleMedium
-                )
+                SettingsRowGroup(title = "Quick reactions") {
+                    Text(
+                        text = "Quick reactions",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
 
                 Text(
                     text = "The emoji shown above a message's action menu.",
@@ -436,5 +478,6 @@ internal fun SettingsCategoryContent(
 
             SettingsCategory.About -> SettingsAboutContent()
         }
+    }
     }
 }

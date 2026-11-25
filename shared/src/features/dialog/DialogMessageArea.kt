@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
@@ -131,6 +132,20 @@ internal fun ColumnScope.DialogMessageArea(
                             }
                     }
 
+                    // The composer grows after its first measurement (a reply
+                    // banner, the emoji picker, the keyboard inset). Re-anchor
+                    // to the newest row so the chat does not end above the
+                    // bottom when that happens.
+                    LaunchedEffect(composerInset, messageListState.isReady) {
+                        if (!messageListState.isReady) return@LaunchedEffect
+                        if (!messageListState.isAtBottom) return@LaunchedEffect
+
+                        withFrameNanos { }
+
+                        val last = listState.layoutInfo.totalItemsCount - 1
+                        if (last >= 0) listState.scrollToItem(last, Int.MAX_VALUE)
+                    }
+
                     Box(modifier = Modifier.fillMaxSize()) {
                     when {
                         history.isLoadingInitial -> {
@@ -166,7 +181,7 @@ internal fun ColumnScope.DialogMessageArea(
                                     start = 8.dp,
                                     top = 8.dp,
                                     end = 8.dp,
-                                    bottom = composerInset + 8.dp
+                                    bottom = composerInset
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
