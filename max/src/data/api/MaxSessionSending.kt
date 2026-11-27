@@ -23,6 +23,7 @@ import com.mrboomdev.scrollix.data.max.network.string
 import com.mrboomdev.scrollix.data.model.SessionErrorCode
 import com.mrboomdev.scrollix.data.model.asSessionException
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.max.network.uploadMaxFile
 import com.mrboomdev.scrollix.data.max.network.uploadMaxRaw
 import com.mrboomdev.scrollix.fetchUrlBytes
@@ -606,7 +607,7 @@ internal fun MaxSession.unsupported(feature: String): Result<Unit> {
 
 // --------------------------------------------------------- live updates --
 
-internal suspend fun MaxSession.sendMessageImpl(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>): Result<Unit> {
+internal suspend fun MaxSession.sendMessageImpl(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(maxInvalidChatId())
 

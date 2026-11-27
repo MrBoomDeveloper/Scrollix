@@ -8,6 +8,7 @@ dependencies:
   - $libs.androidx.activity.compose
   - $compose.preview
   - $compose.uiTooling
+  - androidx.core:core-splashscreen:1.2.0
 
 settings:
   compose: enabled

@@ -12,6 +12,8 @@ import com.mrboomdev.scrollix.data.model.AuthAction
 import com.mrboomdev.scrollix.data.model.ChatTopic
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageScheduling
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.model.MessageDraft
 import com.mrboomdev.scrollix.data.model.NotificationSettings
@@ -35,6 +37,7 @@ import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
 import com.mrboomdev.scrollix.data.model.DataUsageSummary
 import com.mrboomdev.scrollix.data.model.DataUsagePreset
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
+import com.mrboomdev.scrollix.data.model.LastSeenVisibility
 
 /** Sessions without a live transport are always considered connected. */
 private val AlwaysConnected = MutableStateFlow(true)
@@ -96,8 +99,14 @@ interface AccountSession {
         limit: Int = 50
     ): Result<Boolean> = Result.success(false)
 
-    /** Forum topics of a chat, newest activity first. Empty for non-forums. */
-    suspend fun loadTopics(providerDialogId: String): Result<List<ChatTopic>> =
+    /**
+     * Forum topics of a chat, newest activity first, optionally narrowed by
+     * [query] on the provider's side. Empty for non-forums.
+     */
+    suspend fun loadTopics(
+        providerDialogId: String,
+        query: String = ""
+    ): Result<List<ChatTopic>> =
         Result.failure(UnsupportedOperationException("Topics are not supported"))
 
     /** Newest page of one topic's history, oldest first. */
@@ -117,6 +126,57 @@ interface AccountSession {
         customEmojis: List<CustomEmojiSpan> = emptyList()
     ): Result<Unit> = Result.failure(
         UnsupportedOperationException("Topics are not supported")
+    )
+
+    /** Whether a topic can be created, renamed, closed and pinned. */
+    val supportsTopicManagement: Boolean
+        get() = false
+
+    /** Creates a topic with [title] and returns its provider id. */
+    suspend fun createForumTopic(
+        providerDialogId: String,
+        title: String
+    ): Result<Long> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Creating topics is not supported"
+        )
+    )
+
+    /** Renames an existing topic. */
+    suspend fun editForumTopicTitle(
+        providerDialogId: String,
+        topicId: Long,
+        title: String
+    ): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Renaming topics is not supported"
+        )
+    )
+
+    /** Closes a topic to new messages, or reopens it. */
+    suspend fun setForumTopicClosed(
+        providerDialogId: String,
+        topicId: Long,
+        closed: Boolean
+    ): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Closing topics is not supported"
+        )
+    )
+
+    /** Pins a topic above the unpinned ones, or unpins it. */
+    suspend fun setForumTopicPinned(
+        providerDialogId: String,
+        topicId: Long,
+        pinned: Boolean
+    ): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Pinning topics is not supported"
+        )
     )
 
     suspend fun loadMessagesUntil(providerDialogId: String, messageId: Long): Result<Boolean>
@@ -184,16 +244,23 @@ interface AccountSession {
         threadChatId: String,
         rootMessageId: Long,
         text: String,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList()
     ): Result<Unit> = Result.failure(
         UnsupportedOperationException("Message threads are not supported")
     )
 
+    /**
+     * Sends text. [formatting] carries the rich text ranges of [text]; providers
+     * without entity support may deliver the plain text instead.
+     */
     suspend fun sendMessage(
         providerDialogId: String,
         text: String,
         replyToMessageId: Long? = null,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList(),
+        scheduling: MessageScheduling? = null
     ): Result<Unit>
     suspend fun sendFile(
         providerDialogId: String,
@@ -207,7 +274,9 @@ interface AccountSession {
         attachments: List<OutgoingAttachment>,
         caption: String = "",
         replyToMessageId: Long? = null,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList(),
+        scheduling: MessageScheduling? = null
     ): Result<Unit>
     /** Sends a recorded voice note (server-side Telegram voice message). */
     suspend fun sendVoiceNote(
@@ -276,8 +345,41 @@ interface AccountSession {
     suspend fun saveDraft(
         providerDialogId: String,
         text: String,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList()
     ): Result<Unit> = Result.success(Unit)
+
+    /** Whether this account can change a chat's auto-delete timer. */
+    val supportsMessageAutoDelete: Boolean
+        get() = false
+
+    /** The chat's auto-delete timer in seconds; 0 turns it off. */
+    suspend fun loadMessageAutoDeleteTime(providerDialogId: String): Result<Int> =
+        Result.failure(UnsupportedOperationException("Auto-delete timers are not supported"))
+
+    /** Sets the chat's auto-delete timer for new messages; 0 turns it off. */
+    suspend fun setMessageAutoDeleteTime(providerDialogId: String, seconds: Int): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Auto-delete timers are not supported"))
+
+    /** Whether this account can schedule messages and reschedule them. */
+    val supportsScheduling: Boolean
+        get() = false
+
+    /** Messages waiting in the chat's schedule queue, newest first. */
+    suspend fun loadScheduledMessages(providerDialogId: String): Result<List<ChatMessage>> =
+        Result.failure(UnsupportedOperationException("Scheduling is not supported"))
+
+    /**
+     * Changes when a scheduled message is sent; null sends it immediately.
+     * Providers that cannot schedule return an unsupported failure.
+     */
+    suspend fun rescheduleMessage(
+        providerDialogId: String,
+        messageId: Long,
+        scheduling: MessageScheduling?
+    ): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Scheduling is not supported")
+    )
 
     /** Scope-wide notification settings kept by the server. */
     suspend fun loadNotificationSettings(): Result<NotificationSettings> =
@@ -298,6 +400,34 @@ interface AccountSession {
     suspend fun resetDialogNotificationSettings(providerDialogId: String): Result<Unit> =
         Result.failure(
             UnsupportedOperationException("Notification settings are not supported")
+        )
+
+    /** Whether [loadLastSeenVisibility] and [setLastSeenVisibility] work here. */
+    val supportsLastSeenPrivacy: Boolean
+        get() = false
+
+    /**
+     * Who may see this account's last seen time. Providers without a server-side
+     * privacy setting keep the default, and the settings screen hides the row.
+     */
+    suspend fun loadLastSeenVisibility(): Result<LastSeenVisibility> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Last seen privacy is not supported"
+        )
+    )
+
+    /**
+     * Replaces the last seen rule with [visibility]. The three values the app
+     * offers are the whole rule list, so finer provider exceptions ("always
+     * share with this contact") are not preserved by a change.
+     */
+    suspend fun setLastSeenVisibility(visibility: LastSeenVisibility): Result<Unit> =
+        Result.failure(
+            com.mrboomdev.scrollix.data.model.SessionException(
+                com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+                "Last seen privacy is not supported"
+            )
         )
 
     /** Mutes or unmutes one chat (person, group or channel) on the server. */
@@ -366,6 +496,46 @@ interface AccountSession {
         messageId: Long,
         optionIds: List<String>
     ): Result<Unit>
+
+    /** Whether [stopPoll] can close an open poll. */
+    val supportsPollClosing: Boolean
+        get() = false
+
+    /**
+     * Closes the poll in [messageId] so no more votes are accepted. The already
+     * collected results stay visible. Only the poll's author may close it, and
+     * the provider is the one that enforces that.
+     */
+    suspend fun stopPoll(
+        providerDialogId: String,
+        messageId: Long
+    ): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Closing polls is not supported"
+        )
+    )
+
+    /** Whether [translateText] works for this provider. */
+    val supportsTranslation: Boolean
+        get() = false
+
+    /**
+     * Translates [text] into the two-letter language [languageCode] (for
+     * example "en"), or into a language the provider picks when it is null.
+     * The result is plain text: formatting and custom emoji are not carried
+     * over, so the UI renders it without the original's ranges.
+     */
+    suspend fun translateText(
+        text: String,
+        languageCode: String? = null
+    ): Result<String> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Translation is not supported"
+        )
+    )
+
     suspend fun searchMessages(
         providerDialogId: String,
         query: String,
@@ -532,12 +702,62 @@ interface AccountSession {
     ): Result<Unit> = Result.failure(
         UnsupportedOperationException("Cross-provider animations are not supported")
     )
+    /** Replaces the text of a message that has no media. */
     suspend fun editMessage(
         providerDialogId: String,
         messageId: Long,
         text: String,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList()
     ): Result<Unit>
+
+    /**
+     * Whether [editMessageCaption] can replace the caption of a media message.
+     * Providers that only edit plain text keep this false, and the message menu
+     * does not offer caption editing. Telegram needs a separate call for it,
+     * because its text edit rejects media messages.
+     */
+    val supportsCaptionEditing: Boolean
+        get() = false
+
+    /**
+     * Replaces the caption of a media message. An empty [caption] removes it,
+     * which plain text editing never allows.
+     */
+    suspend fun editMessageCaption(
+        providerDialogId: String,
+        messageId: Long,
+        caption: String,
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList()
+    ): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Editing captions is not supported"
+        )
+    )
+
+    /** Whether [setChecklistTasksDone] can toggle tasks of a checklist message. */
+    val supportsChecklists: Boolean
+        get() = false
+
+    /**
+     * Marks [taskIds] of a checklist message done ([done] = true) or not done.
+     * Whether this account is allowed to do it comes from the message itself
+     * ([com.mrboomdev.scrollix.data.model.MessageChecklistInfo.canMarkTasksAsDone]).
+     */
+    suspend fun setChecklistTasksDone(
+        providerDialogId: String,
+        messageId: Long,
+        taskIds: List<Int>,
+        done: Boolean
+    ): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Checklists are not supported"
+        )
+    )
+
     /** Whether [forwardMessages] honors [hideSender] and [removeCaption]. */
     val supportsForwardOptions: Boolean
         get() = false
@@ -568,12 +788,22 @@ interface AccountSession {
         forEveryone: Boolean = true
     ): Result<Unit>
 
+    /** Whether [markAllChatsRead] can clear the unread counters at once. */
+    val supportsMarkAllRead: Boolean
+        get() = false
+
     /**
-     * A shareable link to [messageId], when the provider can produce one.
-     * Providers without message links fail with
-     * [com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported], and the
-     * message menu hides the action.
+     * Marks every unread chat of this account as read. Providers that can only
+     * read one chat at a time keep this false, and the chat list hides the
+     * action.
      */
+    suspend fun markAllChatsRead(): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Marking all chats read is not supported"
+        )
+    )
+
     /** Whether [setDialogUnread] can mark a chat unread. */
     val supportsMarkAsUnread: Boolean
         get() = false
@@ -594,6 +824,13 @@ interface AccountSession {
     /** Whether [messageLink] can produce links for this provider. */
     val supportsMessageLinks: Boolean
         get() = false
+
+    /**
+     * A shareable link to [messageId], when the provider can produce one.
+     * Providers without message links fail with
+     * [com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported], and the
+     * message menu hides the action.
+     */
 
     suspend fun messageLink(providerDialogId: String, messageId: Long): Result<String> =
         Result.failure(

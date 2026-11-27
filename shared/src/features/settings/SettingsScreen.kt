@@ -13,6 +13,7 @@ import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
 import com.mrboomdev.scrollix.ui.icons.close_icon
 import com.mrboomdev.scrollix.ui.icons.data_usage_icon
 import com.mrboomdev.scrollix.ui.icons.devices_icon
+import com.mrboomdev.scrollix.ui.icons.visibility_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.info_icon
 import com.mrboomdev.scrollix.ui.icons.notifications_icon
@@ -102,6 +103,11 @@ internal enum class SettingsCategory(
         "Mutes, alerts and double-tap reaction",
         listOf("mute", "muted scopes", "exceptions", "alerts")
     ),
+    Privacy(
+        "Privacy",
+        "Who can see your activity",
+        listOf("last seen", "online", "presence", "visibility", "privacy")
+    ),
     Sessions(
         "Sessions",
         "Devices signed in to your account",
@@ -158,6 +164,13 @@ internal val SettingsEntries: List<SettingsEntry> = listOf(
     SettingsEntry(SettingsCategory.Notifications, "Account notifications", listOf("mute", "alerts", "account")),
     SettingsEntry(SettingsCategory.Notifications, "Muted scopes", listOf("private chats", "groups", "channels", "mute")),
     SettingsEntry(SettingsCategory.Notifications, "Notification exceptions", listOf("exceptions", "muted chats")),
+
+    // Privacy
+    SettingsEntry(
+        SettingsCategory.Privacy,
+        "Last seen",
+        listOf("online", "presence", "visibility", "who can see", "privacy")
+    ),
 
     // Backup
     SettingsEntry(SettingsCategory.Backup, "Export settings", listOf("backup", "save", "file")),
@@ -504,6 +517,7 @@ internal val SettingsCategory.icon: ImageVector
         SettingsCategory.Backup -> backup_icon
         SettingsCategory.Storage -> storage_icon
         SettingsCategory.Sessions -> devices_icon
+        SettingsCategory.Privacy -> visibility_icon
         SettingsCategory.DataUsage -> data_usage_icon
         SettingsCategory.Diagnostics -> bug_report_icon
         SettingsCategory.About -> info_icon

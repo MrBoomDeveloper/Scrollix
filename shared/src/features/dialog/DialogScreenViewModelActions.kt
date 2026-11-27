@@ -73,6 +73,7 @@ internal fun DialogScreenViewModel.startEditing(message: ChatMessage) {
     input = message.text
     inputSelection = TextRange(message.text.length)
     inputCustomEmojis = message.customEmojis
+    inputFormatting = message.formatting
 
     ensureInputEmojiLoaded()
 }
@@ -171,6 +172,47 @@ internal fun DialogScreenViewModel.sendPoll(draft: PollDraft) {
             scrollRequest = ScrollRequest.Latest
         }.onFailure { failure ->
             error = failure.message ?: "Failed to create the poll"
+        }
+    }
+}
+
+/**
+ * Translates [message] or flips its bubble between the original text and the
+ * cached translation. Translations are kept in this screen's state only: the
+ * provider does not store them on the server, and none of them is persisted.
+ */
+internal fun DialogScreenViewModel.toggleTranslation(
+    message: ChatMessage,
+    languageCode: String
+) {
+    val messageId = message.messageId
+
+    if (messageId in translations) {
+        hiddenTranslations = if (messageId in hiddenTranslations) {
+            hiddenTranslations - messageId
+        } else {
+            hiddenTranslations + messageId
+        }
+        return
+    }
+
+    val currentSession = session ?: return
+    if (message.text.isBlank() || messageId in translatingMessageIds) return
+
+    translatingMessageIds = translatingMessageIds + messageId
+
+    viewModelScope.launch {
+        try {
+            currentSession.translateText(message.text, languageCode)
+                .onSuccess { translated ->
+                    translations = translations + (messageId to translated)
+                    hiddenTranslations = hiddenTranslations - messageId
+                }
+                .onFailure { failure ->
+                    error = failure.message ?: "Failed to translate the message"
+                }
+        } finally {
+            translatingMessageIds = translatingMessageIds - messageId
         }
     }
 }

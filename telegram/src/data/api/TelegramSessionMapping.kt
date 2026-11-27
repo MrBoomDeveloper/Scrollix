@@ -11,11 +11,25 @@ import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
+import com.mrboomdev.scrollix.data.model.MessageReactionReactor
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageRichTextStyle
+import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.model.MessageSendState
 import com.mrboomdev.scrollix.data.model.RichTextSpan
+
+/** A non-null result marks the message as waiting in the schedule queue. */
+internal fun mapMessageScheduling(state: MessageSchedulingState?): MessageScheduling? {
+    return when (state) {
+        is MessageSchedulingStateSendAtDate -> MessageScheduling.At(
+            sendDateMillis = state.sendDate.toLong() * 1000L
+        )
+
+        is MessageSchedulingStateSendWhenOnline -> MessageScheduling.WhenOnline
+        else -> null
+    }
+}
 
 /** Maps a shared point, live shares included, into the UI model. */
 internal fun TelegramSession.mapLocation(content: MessageContent): MessageLocationInfo? {
@@ -80,12 +94,24 @@ internal fun TelegramSession.mapMessage(message: Message): ChatMessage {
             isChannel = isChannel
         ),
         timestamp = message.date.toLong() * 1000L,
+        editDate = message.editDate.toLong() * 1000L,
+        // TDLib reports the time left before the chat's auto-delete timer
+        // removes the message, not a deadline, so the deadline is fixed here.
+        autoDeleteAt = if (message.autoDeleteIn > 0) {
+            com.mrboomdev.scrollix.data.storage.currentTimeMillis() +
+                message.autoDeleteIn.toLong() * 1000L
+        } else {
+            0L
+        },
         isOutgoing = message.isOutgoing,
         isService = isServiceContent(message.content),
         media = mapMedia(message.content),
         mediaAlbumId = message.mediaAlbumId.takeIf { it != 0L },
         poll = mapPoll(message.content),
+        checklist = mapChecklist(message.content),
         customEmojis = messageCustomEmojis(message.content),
+        formatting = messageFormatting(message.content),
+        scheduling = mapMessageScheduling(message.schedulingState),
         richBlocks = mapRichBlocks(message.content),
         linkPreview = mapLinkPreview(message.content),
         location = mapLocation(message.content),
@@ -644,6 +670,8 @@ internal fun TelegramSession.messageText(
         is MessageAudio -> content.caption.text
         is MessageAnimation -> content.caption.text
         is MessagePoll -> ""
+        // The title and tasks render as a card, not as message text.
+        is MessageChecklist -> ""
         is MessageLocation, is MessageLiveLocation -> ""
         is MessageSupergroupChatCreate -> supergroupChatCreateText(content)
         is MessageRichMessage -> richPlainText(content.message)
@@ -806,6 +834,15 @@ internal fun TelegramSession.mapReactions(reactions: Array<out MessageReaction>)
             reactorIds = reactorIds,
             reactorAvatars = reactorIds.mapNotNull { userId ->
                 users[userId]?.let(::userAvatar)
+            },
+            reactors = reactorIds.map { userId ->
+                val user = users[userId]
+
+                MessageReactionReactor(
+                    id = userId,
+                    name = user?.let(::userDisplayName).orEmpty(),
+                    avatar = user?.let(::userAvatar)
+                )
             }
         )
     }

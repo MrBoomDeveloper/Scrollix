@@ -2,8 +2,6 @@ package com.mrboomdev.scrollix.features.settings
 
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
-import com.mrboomdev.scrollix.data.storage.DataSavingPreset
-import com.mrboomdev.scrollix.data.storage.DataSavingSettings
 import com.mrboomdev.scrollix.data.storage.DataUsageStore
 import com.mrboomdev.scrollix.data.storage.LocalDataUsage
 import com.mrboomdev.scrollix.ui.icons.data_usage_icon
@@ -20,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -133,57 +130,13 @@ fun SettingsDataUsageContent() {
         Text(
             text = "Animated stickers, GIFs and round video notes are downloaded " +
                 "and played as soon as they appear. Turn them off to save data; " +
-                "they can still be opened by tapping them.",
+                "they can still be opened by tapping them. The switches are " +
+                "independent and apply to this device only.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary
         )
 
         val dataSaving = settings.dataSaving
-        val selectedPreset = dataSaving.matchingPreset
-
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            DataSavingPreset.entries.forEach { preset ->
-                if (selectedPreset == preset) {
-                    Button(onClick = {}) {
-                        Text("${preset.title} ✓")
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = {
-                            AppSettingsStore.update { current ->
-                                current.copy(dataSaving = DataSavingSettings.of(preset))
-                            }
-                        }
-                    ) {
-                        Text(preset.title)
-                    }
-                }
-            }
-
-            if (selectedPreset == null) {
-                Button(onClick = {}) {
-                    Text("Custom ✓")
-                }
-            } else {
-                OutlinedButton(onClick = {}) {
-                    Text("Custom")
-                }
-            }
-        }
-
-        Text(
-            text = if (selectedPreset == null) {
-                "This install uses its own mix of the switches below."
-            } else {
-                "The ${selectedPreset.title.lowercase()} profile is active on this " +
-                    "device. Changing a switch below turns it into a custom profile."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary
-        )
 
         SettingsSwitch(
             icon = mood_icon,

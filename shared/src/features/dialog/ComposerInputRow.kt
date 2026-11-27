@@ -1,10 +1,12 @@
 package com.mrboomdev.scrollix.features.dialog
 
-import com.example.test.microphone_icon
+import com.mrboomdev.scrollix.ui.icons.microphone_icon
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.platform.media.MediaRecordingKind
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.mood_icon
+import com.mrboomdev.scrollix.ui.icons.schedule_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
 import com.mrboomdev.scrollix.ui.icons.videocam_icon
 
@@ -34,6 +36,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +66,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.example.test.microphone_icon
+import com.mrboomdev.scrollix.ui.icons.microphone_icon
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -79,6 +82,7 @@ fun ComposerInputRow(
     input: String,
     inputSelection: TextRange,
     inputCustomEmojis: List<CustomEmojiSpan>,
+    inputFormatting: List<MessageTextFormat> = emptyList(),
     inputEmojiData: Map<Long, ByteArray>,
     inputEmojiAdaptive: Set<Long>,
     isSending: Boolean,
@@ -101,6 +105,13 @@ fun ComposerInputRow(
     onToggleVideoMessageMode: () -> Unit,
     onBeginRecording: (MediaRecordingKind) -> Unit,
     onSend: () -> Unit,
+    /** Null hides the schedule button, for example while editing a message. */
+    onSchedule: (() -> Unit)? = null,
+    /** Null disables the undo shortcut and its menu entry. */
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
+    onUndo: (() -> Unit)? = null,
+    onRedo: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
     autoFocus: Boolean = false
@@ -190,6 +201,34 @@ fun ComposerInputRow(
                             onAddLocation()
                         }
                     )
+
+                    // Undo lives here as well as on Ctrl+Z, because a phone
+                    // has no keyboard to reach the shortcut with.
+                    if (onUndo != null || onRedo != null) {
+                        HorizontalDivider()
+
+                        if (onUndo != null) {
+                            DropdownMenuItem(
+                                enabled = canUndo,
+                                text = { Text("Undo") },
+                                onClick = {
+                                    onAttachmentMenuChange(false)
+                                    onUndo()
+                                }
+                            )
+                        }
+
+                        if (onRedo != null) {
+                            DropdownMenuItem(
+                                enabled = canRedo,
+                                text = { Text("Redo") },
+                                onClick = {
+                                    onAttachmentMenuChange(false)
+                                    onRedo()
+                                }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -203,6 +242,25 @@ fun ComposerInputRow(
                         } ?: Modifier
                     )
                     .onPreviewKeyEvent { event ->
+                        val isUndo = event.type == KeyEventType.KeyDown &&
+                            event.isCtrlPressed &&
+                            event.key == Key.Z &&
+                            !event.isShiftPressed
+
+                        val isRedo = event.type == KeyEventType.KeyDown &&
+                            event.isCtrlPressed &&
+                            (event.key == Key.Y || (event.isShiftPressed && event.key == Key.Z))
+
+                        if (isRedo && onRedo != null) {
+                            onRedo()
+                            return@onPreviewKeyEvent true
+                        }
+
+                        if (isUndo && onUndo != null) {
+                            onUndo()
+                            return@onPreviewKeyEvent true
+                        }
+
                         val isPaste = event.type == KeyEventType.KeyDown &&
                             event.isCtrlPressed && event.key == Key.V
 
@@ -222,7 +280,17 @@ fun ComposerInputRow(
                         }
                     },
                 value = TextFieldValue(
-                    text = input,
+                    // Formatting is drawn by the field itself, unless custom
+                    // emoji are present: those need the sticker overlay, which
+                    // renders the formatting on its own.
+                    annotatedString = if (inputCustomEmojis.isEmpty()) {
+                        inputFormatting.toComposerText(
+                            text = input,
+                            linkColor = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        androidx.compose.ui.text.AnnotatedString(input)
+                    },
                     selection = TextRange(
                         start = inputSelection.start.coerceIn(0, input.length),
                         end = inputSelection.end.coerceIn(0, input.length)
@@ -255,6 +323,7 @@ fun ComposerInputRow(
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 emojis = inputCustomEmojis,
+                                formatting = inputFormatting,
                                 data = inputEmojiData,
                                 adaptiveEmojis = inputEmojiAdaptive
                             )
@@ -335,11 +404,7 @@ fun ComposerInputRow(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        tint = if (videoMessageMode) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.secondary
-                        },
+                        tint = MaterialTheme.colorScheme.secondary,
                         imageVector = if (videoMessageMode) {
                             videocam_icon
                         } else {
@@ -356,23 +421,38 @@ fun ComposerInputRow(
         }
 
         AnimatedVisibility(input.isNotEmpty() || hasAttachments) {
-            FilledIconButton(
-                enabled = (input.isNotBlank() || hasAttachments) && !isSending,
-                onClick = onSend
-            ) {
-                if (isSending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp
-                    )
-
-                    return@FilledIconButton
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                onSchedule?.let { schedule ->
+                    IconButton(
+                        enabled = !isSending,
+                        onClick = schedule
+                    ) {
+                        Icon(
+                            tint = MaterialTheme.colorScheme.secondary,
+                            imageVector = schedule_icon,
+                            contentDescription = "Schedule message"
+                        )
+                    }
                 }
 
-                Icon(
-                    imageVector = send_icon,
-                    contentDescription = null
-                )
+                FilledIconButton(
+                    enabled = (input.isNotBlank() || hasAttachments) && !isSending,
+                    onClick = onSend
+                ) {
+                    if (isSending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+
+                        return@FilledIconButton
+                    }
+
+                    Icon(
+                        imageVector = send_icon,
+                        contentDescription = null
+                    )
+                }
             }
         }
     }

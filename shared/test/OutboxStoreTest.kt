@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.data.outbox
 
+import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 
 import kotlinx.coroutines.runBlocking
@@ -27,6 +28,26 @@ class OutboxStoreTest {
         val reloaded = OutboxStore(storage)
         assertEquals(listOf(entry), reloaded.state.value.entries)
         assertEquals(CurrentOutboxVersion, reloaded.state.value.version)
+    }
+
+    @Test
+    fun `queued caption edits keep their kind across a restart`() = runBlocking {
+        val storage = MemoryStorage()
+        val store = OutboxStore(storage)
+
+        store.add(
+            entry("caption").copy(
+                kind = OutboxEntryKind.Edit,
+                targetMessageIds = listOf(42),
+                text = "new caption",
+                isCaptionEdit = true
+            )
+        )
+
+        val reloaded = OutboxStore(storage).state.value.entries.single()
+        assertEquals(OutboxEntryKind.Edit, reloaded.kind)
+        assertEquals(listOf(42L), reloaded.targetMessageIds)
+        assertTrue(reloaded.isCaptionEdit)
     }
 
     @Test
@@ -192,6 +213,34 @@ class OutboxStoreTest {
         ).pendingText)
 
         assertEquals("hello", entry("text").pendingText)
+    }
+
+    @Test
+    fun `scheduled sends keep their scheduling across a restart`() = runBlocking {
+        val storage = MemoryStorage()
+        val store = OutboxStore(storage)
+
+        store.add(
+            entry("dated").copy(
+                scheduling = MessageScheduling.At(1_700_000_000_000L)
+            )
+        )
+        store.add(
+            entry("online").copy(
+                scheduling = MessageScheduling.WhenOnline
+            )
+        )
+
+        val reloaded = OutboxStore(storage).state.value.entries.associateBy { it.id }
+
+        assertEquals(
+            MessageScheduling.At(1_700_000_000_000L),
+            reloaded.getValue("dated").scheduling
+        )
+        assertEquals(
+            MessageScheduling.WhenOnline,
+            reloaded.getValue("online").scheduling
+        )
     }
 
     @Test

@@ -101,18 +101,33 @@ can use every day.
 ## 2. Core messaging parity (Telegram first, then MAX/VK)
 
 - [~] Text, custom emoji, replies, forwarding, editing, deletion, pinning
-- [ ] Rich text composer: bold/italic/mono/underline/strike/spoiler, quote
-      blocks, lists, code blocks, link editing, entity-aware paste
-- [ ] Markdown/HTML paste conversion and "send without formatting"
-- [ ] Entity-aware editing: preserve spans while typing, deleting and pasting;
-      undo/redo for composer edits
-- [ ] Scheduled messages: create, list, reschedule, send now, delete, time-zone
-      display, "schedule when online" for offline use
+- [~] Rich text composer: bold/italic/mono/underline/strike/spoiler, quote
+      and code blocks, and link editing are sent, edited and drafted as real
+      Telegram entities and rendered in bubbles (spoilers reveal on tap).
+      Formatting is preserved while typing inside a styled range. Lists (TDLib
+      has no list entity) are still missing
+- [x] Markdown/HTML paste conversion (Markdown markers in the inserted text,
+      clipboard HTML on Android and desktop) and a "Plain text" action that
+      drops every range before sending
+- [~] Entity-aware editing: spans survive typing, deleting and replacing a
+      selection, and a replaced selection keeps the style around the new text.
+      The composer keeps an undo/redo history of the text *and* its spans
+      (`ComposerHistory`): a typing run undoes as one step, while a paste, an
+      inserted emoji/sticker or a formatting toggle stands alone; Ctrl+Z,
+      Ctrl+Shift+Z and Ctrl+Y work on desktop and Undo/Redo live in the attach
+      menu for touch. Lists (TDLib has no list entity) are still missing
+- [x] Scheduled messages: the composer picker offers quick presets, a custom
+      date/time and "send when online"; each chat's queue opens from the header
+      menu with send now, reschedule and delete, and times are shown in the
+      device zone. Scheduled sends go through the outbox, so one queued while
+      offline is delivered after reconnecting
 - [ ] Message drafts per topic/thread with conflict resolution between devices
 - [x] Message links (`t.me/...`) that open the exact message, including
       private and topic links
-- [ ] Replies 2.0 UI: quote selection, jump to quote, reply previews with
-      media, reply in another chat
+- [~] Replies 2.0 UI: tapping a reply jumps to the quoted message, and the
+      quote previews photos, videos and GIFs (with a play mark), stickers,
+      voice notes, audio and files. Quote selection (replying with a chosen
+      passage) and reply-in-another-chat are still missing
 - [~] Forwarding: picker with a title search, native/synthetic folder tabs,
       an empty state, "hide sender" (re-sent as a copy, no forward header) and
       "remove caption". Both options are gated on
@@ -125,33 +140,89 @@ can use every day.
       photos / videos / files / links) over the matched page; results replace
       the history while a query is active. Result paging, date filters and
       highlighted matches are still missing
-- [ ] Global message search across accounts with filters and saved queries
+- [~] Global message search: the search screen has a Messages tab that queries
+      every signed in account at once (newest first), can be narrowed to one
+      account — the provider is then only asked for it — and filters the
+      returned page by media type (all / from me / photos / videos / files /
+      links, the same chips the in-chat search uses). Queries can be pinned as
+      saved queries (`saved-searches.json`, newest first, 20 at most) and run or
+      removed from the chip row. Date filters, result paging and grouping by
+      account are still missing
 - [~] Read receipts, typing indicators and online status are shown; "mark as
-      unread" works on Telegram (TDLib `toggleChatIsMarkedAsUnread`). "Mark all
-      as read" and last-seen privacy are still missing
-- [ ] Reactions: full picker with all server reaction types (paid included),
-      reaction lists with reactors, per-chat available reactions, quick
-      reaction settings, double-tap on every layout
+      unread" works on Telegram (TDLib `toggleChatIsMarkedAsUnread`), and the
+      chat-list menu clears every unread chat of every account in one action
+      (`AccountSession.markAllChatsRead`, shown only while a session reports it
+      as supported; TDLib has no bulk call, so each unread chat is read with
+      `viewMessages`). Settings → Privacy changes the account's last seen
+      visibility on the server (everybody / contacts / nobody through TDLib
+      `UserPrivacySettingShowStatus`). Per-contact exceptions are still
+      missing: a rule list with user or chat exceptions reads as its base value
+      and changing it rewrites the list
+- [~] Reactions: the picker offers the user's quick and pinned reactions plus
+      the packs' custom emoji, channels and restricted chats only offer the set
+      from `loadAvailableReactions`, and paid reactions already render. A
+      reaction chip opens `ReactionListDialog` on long-press with avatars, names
+      and "and N more" for the tail Telegram does not send. Sending a paid
+      reaction, the full `getMessageAddedReactions` list and double-tap on wide
+      layouts are still missing
 - [ ] Polls and quizzes: rendering, voting, revoting, results, explanation,
       close/stop, "quiz mode" authoring, anonymous/multiple answers
-- [ ] Checklists/todo messages (TDLib 1.9+), task toggling
+- [~] Checklists/todo messages (TDLib 1.9+): a checklist renders as a card with
+      its title, one toggleable row per task, done tasks struck through with
+      their custom emoji, and a "2 of 5 done" line; toggling goes through TDLib
+      `markChecklistTasksAsDone` and is only offered when the message allows it.
+      Authoring a checklist from the composer, adding tasks to an existing list
+      and "completed by" attribution are still missing
 - [ ] Giveaways and gifts rendering and participation
 - [ ] Message effects, animated emoji, premium-only stickers
-- [ ] Translation: translate message, translate whole chat, hide original
-- [ ] Message TTL / self-destruct timers with countdowns
-- [ ] Saved Messages becomes a real bookmarking surface: tags,
-      "saved from" attribution, search
-- [ ] Topics: forum topic management (create/edit/close/pin), topic search,
-      topic notifications, channel comment topics (direct-message topics)
-- [ ] Message details: edit date, permalink,
-      copy link, save media
+- [~] Translation: the message menu translates a message into the device's
+      language through TDLib `translateText`; the bubble shows the translation
+      under the original text and can hide it again (the menu restores it).
+      Translations live only in the open chat's state, failures surface as a
+      normal action error. Translating a whole chat, picking the target
+      language explicitly and replacing the original in place are still
+      missing
+- [~] Message TTL / self-destruct countdowns: a message whose chat has an
+      auto-delete timer reports TDLib `autoDeleteIn`, which is fixed into an
+      absolute deadline when mapped, so the bubble shows a live "Deletes in
+      12s / 1:01 / 1:00:00" label that survives caching and recomputes every
+      second. The chat header's Auto-delete messages picker reads the server
+      value before offering changes, so a timer set by another client stays
+      selected, and stores through TDLib `setChatMessageAutoDeleteTime` (off,
+      1 hour, 1 day, 1 week, 1 month, plus any custom value). The secret-chat
+      TTL picker is still missing
+- [~] Topics: the forum dialog lists and opens topics and sends messages into
+      them; its header creates a topic and every row (except the fixed
+      General one) can be renamed, closed/reopened and pinned/unpinned through
+      `AccountSession.supportsTopicManagement`. The search field narrows topic
+      titles through TDLib's `getForumTopics` query. Topic notifications,
+      hidden topics and channel comment topics (direct-message topics) are
+      still missing
+- [x] Message details: the bubble menu opens a details sheet with the sender,
+      forward source, sent and edited time (TDLib `Message.editDate`), media
+      summary (kind, dimensions, size, duration), view/share/reply counts,
+      message id, the provider permalink with a copy action, and a Save media
+      action that writes every attachment of the message (albums included) to
+      the device
 - [~] Per-message actions: delete for me only (Telegram `revoke = false`,
       MAX `forMe = true`, VK `delete_for_all = 0`), copy link on Telegram
       through TDLib `getMessageLink`, and selectable text. Report is still
       missing
-- [ ] Unread divider, unread jump button and "new messages" marker everywhere
-- [ ] Draft center: all unfinished drafts grouped per account with jump-to-chat
-- [ ] Media captions and text-only edits across providers
+- [~] Unread divider and jump: the dialog draws the divider above the first
+      unread message, and a floating "Unread messages" chip jumps back to it
+      when it is off screen. The chip is hidden once used on the screen and
+      while newer messages arrived (the latest button takes over). The divider
+      is still missing in the topic and thread surfaces
+- [x] Draft center: all unfinished drafts grouped per account with jump-to-chat.
+      Reachable from the rail and the chat-list overflow menu; a draft saved in
+      the composer patches the cached dialog so the list never goes stale.
+- [~] Media captions and text-only edits across providers: Telegram edits a
+      photo/video/file/audio/animation caption through TDLib
+      `editMessageCaption`, offered from the message menu even when the caption
+      is empty, and an emptied caption removes it. The caption position
+      (above/below the media) is read back before the edit so it does not
+      move, and the edit queues in the outbox as a caption entry. MAX and VK
+      still only edit plain text, so their media messages hide Edit
 
 ---
 
@@ -512,7 +583,8 @@ These are user-facing gaps that are easy to forget while deep in protocol work.
 - [ ] Notification center/inbox: mentions, reactions, replies and missed
       notifications grouped by chat
 - [ ] folder management from the chat list, not only Settings
-- [ ] Drafts center and scheduled-message center
+- [~] Drafts center and scheduled-message center (drafts are done; the
+      scheduled-message center is not)
 - [ ] Saved Messages as a bookmark surface with tags and "saved from"
 - [ ] Contact book with add/edit/remove and system-contacts sync
 - [ ] Blocked users and reported-content history

@@ -358,16 +358,39 @@ Index: **Media & cache** · **Sessions, auth & data** · **Composer, outbox & se
   in the provider contract and Telegram maps them to TDLib active sessions. The
   current device is never offered for termination in the UI (it would sign the
   user out).
+- **Mark all as read.** The chat-list overflow menu clears the unread counters
+  of every account through `ApiManager.markAllChatsRead`, offered only while a
+  session reports `supportsMarkAllRead` (the contract default is "unsupported",
+  so MAX and VK hide it). TDLib has no bulk call: `TelegramSession` reads each
+  unread chat up to `lastMessage.id` with `viewMessages(forceRead = true)`, and
+  one failing chat does not stop the rest — a failure is logged and only
+  reported when nothing could be marked.
+- **Last seen privacy.** Settings → Privacy is server-side per account:
+  `loadLastSeenVisibility` / `setLastSeenVisibility` map onto TDLib's
+  `UserPrivacySettingShowStatus` rule list (`AllowAll` → everybody,
+  `AllowContacts` → contacts, anything else → nobody). Writing a value sends a
+  single base rule, so user or chat exceptions added by another client are
+  replaced rather than preserved — say so instead of pretending they survive.
+  `supportsLastSeenPrivacy` defaults to false, which keeps the control out of
+  providers without the setting.
+- **Chat auto-delete timers.** The chat header's Auto-delete messages picker
+  is gated by `supportsMessageAutoDelete` and reads
+  `loadMessageAutoDeleteTime` before offering changes, so a timer set by
+  another client is preserved instead of being overwritten; applying writes
+  through TDLib `setChatMessageAutoDeleteTime` (0 turns it off). Presets and
+  labels are pure functions in `AutoDeleteTime.kt`. MAX and VK keep the
+  control hidden.
 - **Data saver is local.** Settings → Data and network never calls
   `loadDataUsage`/`applyDataUsagePreset`; the provider methods stay in the
   contract but the app does not depend on them. Traffic comes from
   `DataUsageStore` (`data-usage.json`): `CacheStore.saveMedia` records received
   bytes and a successful text send in `OutboxManager` records sent bytes, so the
   numbers cover only traffic Scrollix itself moves and are labelled as
-  approximate. Resetting clears that account's counters. The profile itself is
-  `AppSettings.dataSaving` (`DataSavingSettings`): Presets Low/Medium/High set
-  the auto-play switches for GIFs/animated stickers and round video notes, and
-  any manual change turns it into a custom profile (`matchingPreset == null`).
+  approximate. Resetting clears that account's counters. The policy itself is
+  `AppSettings.dataSaving` (`DataSavingSettings`): two independent switches for
+  auto-playing GIFs/animated stickers and round video notes on this device.
+  There are no preset profiles; an older file that still carries one decodes
+  because unknown fields are ignored.
   `ChatAnimation` and `ChatVideo` read the switches and leave the still preview
   in place instead of downloading when playback is off.
 - **Accounts.** The "Active" account is not a chat-list filter. It is the
@@ -438,6 +461,28 @@ Index: **Media & cache** · **Sessions, auth & data** · **Composer, outbox & se
   `ApiManager.connectionStates`
   combines each session's `isConnected` flow and omits accounts without a
   session, so signing in is never reported as offline.
+- **Scheduled messages.** `MessageScheduling` (`At(millis)` or `WhenOnline`)
+  travels on text/file sends and outbox entries. Telegram maps it through
+  `sendOptions()` to `MessageSchedulingStateSendAtDate`/
+  `SendWhenOnline`; MAX and VK expose `supportsScheduling = false` and hide the
+  entry points. A scheduled message must never enter the history:
+  `upsertMessage` ignores a message with `schedulingState`, and the pending-row
+  collection in `DialogScreenViewModel` skips outbox entries with `scheduling`.
+  The chat header's Scheduled messages dialog loads its queue with
+  `loadScheduledMessages`, sends/reschedules through `rescheduleMessage`
+  (null = send now) and deletes via `deleteMessages(forEveryone = false)`.
+  Presets, custom `YYYY-MM-DD`/`HH:MM` parsing and labels are pure functions in
+  `Scheduling.kt`.
+- **Caption editing.** A media message's text is a caption, and Telegram edits
+  it through `editMessageCaption`, never `editMessageText` (which rejects media
+  messages). `ChatMessage.editsCaption` (photo/video/file/audio/animation, and
+  every album item) and `canBeEdited(supportsCaptionEditing)` in
+  `CaptionEditing.kt` gate the message menu; providers default to
+  `supportsCaptionEditing = false`, so MAX/VK media messages show no Edit. The
+  composer allows an empty caption in this mode — clearing it removes the
+  caption — and keeps the caption's above/below position by reading the current
+  message first. Caption edits queue as `OutboxEntryKind.Edit` with
+  `isCaptionEdit`, so a retry calls the caption path after a reconnect.
 - **Attachment review.** Picking one or more files opens a blocking,
   non-dismissible modal that dims the whole chat. It lists the attachments and
   an optional caption, and the only actions are Send and Discard. Do not add
@@ -446,16 +491,49 @@ Index: **Media & cache** · **Sessions, auth & data** · **Composer, outbox & se
   have ↑/↓ buttons (backed by the pure `List.moved`) plus remove, so the send
   order can be fixed before uploading; the arrows are disabled at the edges and
   while a send is in flight.
+- **Rich text.** `MessageTextFormat` ranges (bold, italic, monospace, underline,
+  strike, spoiler, quote/code block, link) are the single formatting model for
+  the composer, outbox entries, drafts and bubbles. Offsets are UTF-16 code
+  units, matching TDLib entities, so no conversion happens at the provider
+  boundary. Telegram maps them to real entities for sends, edits, captions and
+  drafts and back for received messages; MAX and VK accept the parameter but
+  currently deliver plain text. The composer tracks ranges through every edit
+  (`adjustFormatting`), shows its toolbar only while a range is selected, sends
+  them through the outbox, and renders links through `DeepLinkHandler`. Text
+  spoilers stay hidden in bubbles until tapped. A multi-character insertion is
+  checked for Markdown markup and, when the inserted text matches the clipboard,
+  for clipboard HTML (`platform/clipboard`, AWT on desktop, `ClipboardManager`
+  on Android) through the pure parsers in `RichPaste.kt`; plain insertions are
+  never rewritten. The bar's "Plain text" action drops all ranges before the
+  message is queued.
 - **Composer layout.** The message list is the background of the chat area and
   scrolls behind the floating composer. The list's bottom content padding is
   the measured composer height, so the newest message rests above the composer
   at the end of history instead of being hidden by it.
+- **Composer undo/redo.** `ComposerHistory` keeps `ComposerSnapshot`s (text,
+  caret, custom-emoji spans, formatting ranges) taken *before* each edit, so an
+  undo restores rich text that a text-only diff would lose. Typing edits merge
+  within 1.5 s into one step; a paste, an inserted emoji/sticker, a formatting
+  or link change is discrete; the stack holds 100 steps and the oldest is
+  dropped first. `clearComposer` (a sent message, a cancelled edit) empties the
+  stack, and `ComposerInputRow` maps Ctrl+Z plus Ctrl+Shift+Z / Ctrl+Y, with
+  Undo/Redo in the attach menu for touch. Every new composer mutation has to
+  call `recordComposerEdit`, or it becomes unundoable.
 - **Message animations.** Newest messages slide in from the bottom, and
   `Modifier.animateItem()` handles deletion/placement in the history list.
 - **Batch copy.** The selection bar's Copy action uses `selectedMessageText`:
   service and blank messages are skipped, an album row counts once, messages
   are joined oldest first (independent of the list's display order) and a blank
   line separates them. Copying clears the selection so the bar closes.
+- **Message details.** The bubble's overflow menu opens `MessageDetailsDialog`,
+  whose rows come from the pure `messageDetailsRows(message, permalink,
+  formatDate)`: sender, forward source, sent and edited time, media summary,
+  counts, message id and the permalink with a Copy link action. The permalink is
+  resolved through the session (so only link-capable providers show it) and is
+  skipped for queued rows with synthetic negative ids. `ChatMessage.editDate`
+  comes from TDLib `Message.editDate`; MAX and VK leave it 0, so the Edited row
+  is absent. The sheet renders the live message by id, so an edit that lands
+  while it is open updates it.
 - **Forwarding picker.** The `Forward to` dialog only offers chats that accept
   messages in the current chat's account (not the current chat itself).
   `filterForwardTargets` matches the title with every whitespace token, then
@@ -470,6 +548,21 @@ Index: **Media & cache** · **Sessions, auth & data** · **Composer, outbox & se
   `AppSettings` are `ReactionPreference` values that may carry a custom emoji
   id. Double-tap reactions are only wired on compact/mobile layouts; the
   message bubble shows selection checkboxes while selection mode is active.
+  Tapping a chip keeps toggling this account's reaction; long-pressing it opens
+  `ReactionListDialog`. `MessageReactionInfo.reactors` is built from TDLib
+  `recentSenderIds` and refilled by `refreshReactionAvatars` as user data
+  arrives, so names may briefly be empty. `reactionExtraCount` reports the
+  reactors Telegram did not send — never present the list as complete.
+- **Checklists.** A `MessageChecklist` content renders as `MessageChecklistCard`
+  (title, one row per task, "2 of 5 done") instead of message text:
+  `messageText` maps it to `""` and the dialog preview uses the list title.
+  Toggling goes through `AccountSession.setChecklistTasksDone` → TDLib
+  `markChecklistTasksAsDone`, and is only offered when the mapped
+  `MessageChecklistInfo.canMarkTasksAsDone` allows it (Telegram gates that on
+  message properties and premium). The server reports the new state as
+  `updateMessageContent`, so `updateMessageContent` must re-map `checklist`
+  alongside text and media or the card never refreshes.
+  `supportsChecklists` defaults to false; MAX and VK never produce one.
 
 ### Profiles, navigation & search
 
@@ -518,6 +611,16 @@ Index: **Media & cache** · **Sessions, auth & data** · **Composer, outbox & se
   URLs and phone numbers. Tapping a hashtag opens `Route.Search(query)` with the
   Posts/Messages tab preselected, so `searchGlobalMessages` returns matches
   across every account instead of only filtering the current chat.
+- **Global message search.** The search screen's Messages tab queries every
+  signed in account through `ApiManager.searchGlobalMessages` (pass
+  `accountIds` when the user narrowed it, so the other accounts are not asked),
+  renders newest first with chat titles from `ApiManager.dialogs`, and narrows
+  the returned page with `DialogSearchFilter` — the same media chips as the
+  in-chat search — without another provider call. It is manual (tap "Search
+  messages") because it fans out per account; it is not part of the debounced
+  chat search. Saved queries live in `saved-searches.json` via
+  `SavedSearchStore`: `withSavedQuery` moves a repeat to the front
+  case-insensitively and caps the list at 20, so the chip row stays bounded.
 - **Telegram deep links.** `DeepLinkHandler` bridges platform intents to
   Compose. Android declares VIEW filters for `t.me`, `telegram.me` and the `tg`
   scheme in `AndroidManifest.xml`; `MainActivity` publishes both the launch

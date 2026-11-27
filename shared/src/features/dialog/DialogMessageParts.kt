@@ -16,9 +16,13 @@ import com.mrboomdev.scrollix.features.profile.formatCount
 import com.mrboomdev.scrollix.features.search.formatFileSize
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.components.savedMediaFileName
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideIn
+import androidx.compose.animation.slideOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,6 +72,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -160,8 +165,10 @@ internal fun UnreadMessagesHeader() {
 internal fun BoxScope.MessageListOverlays(
     isLoadingMore: Boolean,
     showNewMessages: Boolean,
+    showUnreadJump: Boolean,
     isAtBottom: Boolean,
     bottomInset: Dp,
+    onScrollToUnread: () -> Unit,
     onScrollToLatest: () -> Unit
 ) {
     AnimatedVisibility(
@@ -187,7 +194,9 @@ internal fun BoxScope.MessageListOverlays(
         visible = showNewMessages || !isAtBottom,
         modifier = Modifier
             .align(Alignment.BottomEnd)
-            .padding(end = 12.dp, bottom = bottomInset + 12.dp)
+            .padding(end = 8.dp, bottom = bottomInset + 8.dp),
+        enter = slideIn(tween(100)) { IntOffset(0, it.height) },
+        exit = slideOut(tween(100)) { IntOffset(0, it.height) },
     ) {
         if (showNewMessages) {
             Button(onClick = onScrollToLatest) {
@@ -196,7 +205,7 @@ internal fun BoxScope.MessageListOverlays(
         } else {
             SmallFloatingActionButton(
                 onClick = onScrollToLatest,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 contentColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(
@@ -205,6 +214,21 @@ internal fun BoxScope.MessageListOverlays(
                     contentDescription = "Scroll to the latest message"
                 )
             }
+        }
+    }
+
+    // Jumps back to the first unread message while it is above the viewport.
+    // The chip is centered so it never competes with the latest-message button
+    // at the trailing edge, and it disappears for good once used on this
+    // screen instead of following every scroll.
+    AnimatedVisibility(
+        visible = showUnreadJump,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = bottomInset + 12.dp)
+    ) {
+        Button(onClick = onScrollToUnread) {
+            Text("Unread messages")
         }
     }
 }
@@ -445,8 +469,11 @@ internal fun MessagePollCard(
     session: AccountSession?,
     customEmojiData: Map<Long, ByteArray>,
     customEmojiAdaptive: Set<Long> = emptySet(),
+    /** True for the author's own open poll when the provider can close it. */
+    canClose: Boolean = false,
     onOptionClick: (MessagePollOptionInfo) -> Unit,
-    onRetractVote: () -> Unit
+    onRetractVote: () -> Unit,
+    onClosePoll: (() -> Unit)? = null
 ) {
     val contentColor = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -530,6 +557,19 @@ internal fun MessagePollCard(
                     .clickable(onClick = onRetractVote)
                     .padding(horizontal = 6.dp, vertical = 2.dp),
                 text = "Retract vote",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = accent
+            )
+        }
+
+        if (canClose && !poll.isClosed && onClosePoll != null) {
+            Text(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onClosePoll)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                text = "Stop poll",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = accent
@@ -869,7 +909,7 @@ internal fun MessageFileCard(
 
                     if (bytes != null) {
                         savedPath = withContext(Dispatchers.IO) {
-                            saveFileToDevice(media.fileName ?: "file", bytes)
+                            saveFileToDevice(savedMediaFileName(media), bytes)
                         }
                     }
 

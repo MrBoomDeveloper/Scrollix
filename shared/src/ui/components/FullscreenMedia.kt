@@ -558,7 +558,7 @@ fun FullscreenGalleryViewer(
                         if(bytes != null) {
                             downloaded = withContext(Dispatchers.IO) {
                                 saveFileToDevice(
-                                    fileName = current.downloadFileName(),
+                                    fileName = savedMediaFileName(current),
                                     bytes = bytes
                                 ) != null
                             }
@@ -732,26 +732,6 @@ private val MessageMedia.isVideo: Boolean
     get() = kind == MessageMediaKind.Video ||
         kind == MessageMediaKind.Animation ||
         kind == MessageMediaKind.VideoNote
-
-private fun MessageMedia.downloadFileName(): String {
-    val base = fileName?.takeIf { it.isNotBlank() } ?: when (kind) {
-        MessageMediaKind.Photo -> "photo"
-        MessageMediaKind.Video, MessageMediaKind.VideoNote -> "video"
-        MessageMediaKind.Animation -> "animation"
-        MessageMediaKind.Audio -> "audio"
-        else -> "file"
-    }
-
-    if (base.contains('.')) return base
-
-    return when (kind) {
-        MessageMediaKind.Photo -> "$base.jpg"
-        MessageMediaKind.Video, MessageMediaKind.VideoNote -> "$base.mp4"
-        MessageMediaKind.Animation -> "$base.gif"
-        MessageMediaKind.Audio -> "$base.mp3"
-        else -> base
-    }
-}
 
 private fun fullscreenAnimationSize(media: MessageMedia): Pair<Int, Int> {
     val maxSize = 320

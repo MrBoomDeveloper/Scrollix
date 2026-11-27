@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.platform.files.PickedFile
 import com.mrboomdev.scrollix.platform.media.MediaRecordingController
+import com.mrboomdev.scrollix.platform.clipboard.readClipboardRichText
 import com.mrboomdev.scrollix.platform.media.MediaRecordingKind
 
 import androidx.compose.ui.text.TextRange
@@ -21,17 +22,37 @@ import kotlin.time.Duration.Companion.milliseconds
  * follow the text automatically.
  */
 internal fun DialogScreenViewModel.updateInput(value: String, selection: TextRange) {
+    if (value != input) {
+        // A multi-character insertion may be a Markdown or rich HTML paste;
+        // its markup is converted into plain text plus formatting ranges.
+        conversionForPaste(input, value) { readClipboardRichText() }?.let { replacement ->
+            recordComposerEdit(ComposerEditKind.Discrete)
+            applyPasteReplacement(replacement)
+            return
+        }
+
+        recordComposerEdit(ComposerEditKind.Typing)
+    }
+
     if (value.isEmpty()) {
         // A programmatic reset never reaches onValueChange, so its spans are
         // dropped here instead of pointing past the end of the text.
         if (inputCustomEmojis.isNotEmpty()) {
             inputCustomEmojis = emptyList()
         }
+
+        if (inputFormatting.isNotEmpty()) {
+            inputFormatting = emptyList()
+        }
     } else if (value != input) {
         inputCustomEmojis = adjustCustomEmojiSpans(
             oldText = input,
             newText = value,
             spans = inputCustomEmojis
+        )
+        inputFormatting = inputFormatting.adjustFormatting(
+            oldText = input,
+            newText = value
         )
     }
 
@@ -48,6 +69,8 @@ internal fun DialogScreenViewModel.updateInput(value: String, selection: TextRan
  * user keeps typing after it.
  */
 internal fun DialogScreenViewModel.insertIntoComposer(text: String, emojiId: Long? = null) {
+    recordComposerEdit(ComposerEditKind.Discrete)
+
     val start = inputSelection.start.coerceIn(0, input.length)
     val end = inputSelection.end.coerceIn(start, input.length)
     val updated = input.replaceRange(start, end, text)
@@ -66,6 +89,11 @@ internal fun DialogScreenViewModel.insertIntoComposer(text: String, emojiId: Lon
         }
     )
 
+    inputFormatting = inputFormatting.adjustFormatting(
+        oldText = input,
+        newText = updated
+    )
+
     input = updated
     inputSelection = TextRange(start + text.length)
 
@@ -75,7 +103,14 @@ internal fun DialogScreenViewModel.insertIntoComposer(text: String, emojiId: Lon
 
 /** Appends to the end of the draft, as the attachment caption field does. */
 internal fun DialogScreenViewModel.appendToComposer(text: String, emojiId: Long?) {
+    recordComposerEdit(ComposerEditKind.Discrete)
+
     val start = input.length
+
+    inputFormatting = inputFormatting.adjustFormatting(
+        oldText = input,
+        newText = input + text
+    )
 
     inputCustomEmojis = inputCustomEmojis + listOfNotNull(
         emojiId?.let { id ->
@@ -98,6 +133,125 @@ internal fun DialogScreenViewModel.clearComposer() {
     input = ""
     inputSelection = TextRange.Zero
     inputCustomEmojis = emptyList()
+    inputFormatting = emptyList()
+
+    // A programmatic reset (sent message, cancelled edit) starts a new draft,
+    // so the steps of the previous one would only restore a stale composer.
+    composerHistory.clear()
+    refreshComposerHistoryState()
+
+    scheduleDraftSave()
+}
+
+/** Snapshot of the composer as it is now, ready to be restored by an undo. */
+internal fun DialogScreenViewModel.composerSnapshot() = ComposerSnapshot(
+    text = input,
+    selection = inputSelection,
+    customEmojis = inputCustomEmojis,
+    formatting = inputFormatting
+)
+
+/**
+ * Remembers the composer state before an edit. Typing runs merge into one step,
+ * so a whole word is undone at once instead of character by character, and a
+ * paste or a formatting toggle stays a step of its own.
+ */
+internal fun DialogScreenViewModel.recordComposerEdit(kind: ComposerEditKind) {
+    composerHistory.record(
+        before = composerSnapshot(),
+        kind = kind,
+        now = System.currentTimeMillis()
+    )
+
+    refreshComposerHistoryState()
+}
+
+/** Restores the composer as it was before the last edit. */
+internal fun DialogScreenViewModel.undoComposer() {
+    val snapshot = composerHistory.undo(composerSnapshot()) ?: return
+    restoreComposerSnapshot(snapshot)
+}
+
+/** Re-applies the edit that was undone last. */
+internal fun DialogScreenViewModel.redoComposer() {
+    val snapshot = composerHistory.redo(composerSnapshot()) ?: return
+    restoreComposerSnapshot(snapshot)
+}
+
+private fun DialogScreenViewModel.restoreComposerSnapshot(snapshot: ComposerSnapshot) {
+    input = snapshot.text
+    inputCustomEmojis = snapshot.customEmojis
+    inputFormatting = snapshot.formatting
+
+    // A restored snapshot may predate a deletion, so the caret is clamped to
+    // the text that actually came back.
+    inputSelection = TextRange(
+        start = snapshot.selection.start.coerceIn(0, snapshot.text.length),
+        end = snapshot.selection.end.coerceIn(0, snapshot.text.length)
+    )
+
+    refreshComposerHistoryState()
+    ensureInputEmojiLoaded()
+    scheduleDraftSave()
+}
+
+private fun DialogScreenViewModel.refreshComposerHistoryState() {
+    canUndoComposer = composerHistory.canUndo
+    canRedoComposer = composerHistory.canRedo
+}
+
+/** Replaces an insertion with its converted text and formatting. */
+private fun DialogScreenViewModel.applyPasteReplacement(replacement: PasteReplacement) {
+    val start = replacement.start.coerceIn(0, input.length)
+    val end = replacement.end.coerceIn(start, input.length)
+    val updated = input.replaceRange(start, end, replacement.paste.text)
+
+    inputCustomEmojis = adjustCustomEmojiSpans(
+        oldText = input,
+        newText = updated,
+        spans = inputCustomEmojis
+    )
+
+    inputFormatting = (
+        inputFormatting.adjustFormatting(oldText = input, newText = updated) +
+            replacement.paste.formatting.map { format ->
+                format.copy(
+                    start = format.start + start,
+                    end = format.end + start
+                )
+            }
+        ).mergedFormatting()
+
+    input = updated
+    inputSelection = TextRange(start + replacement.paste.text.length)
+
+    ensureInputEmojiLoaded()
+    scheduleDraftSave()
+}
+
+/** Drops every rich text range, so the message goes out as plain text. */
+internal fun DialogScreenViewModel.clearComposerFormatting() {
+    if (inputFormatting.isEmpty()) return
+
+    recordComposerEdit(ComposerEditKind.Discrete)
+    inputFormatting = emptyList()
+    scheduleDraftSave()
+}
+
+/** Applies or removes one formatting style over the current selection. */
+internal fun DialogScreenViewModel.toggleComposerFormat(style: ComposerTextFormat) {
+    if (inputSelection.collapsed) return
+
+    recordComposerEdit(ComposerEditKind.Discrete)
+    inputFormatting = inputFormatting.toggleFormatting(inputSelection, style)
+    scheduleDraftSave()
+}
+
+/** Links the selected text, or unlinks it when the confirmed URL is blank. */
+internal fun DialogScreenViewModel.applyComposerLink(url: String) {
+    recordComposerEdit(ComposerEditKind.Discrete)
+    inputFormatting = inputFormatting.applyLink(inputSelection, url)
+    showLinkDialog = false
     scheduleDraftSave()
 }
 
@@ -115,11 +269,14 @@ internal fun DialogScreenViewModel.restoreDraft() {
 
     viewModelScope.launch {
         currentSession.loadDraft(providerDialogId).onSuccess { draft ->
-            hadServerDraft = draft.text.isNotEmpty() || draft.customEmojis.isNotEmpty()
+            hadServerDraft = draft.text.isNotEmpty() ||
+                draft.customEmojis.isNotEmpty() ||
+                draft.formatting.isNotEmpty()
 
             if (input.isEmpty() && editingMessage == null) {
                 input = draft.text
                 inputCustomEmojis = draft.customEmojis
+                inputFormatting = draft.formatting
                 inputSelection = TextRange(draft.text.length)
                 ensureInputEmojiLoaded()
             }
@@ -136,7 +293,12 @@ internal fun DialogScreenViewModel.restoreDraft() {
 internal fun DialogScreenViewModel.scheduleDraftSave() {
     if (!draftRestored || editingMessage != null) return
 
-    if (input.isEmpty() && inputCustomEmojis.isEmpty() && !hadServerDraft) {
+    if (
+        input.isEmpty() &&
+        inputCustomEmojis.isEmpty() &&
+        inputFormatting.isEmpty() &&
+        !hadServerDraft
+    ) {
         return
     }
 
@@ -145,8 +307,24 @@ internal fun DialogScreenViewModel.scheduleDraftSave() {
         delay(600.milliseconds)
 
         val currentSession = session ?: return@launch
-        currentSession.saveDraft(providerDialogId, input, inputCustomEmojis)
-        hadServerDraft = input.isNotEmpty() || inputCustomEmojis.isNotEmpty()
+        currentSession.saveDraft(
+            providerDialogId = providerDialogId,
+            text = input,
+            customEmojis = inputCustomEmojis,
+            formatting = inputFormatting
+        ).onSuccess {
+            // The chat list does not receive a draft update from the provider
+            // for a locally saved draft, so the cached dialog is patched here.
+            com.mrboomdev.scrollix.data.api.ApiManager.setDraftText(
+                accountId = accountId,
+                providerDialogId = providerDialogId,
+                text = input
+            )
+        }
+
+        hadServerDraft = input.isNotEmpty() ||
+            inputCustomEmojis.isNotEmpty() ||
+            inputFormatting.isNotEmpty()
     }
 }
 

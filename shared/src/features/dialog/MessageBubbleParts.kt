@@ -16,8 +16,10 @@ import com.mrboomdev.scrollix.ui.icons.schedule_icon
 import com.mrboomdev.scrollix.ui.icons.share_icon
 import com.mrboomdev.scrollix.ui.icons.visibility_icon
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,6 +68,8 @@ internal fun MessageFooter(
     customEmojiAdaptive: Set<Long> = emptySet(),
     session: AccountSession? = null,
     onReaction: ((MessageReactionOption) -> Unit)? = null,
+    /** Opens the list of accounts behind a reaction; long-press on a chip. */
+    onShowReactions: ((MessageReactionInfo) -> Unit)? = null,
     onRetrySend: (() -> Unit)? = null
 ) {
     Row(
@@ -85,7 +89,8 @@ internal fun MessageFooter(
                 customEmojiData = customEmojiData,
                 customEmojiAdaptive = customEmojiAdaptive,
                 session = session,
-                onReaction = onReaction
+                onReaction = onReaction,
+                onShowReactions = onShowReactions
             )
         }
         
@@ -100,6 +105,7 @@ internal fun MessageFooter(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MessageReactionsRow(
     modifier: Modifier = Modifier,
@@ -110,7 +116,8 @@ internal fun MessageReactionsRow(
     customEmojiData: Map<Long, ByteArray> = emptyMap(),
     customEmojiAdaptive: Set<Long> = emptySet(),
     session: AccountSession? = null,
-    onReaction: ((MessageReactionOption) -> Unit)? = null
+    onReaction: ((MessageReactionOption) -> Unit)? = null,
+    onShowReactions: ((MessageReactionInfo) -> Unit)? = null
 ) {
     val accent = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -139,16 +146,21 @@ internal fun MessageReactionsRow(
             }
 
             Surface(
-                modifier = if (onReaction != null) {
-                    Modifier.clickable {
-                        onReaction(
-                            MessageReactionOption(
-                                emoji = reaction.emoji,
-                                customEmojiId = reaction.customEmojiId
+                modifier = when {
+                    onReaction != null || onShowReactions != null -> Modifier.combinedClickable(
+                        onClick = {
+                            onReaction?.invoke(
+                                MessageReactionOption(
+                                    emoji = reaction.emoji,
+                                    customEmojiId = reaction.customEmojiId
+                                )
                             )
-                        )
-                    }
-                } else Modifier,
+                        },
+                        onLongClick = { onShowReactions?.invoke(reaction) }
+                    )
+
+                    else -> Modifier
+                },
                 shape = RoundedCornerShape(12.dp),
                 color = if(isOutgoing) {
                     chipColor.copy(alpha = chipAlpha)
@@ -522,4 +534,92 @@ internal fun ReplyQuote(
             )
         }
     }
+}
+
+/**
+ * Translation shown under the original message text. The original stays in
+ * place, so the reader can compare both; the action hides the translation
+ * again, and the message menu restores it.
+ */
+@Composable
+internal fun TranslatedTextBlock(
+    text: String,
+    isOutgoing: Boolean,
+    modifier: Modifier = Modifier,
+    onHide: (() -> Unit)? = null
+) {
+    val accent = if (isOutgoing) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(accent.copy(alpha = 0.10f))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = "Translated",
+            style = MaterialTheme.typography.labelSmall,
+            color = accent.copy(alpha = 0.8f)
+        )
+
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            lineHeight = 20.sp
+        )
+
+        if (onHide != null) {
+            Text(
+                modifier = Modifier.clickable(onClick = onHide),
+                text = "Hide translation",
+                style = MaterialTheme.typography.labelSmall,
+                color = accent
+            )
+        }
+    }
+}
+
+/**
+ * Countdown of a message that deletes itself. The label is recomputed every
+ * second from the absolute deadline, not decremented, so a paused app or a
+ * clock change never leaves a wrong number on screen. When the deadline is
+ * reached the row disappears; the provider then removes the message itself
+ * and the history update drops the bubble.
+ */
+@Composable
+internal fun AutoDeleteCountdown(
+    autoDeleteAt: Long,
+    isOutgoing: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val now = remember(autoDeleteAt) {
+        mutableStateOf(com.mrboomdev.scrollix.data.storage.currentTimeMillis())
+    }
+
+    LaunchedEffect(autoDeleteAt) {
+        while (true) {
+            val current = com.mrboomdev.scrollix.data.storage.currentTimeMillis()
+            now.value = current
+            if (current >= autoDeleteAt) break
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+
+    val label = formatAutoDeleteRemaining(autoDeleteAt - now.value) ?: return
+
+    Text(
+        modifier = modifier,
+        text = "Deletes in $label",
+        style = MaterialTheme.typography.labelSmall,
+        color = if (isOutgoing) {
+            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+        } else {
+            MaterialTheme.colorScheme.secondary
+        }
+    )
 }

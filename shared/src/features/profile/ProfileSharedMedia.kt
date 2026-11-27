@@ -1,7 +1,7 @@
 package com.mrboomdev.scrollix.features.profile
 
-import com.example.test.gif_box_icon_filled
-import com.example.test.microphone_icon
+import com.mrboomdev.scrollix.ui.icons.gif_box_icon_filled
+import com.mrboomdev.scrollix.ui.icons.microphone_icon
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
@@ -67,8 +67,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.test.gif_box_icon_filled
-import com.example.test.microphone_icon
+import com.mrboomdev.scrollix.ui.icons.gif_box_icon_filled
+import com.mrboomdev.scrollix.ui.icons.microphone_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

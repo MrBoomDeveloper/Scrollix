@@ -11,8 +11,11 @@ import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
+import com.mrboomdev.scrollix.data.storage.SavedSearchStore
 import com.mrboomdev.scrollix.data.storage.deviceDownloadsDirectory
 import com.mrboomdev.scrollix.data.storage.listDeviceDownloads
+import com.mrboomdev.scrollix.features.dialog.DialogSearchFilter
+import com.mrboomdev.scrollix.features.dialog.filterSearchMessages
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -63,6 +66,37 @@ internal class SearchScreenViewModel : ViewModel() {
     var postError by mutableStateOf<String?>(null)
         private set
 
+    /** Global message search across every account, or the chosen account. */
+    var messageResults by mutableStateOf<List<ChatMessage>>(emptyList())
+        private set
+
+    var messageSearched by mutableStateOf(false)
+        private set
+
+    var isSearchingMessages by mutableStateOf(false)
+        private set
+
+    var messageError by mutableStateOf<String?>(null)
+        private set
+
+    /** Query the current [messageResults] belong to, so stale pages can drop. */
+    var messageSearchQuery by mutableStateOf<String?>(null)
+        private set
+
+    var messageFilter by mutableStateOf(DialogSearchFilter.All)
+        private set
+
+    /** Account the message search is narrowed to; null searches every account. */
+    var messageAccountId by mutableStateOf<String?>(null)
+        private set
+
+    var savedSearches by mutableStateOf(SavedSearchStore.queries.value)
+        private set
+
+    /** Results after the media filter; the provider is not queried again. */
+    val visibleMessageResults: List<ChatMessage>
+        get() = filterSearchMessages(messageResults, messageFilter)
+
     var deviceDownloads by mutableStateOf<List<DeviceDownloadedFile>>(emptyList())
         private set
 
@@ -98,8 +132,76 @@ internal class SearchScreenViewModel : ViewModel() {
     fun updateQuery(value: String) {
         query = value
         invalidatePostResults()
+        invalidateMessageResults()
         scheduleChatSearch()
         scheduleQuotaRefresh()
+    }
+
+    /**
+     * Global message search is manual like the post search: it fans out to every
+     * account, so a keystroke must not start it.
+     */
+    fun searchMessages() {
+        if (isSearchingMessages) return
+
+        val searchQuery = trimmedQuery
+        if (searchQuery.isEmpty()) return
+
+        // A different account or query starts a new page, not an append.
+        messageSearchQuery = searchQuery
+        messageSearched = true
+        messageError = null
+        isSearchingMessages = true
+
+        val accountIds = messageAccountId?.let { accountId -> setOf(accountId) }
+
+        viewModelScope.launch {
+            ApiManager.searchGlobalMessages(
+                query = searchQuery,
+                limit = SearchPageSize,
+                accountIds = accountIds
+            ).onSuccess { results ->
+                messageResults = results
+            }.onFailure { failure ->
+                messageError = failure.message ?: "Could not search messages"
+            }
+
+            isSearchingMessages = false
+        }
+    }
+
+    fun applyMessageFilter(filter: DialogSearchFilter) {
+        messageFilter = filter
+    }
+
+    /** Narrows the next search to one account; null searches every account. */
+    fun setMessageAccountFilter(accountId: String?) {
+        if (messageAccountId == accountId) return
+
+        messageAccountId = accountId
+
+        // The current page belongs to the previous scope, so it cannot stand.
+        messageResults = emptyList()
+        messageSearchQuery = null
+        messageSearched = false
+        messageError = null
+    }
+
+    fun saveCurrentSearch() {
+        SavedSearchStore.save(trimmedQuery)
+        savedSearches = SavedSearchStore.queries.value
+    }
+
+    fun forgetSavedSearch(savedQuery: String) {
+        SavedSearchStore.forget(savedQuery)
+        savedSearches = SavedSearchStore.queries.value
+    }
+
+    /** Runs a pinned query through the same path as a typed one. */
+    fun runSavedSearch(savedQuery: String) {
+        updateQuery(savedQuery)
+        selectedTab = SearchTab.Messages
+        searchMessages()
     }
 
     fun selectTab(tab: SearchTab) {
@@ -170,6 +272,7 @@ internal class SearchScreenViewModel : ViewModel() {
         if (
             query.isEmpty() ||
             selectedTab == SearchTab.Posts ||
+            selectedTab == SearchTab.Messages ||
             selectedTab == SearchTab.Downloads
         ) {
             remoteEntries = emptyList()
@@ -200,6 +303,16 @@ internal class SearchScreenViewModel : ViewModel() {
             ApiManager.loadPublicPostSearchQuota(trimmedQuery)
                 .onSuccess { quota -> postQuota = quota }
         }
+    }
+
+    private fun invalidateMessageResults() {
+        if (messageSearchQuery == null) return
+        if (trimmedQuery == messageSearchQuery) return
+
+        messageResults = emptyList()
+        messageSearchQuery = null
+        messageSearched = false
+        messageError = null
     }
 
     private fun invalidatePostResults() {

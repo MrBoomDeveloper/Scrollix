@@ -9,7 +9,6 @@ import com.mrboomdev.scrollix.data.outbox.OutboxEntryKind
 import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
-import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
 import com.mrboomdev.scrollix.ui.icons.add_icon
@@ -20,31 +19,29 @@ import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,7 +52,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.style.TextOverflow
+import com.mrboomdev.scrollix.add
+import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun AccountsScreen(
     onBack: () -> Unit,
@@ -79,120 +80,52 @@ internal fun AccountsScreen(
     val removingIds = viewModel.removingIds
     val providerPickerOpen = viewModel.providerPickerOpen
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                )
-            )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    tint = MaterialTheme.colorScheme.secondary,
-                    imageVector = arrow_back_icon,
-                    contentDescription = null
-                )
-            }
-
-            Text(
-                modifier = Modifier.weight(1f),
-                text = "Accounts",
-                style = MaterialTheme.typography.titleLarge
-            )
-
-            IconButton(
-                onClick = { viewModel.openProviderPicker() },
-                enabled = !isAdding
-            ) {
-                if (isAdding) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Icon(
-                        tint = MaterialTheme.colorScheme.primary,
-                        imageVector = add_icon,
-                        contentDescription = "Add account"
-                    )
-                }
-            }
-        }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-        error?.let { message ->
-            Text(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-
-        if (providerPickerOpen) {
-            AlertDialog(
-                onDismissRequest = { viewModel.closeProviderPicker() },
-                title = { Text("Add account") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ProviderRegistry.all().forEach { provider ->
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = Color.Transparent,
-                                onClick = {
-                                    viewModel.closeProviderPicker()
-                                    viewModel.addAccount(provider.id, onOpenLogin)
-                                }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    ProviderLogoIcon(
-                                        providerId = provider.id,
-                                        size = 20.dp
-                                    )
-
-                                    Text(provider.displayName)
-                                }
-                            }
+    Scaffold(
+        topBar = {
+            LargeFlexibleTopAppBar(
+                title = {
+                    Text("Accounts")
+                },
+                
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.openProviderPicker() },
+                        enabled = !isAdding
+                    ) {
+                        if (isAdding) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                tint = MaterialTheme.colorScheme.primary,
+                                imageVector = add_icon,
+                                contentDescription = "Add account"
+                            )
                         }
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = { viewModel.closeProviderPicker() }) {
-                        Text("Cancel")
-                    }
                 }
             )
         }
-
+    ) { contentPadding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp),
-            contentPadding = PaddingValues(16.dp)
+            contentPadding = contentPadding.add(8.dp)
         ) {
-            // Above the accounts, so waiting messages are visible without
-            // scrolling past a long account list.
-            item(key = "outgoing-queue") {
-                OutgoingQueueCard(
-                    entries = queue,
-                    accountNames = accountNames,
-                    onRetryAll = { viewModel.retryAll() },
-                    onDiscardAll = { viewModel.requestDiscardAll() }
-                )
+            error?.let { message ->
+                item(
+                    key = "error",
+                    contentType = "error"
+                ) {
+                    Text(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
 
             items(
@@ -201,7 +134,6 @@ internal fun AccountsScreen(
             ) { account ->
                 AccountRow(
                     account = account,
-                    isActive = account.id == accountState.activeAccountId,
                     authState = sessionStates[account.id],
                     isConnected = connectionStates[account.id],
                     isRemoving = account.id in removingIds,
@@ -235,7 +167,57 @@ internal fun AccountsScreen(
                     }
                 }
             }
+
+            item(key = "outgoing-queue") {
+                OutgoingQueueCard(
+                    entries = queue,
+                    accountNames = accountNames,
+                    onRetryAll = { viewModel.retryAll() },
+                    onDiscardAll = { viewModel.requestDiscardAll() }
+                )
+            }
         }
+    }
+
+    if (providerPickerOpen) {
+        AlertDialog(
+            onDismissRequest = { viewModel.closeProviderPicker() },
+            title = { Text("Add account") },
+            
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ProviderRegistry.all().forEach { provider ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color.Transparent,
+                            onClick = {
+                                viewModel.closeProviderPicker()
+                                viewModel.addAccount(provider.id, onOpenLogin)
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ProviderLogoIcon(
+                                    providerId = provider.id,
+                                    size = 20.dp
+                                )
+
+                                Text(provider.displayName)
+                            }
+                        }
+                    }
+                }
+            },
+            
+            confirmButton = {
+                TextButton(onClick = { viewModel.closeProviderPicker() }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (confirmDiscard) {
@@ -267,7 +249,6 @@ internal fun AccountsScreen(
 @Composable
 private fun AccountRow(
     account: AccountRecord,
-    isActive: Boolean,
     authState: AuthState?,
     isConnected: Boolean?,
     isRemoving: Boolean,
@@ -277,6 +258,9 @@ private fun AccountRow(
     onOpenOwnProfile: () -> Unit,
     onRemove: () -> Unit
 ) {
+    val layoutInfo = currentAdaptiveLayoutInfo()
+    val actionsBottom = layoutInfo.size < AdaptiveLayoutSize.MEDIUM
+    
     val providerName = ProviderRegistry.get(account.providerId)?.displayName
         ?: account.providerId
     val isBusy = isRemoving || isActivating
@@ -284,9 +268,15 @@ private fun AccountRow(
     @Composable
     fun actions() {
         Row(
+            modifier = if(actionsBottom) Modifier.fillMaxWidth() else Modifier,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            val actionModifier = if(actionsBottom) {
+                Modifier.width(0.dp).weight(1f)
+            } else Modifier
+            
             OutlinedButton(
+                modifier = actionModifier,
                 enabled = !isBusy && authState is AuthState.Ready,
                 onClick = onOpenOwnProfile
             ) {
@@ -294,6 +284,7 @@ private fun AccountRow(
             }
             
             OutlinedButton(
+                modifier = actionModifier,
                 enabled = !isBusy,
                 onClick = onRemove
             ) { 
@@ -311,72 +302,74 @@ private fun AccountRow(
         onClick = {
             when (authState) {
                 is AuthState.Ready -> onOpenOwnProfile()
-
-                // An account that failed to load (network error, TDLib setup
-                // failure, ...) is not in the auth flow. Opening the login
-                // screen for it would let Back cancel the pending account and
-                // reset the stored session, so the row stays inert and the
-                // status text explains the failure.
                 is AuthState.Error, is AuthState.Closed -> Unit
-
                 else -> onOpenLogin(account.id)
             }
         }
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SharedProfileElement(key = "own-profile:${account.id}") {
-                AvatarImage(
-                    avatar = account.avatar ?: Avatar.fromName(account.displayName),
-                    size = 48.dp
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                SharedProfileElement(
+                    key = "own-profile:${account.id}"
+                ) {
+                    AvatarImage(
+                        avatar = account.avatar ?: Avatar.fromName(account.displayName),
+                        size = 48.dp
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 12.dp)
                 ) {
                     SharedProfileElement(key = "own-profile:${account.id}:name") {
                         Text(
                             text = account.displayName,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1
+                            style = MaterialTheme.typography.titleMedium
                         )
                     }
 
-                    ProviderLogoIcon(
-                        providerId = account.providerId,
-                        size = 14.dp
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ProviderLogoIcon(
+                            providerId = account.providerId,
+                            size = 12.dp
+                        )
 
+                        Text(
+                            text = buildString {
+                                append(providerName)
+                                account.nickname?.let { append(" · @").append(it) }
+                            },
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
+                    AccountStatus(
+                        authState = authState,
+                        isConnected = isConnected,
+                        isActivating = isActivating,
+                        isDialogsLoading = isDialogsLoading
+                    )
                 }
 
-                Text(
-                    text = buildString {
-                        append(providerName)
-                        account.nickname?.let { append(" · @").append(it) }
-                    },
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1
-                )
-
-                AccountStatus(
-                    authState = authState,
-                    isConnected = isConnected,
-                    isActivating = isActivating,
-                    isDialogsLoading = isDialogsLoading
-                )
+                if(!actionsBottom) {
+                    actions()
+                }
             }
 
-            actions()
+            if(actionsBottom) {
+                actions()
+            }
         }
     }
 }
@@ -425,8 +418,7 @@ private fun AccountStatus(
         Text(
             text = text,
             color = color,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1
+            style = MaterialTheme.typography.bodySmall
         )
     }
 }
@@ -450,7 +442,7 @@ private fun OutgoingQueueCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp),
+            .padding(top = 8.dp),
         color = Color.Transparent,
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)

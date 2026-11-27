@@ -8,6 +8,7 @@ import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageHistory
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettings
@@ -107,12 +108,27 @@ internal class DialogScreenViewModel(
     var input by mutableStateOf("")
     var inputSelection by mutableStateOf(TextRange.Zero)
     var inputCustomEmojis by mutableStateOf<List<CustomEmojiSpan>>(emptyList())
+    /** Rich text ranges of [input], kept in sync by every composer edit. */
+    var inputFormatting by mutableStateOf<List<MessageTextFormat>>(emptyList())
+    /** Undo/redo steps of the draft; see [ComposerHistory]. */
+    internal val composerHistory = ComposerHistory()
+    var canUndoComposer by mutableStateOf(false)
+        internal set
+    var canRedoComposer by mutableStateOf(false)
+        internal set
+    var showLinkDialog by mutableStateOf(false)
     var inputEmojiData by mutableStateOf<Map<Long, ByteArray>>(emptyMap())
     var inputEmojiAdaptive by mutableStateOf<Set<Long>>(emptySet())
     var pendingAttachments by mutableStateOf<List<PendingAttachment>>(emptyList())
     var showAttachmentMenu by mutableStateOf(false)
     var showPollDialog by mutableStateOf(false)
     var showLocationDialog by mutableStateOf(false)
+    /** The composer's scheduling picker; true while it is open. */
+    var showSchedulePicker by mutableStateOf(false)
+    /** The list of messages waiting in the chat's schedule queue. */
+    var showScheduledMessages by mutableStateOf(false)
+    /** The chat's auto-delete timer picker. */
+    var showAutoDeleteTime by mutableStateOf(false)
     var videoMessageMode by mutableStateOf(false)
     var isRecording by mutableStateOf(false)
     var recordingActive by mutableStateOf(false)
@@ -123,6 +139,10 @@ internal class DialogScreenViewModel(
     var threadRoot by mutableStateOf<ChatMessage?>(null)
     /** Message whose text is open in the selectable-text dialog. */
     var selectTextMessage by mutableStateOf<ChatMessage?>(null)
+    /** Message whose metadata sheet is open. */
+    var detailsMessage by mutableStateOf<ChatMessage?>(null)    /** Message whose reactor list is open, and the reaction that opened it. */
+    var reactionListMessage by mutableStateOf<ChatMessage?>(null)
+    var reactionListFocusKey by mutableStateOf<String?>(null)
     var isSendingRecording by mutableStateOf(false)
     var recordingError by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
@@ -149,6 +169,13 @@ internal class DialogScreenViewModel(
     var unreadAtOpen by mutableStateOf<Int?>(null)
     var unreadAnchorMessageId by mutableStateOf<Long?>(null)
     var unreadAnchorResolved by mutableStateOf(false)
+    /** Hides the unread jump after it was used once on this screen. */
+    var unreadJumpDismissed by mutableStateOf(false)
+
+    /** Translated text per message id; lives only while this screen is open. */
+    var translations by mutableStateOf<Map<Long, String>>(emptyMap())
+    var hiddenTranslations by mutableStateOf<Set<Long>>(emptySet())
+    var translatingMessageIds by mutableStateOf<Set<Long>>(emptySet())
     var isSearchPending by mutableStateOf(false)
     var customEmojiData by mutableStateOf<Map<Long, ByteArray>>(emptyMap())
     var customEmojiAdaptive by mutableStateOf<Set<Long>>(emptySet())

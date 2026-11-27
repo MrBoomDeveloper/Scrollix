@@ -7,46 +7,20 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * A local data-saver profile. Nothing here is stored on the provider: the app
+ * Local auto-play policy. Nothing here is stored on the provider: the app
  * decides on this device what it loads without a tap.
  *
  * [animations] covers GIFs and animated stickers, [videoNotes] covers round
  * video messages. Photos, videos and files are only fetched after a tap, so
- * they have no automatic download to turn off.
+ * they have no automatic download to turn off. The two switches are
+ * independent; older settings files that carried a preset profile still decode
+ * because unknown fields are ignored.
  */
 @Serializable
-enum class DataSavingPreset(
-    val title: String,
-    val animations: Boolean,
-    val videoNotes: Boolean
-) {
-    Low("Low", animations = false, videoNotes = false),
-    Medium("Medium", animations = true, videoNotes = false),
-    High("High", animations = true, videoNotes = true)
-}
-
-/** Local auto-play policy. Stored in [AppSettings] and used by the media views. */
-@Serializable
 data class DataSavingSettings(
-    /** The preset the user picked last, kept so the picker remembers it. */
-    val preset: DataSavingPreset = DataSavingPreset.High,
     val animations: Boolean = true,
     val videoNotes: Boolean = true
-) {
-    /** The preset matching the current switches, or null for a custom mix. */
-    val matchingPreset: DataSavingPreset?
-        get() = DataSavingPreset.entries.firstOrNull { preset ->
-            preset.animations == animations && preset.videoNotes == videoNotes
-        }
-
-    companion object {
-        fun of(preset: DataSavingPreset) = DataSavingSettings(
-            preset = preset,
-            animations = preset.animations,
-            videoNotes = preset.videoNotes
-        )
-    }
-}
+)
 
 /** Traffic counted on this device for one account. */
 @Serializable

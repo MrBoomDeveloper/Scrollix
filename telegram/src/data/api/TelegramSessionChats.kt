@@ -716,6 +716,7 @@ internal fun TelegramSession.toDialog(entry: ChatEntry, mainPosition: ChatPositi
                 lastMessage.id <= entry.lastReadOutboxMessageId,
             timestamp = (lastMessage?.date ?: 0).toLong() * 1000L,
             unreadCount = entry.unreadCount,
+            draftText = entry.draftText,
             memberCount = _memberCounts.value[identity.remoteId]?.takeIf { it > 0 },
             pinnedMessageId = _pinnedMessageIds.value[entry.chatId]?.takeIf { it > 0 },
         canSendMessages = entry.permissions.canSendBasicMessages ||

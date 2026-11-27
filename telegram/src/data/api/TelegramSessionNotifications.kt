@@ -227,14 +227,14 @@ internal suspend fun TelegramSession.resetDialogNotificationSettingsImpl(provide
     }
 }
 
-internal suspend fun TelegramSession.loadTopicsImpl(providerDialogId: String): Result<List<ChatTopic>> {
+internal suspend fun TelegramSession.loadTopicsImpl(providerDialogId: String, query: String): Result<List<ChatTopic>> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
     return try {
         val topics = when (val result = client.getForumTopics(
             chatId = chatId,
-            query = "",
+            query = query.trim(),
             offsetDate = 0,
             offsetMessageId = 0,
             offsetForumTopicId = 0,
@@ -255,7 +255,9 @@ internal suspend fun TelegramSession.loadTopicsImpl(providerDialogId: String): R
                     isClosed = topic.info.isClosed,
                     lastMessageText = topic.lastMessage?.let(::messagePreview).orEmpty(),
                     lastMessageTimestamp = (topic.lastMessage?.date ?: 0).toLong() * 1000L,
-                    iconCustomEmojiId = topic.info.icon?.customEmojiId?.takeIf { it != 0L }
+                    iconCustomEmojiId = topic.info.icon?.customEmojiId?.takeIf { it != 0L },
+                    isGeneral = topic.info.isGeneral,
+                    isPinned = topic.isPinned
                 )
             }
         )

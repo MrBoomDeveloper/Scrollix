@@ -29,6 +29,8 @@ import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageScheduling
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DownloadedFile
@@ -428,7 +430,9 @@ class VkSession(
         providerDialogId: String,
         text: String,
         replyToMessageId: Long?,
-        customEmojis: List<CustomEmojiSpan>
+        customEmojis: List<CustomEmojiSpan>,
+        formatting: List<MessageTextFormat>,
+        scheduling: MessageScheduling?
     ): Result<Unit> = runCatchingApi {
         val peerId = parsePeerId(providerDialogId)
             ?: throw SessionException(SessionErrorCode.InvalidRequest, "Invalid VK peer id")
@@ -460,7 +464,9 @@ class VkSession(
         attachments: List<OutgoingAttachment>,
         caption: String,
         replyToMessageId: Long?,
-        customEmojis: List<CustomEmojiSpan>
+        customEmojis: List<CustomEmojiSpan>,
+        formatting: List<MessageTextFormat>,
+        scheduling: MessageScheduling?
     ): Result<Unit> = runCatchingApi {
         if (attachments.isEmpty()) return@runCatchingApi
 
@@ -508,7 +514,8 @@ class VkSession(
         providerDialogId: String,
         messageId: Long,
         text: String,
-        customEmojis: List<CustomEmojiSpan>
+        customEmojis: List<CustomEmojiSpan>,
+        formatting: List<MessageTextFormat>
     ): Result<Unit> = runCatchingApi {
         val peerId = parsePeerId(providerDialogId)
             ?: throw SessionException(SessionErrorCode.InvalidRequest, "Invalid VK peer id")

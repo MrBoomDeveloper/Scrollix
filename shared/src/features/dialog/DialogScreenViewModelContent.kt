@@ -80,6 +80,9 @@ internal fun DialogScreenViewModel.observe() {
                 .filter { entry ->
                     entry.accountId == accountId &&
                         entry.providerDialogId == providerDialogId &&
+                        // Scheduled sends wait in the server queue, so they must
+                        // not appear as pending rows in the history.
+                        entry.scheduling == null &&
                         (
                             entry.kind == OutboxEntryKind.Text ||
                                 entry.kind == OutboxEntryKind.Files
@@ -203,6 +206,7 @@ private fun OutboxEntry.toPendingMessage(): ChatMessage {
         timestamp = createdAt,
         isOutgoing = true,
         customEmojis = customEmojis,
+        formatting = formatting,
         replyTo = replyToMessageId?.let { messageId -> MessageReply(messageId = messageId) },
         sendState = if (state == OutboxEntryState.Failed) {
             MessageSendState.Failed

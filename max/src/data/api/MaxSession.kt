@@ -69,6 +69,8 @@ import com.mrboomdev.scrollix.data.model.ChatMemberInfo
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageScheduling
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogIdentity
@@ -363,7 +365,8 @@ class MaxSession(
         providerDialogId: String,
         messageId: Long,
         text: String,
-        customEmojis: List<CustomEmojiSpan>
+        customEmojis: List<CustomEmojiSpan>,
+        formatting: List<MessageTextFormat>
     ): Result<Unit> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(maxInvalidChatId())
@@ -703,7 +706,9 @@ class MaxSession(
         attachments: List<com.mrboomdev.scrollix.data.model.OutgoingAttachment>,
         caption: String,
         replyToMessageId: Long?,
-        customEmojis: List<CustomEmojiSpan>
+        customEmojis: List<CustomEmojiSpan>,
+        formatting: List<MessageTextFormat>,
+        scheduling: MessageScheduling?
     ): Result<Unit> {
         return Result.failure(
             UnsupportedOperationException("MAX file uploads are not implemented yet")
@@ -913,7 +918,7 @@ class MaxSession(
 
     internal fun MaxChat.peerUser(): MaxUser? = peerUserId()?.let(users::get)
 
-    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>) : Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis)
+    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?) : Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting)
     override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray, forEveryone: Boolean) : Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds, forEveryone)
 
     override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean) : Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId)

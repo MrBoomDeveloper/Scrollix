@@ -1,7 +1,6 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.isTwoPaneLayout
-import com.mrboomdev.scrollix.moved
 import com.mrboomdev.scrollix.openDialer
 import com.mrboomdev.scrollix.platform.PlatformBackHandler
 import com.mrboomdev.scrollix.platform.files.rememberFilePicker
@@ -12,8 +11,6 @@ import com.mrboomdev.scrollix.features.home.EmojiStatusIcon
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
-import com.mrboomdev.scrollix.ui.components.StickerSetDialog
-import com.mrboomdev.scrollix.ui.components.StickerSetTarget
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.ui.icons.call_icon
@@ -46,23 +43,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.clearText
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -81,8 +71,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -110,18 +98,17 @@ internal fun DialogScreen(
     }
 ) {
     val isTwoPaneWindow = isTwoPaneLayout()
-    val ui = viewModel
 
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val mediaRecorder = rememberMediaRecorder()
     val filePicker = rememberFilePicker(
-        onImagesPicked = { picked -> ui.addAttachments(picked, asPhoto = true) },
-        onFilesPicked = { picked -> ui.addAttachments(picked, asPhoto = false) }
+        onImagesPicked = { picked -> viewModel.addAttachments(picked, asPhoto = true) },
+        onFilesPicked = { picked -> viewModel.addAttachments(picked, asPhoto = false) }
     )
 
-    val composerInset = with(LocalDensity.current) { ui.composerHeightPx.toDp() }
+    val composerInset = with(LocalDensity.current) { viewModel.composerHeightPx.toDp() }
     val emojiPickerAnchor = remember { mutableStateOf<Rect?>(null) }
     val showHoverPicker = remember { mutableStateOf(false) }
     val emojiButtonInteraction = remember { MutableInteractionSource() }
@@ -131,48 +118,48 @@ internal fun DialogScreen(
 
     val isMobileLayout = currentAdaptiveLayoutInfo().size < AdaptiveLayoutSize.EXPANDED
 
-    LaunchedEffect(ui) {
-        ui.begin()
+    LaunchedEffect(viewModel) {
+        viewModel.begin()
     }
 
     // Leaving the screen must not leave the microphone running.
-    DisposableEffect(ui) {
-        onDispose { ui.cancelRecording() }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.cancelRecording() }
     }
 
     // Navigation is frozen for the whole recording.
-    PlatformBackHandler(enabled = ui.isRecording) {
+    PlatformBackHandler(enabled = viewModel.isRecording) {
         // Consume back while a note is being recorded.
     }
 
     // Starting is deferred by a frame (and a short pause for video) so the
     // circular preview has attached its surface before MediaRecorder prepares
     // the camera. Without it the preview would stay black.
-    LaunchedEffect(ui.isRecording, ui.recordingKind) {
-        if (!ui.isRecording) return@LaunchedEffect
-        if (ui.recordingKind == MediaRecordingKind.VideoNote) withFrameNanos { }
-        ui.startRecording(mediaRecorder)
+    LaunchedEffect(viewModel.isRecording, viewModel.recordingKind) {
+        if (!viewModel.isRecording) return@LaunchedEffect
+        if (viewModel.recordingKind == MediaRecordingKind.VideoNote) withFrameNanos { }
+        viewModel.startRecording(mediaRecorder)
     }
 
     val messageListState = rememberDialogMessageListState(
         providerDialogId = providerDialogId,
-        history = ui.history,
-        displayMessages = ui.displayMessages,
+        history = viewModel.history,
+        displayMessages = viewModel.displayMessages,
         initialMessageId = initialMessageId,
         savedPosition = remember(accountId, providerDialogId) {
             DialogScrollPositionStore.get(accountId, providerDialogId)
         },
-        trackPosition = ui.searchQuery.text.isBlank(),
-        loadOlder = { ui.loadOlderMessages() },
-        loadBeginning = { ui.loadBeginning() },
-        loadUntilLoaded = { messageId -> ui.loadUntilLoaded(messageId) },
-        loadAround = { messageId -> ui.loadAround(messageId) },
-        loadLatest = { ui.loadLatest() },
+        trackPosition = viewModel.searchQuery.text.isBlank(),
+        loadOlder = { viewModel.loadOlderMessages() },
+        loadBeginning = { viewModel.loadBeginning() },
+        loadUntilLoaded = { messageId -> viewModel.loadUntilLoaded(messageId) },
+        loadAround = { messageId -> viewModel.loadAround(messageId) },
+        loadLatest = { viewModel.loadLatest() },
         onPositionChanged = { position ->
             DialogScrollPositionStore.save(accountId, providerDialogId, position)
         },
         onError = { throwable ->
-            ui.error = throwable.message ?: "Failed to load messages"
+            viewModel.error = throwable.message ?: "Failed to load messages"
         }
     )
 
@@ -180,7 +167,7 @@ internal fun DialogScreen(
     // one LazyListState applied the history index to the search list and vice
     // versa, which is what made switching modes jump.
     val searchListState = rememberLazyListState()
-    val listState = if (ui.searchQuery.text.isBlank()) {
+    val listState = if (viewModel.searchQuery.text.isBlank()) {
         messageListState.listState
     } else {
         searchListState
@@ -193,16 +180,16 @@ internal fun DialogScreen(
     // The jump runs in the screen scope on purpose: clearing the request
     // restarts this effect, and a restart cancels its body — which would stop
     // the jump animation on its first frame and make the buttons do nothing.
-    LaunchedEffect(ui.scrollRequest, ui.searchQuery.text) {
-        if (ui.searchQuery.text.isNotBlank()) return@LaunchedEffect
+    LaunchedEffect(viewModel.scrollRequest, viewModel.searchQuery.text) {
+        if (viewModel.searchQuery.text.isNotBlank()) return@LaunchedEffect
 
-        val request = ui.takeScrollRequest() ?: return@LaunchedEffect
+        val request = viewModel.takeScrollRequest() ?: return@LaunchedEffect
 
         scope.launch {
             when (request) {
                 is ScrollRequest.Message -> {
                     if (!messageListState.jumpToMessage(request.messageId)) {
-                        ui.error = "Couldn't load the message"
+                        viewModel.error = "Couldn't load the message"
                     }
                 }
 
@@ -228,7 +215,7 @@ internal fun DialogScreen(
         }
     }
 
-    with(ui) {
+    with(viewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -246,7 +233,7 @@ internal fun DialogScreen(
                 isMobileLayout = isMobileLayout,
                 onOpenProfile = onOpenProfile,
                 onBack = onBack,
-                ui = ui
+                ui = viewModel
             )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
@@ -274,7 +261,7 @@ internal fun DialogScreen(
                 )
             }
 
-            DialogSearchBar(ui = ui)
+            DialogSearchBar(ui = viewModel)
 
             Box(
                 modifier = Modifier
@@ -363,7 +350,7 @@ internal fun DialogScreen(
                     }
 
                     DialogMessageArea(
-                        ui = ui,
+                        ui = viewModel,
                         providerDialogId = providerDialogId,
                         onOpenUserProfile = onOpenUserProfile,
                         onOpenHashtag = onOpenHashtag,
@@ -383,13 +370,13 @@ internal fun DialogScreen(
                         isMobileLayout = isMobileLayout,
                         doubleTapReaction = doubleTapReaction,
                         visibleMessages = visibleMessages,
-                        onRequestDelete = ui::requestDelete,
-                        onPinMessage = ui::pinMessage,
-                        onApplyReaction = ui::applyMessageReaction,
-                        onCancelPendingMessage = ui::cancelPendingMessage,
+                        onRequestDelete = viewModel::requestDelete,
+                        onPinMessage = viewModel::pinMessage,
+                        onApplyReaction = viewModel::applyMessageReaction,
+                        onCancelPendingMessage = viewModel::cancelPendingMessage,
                         composer = {
                             DialogComposer(
-                                ui = ui,
+                                ui = viewModel,
                                 providerDialogId = providerDialogId,
                                 session = session,
                                 allSessions = allSessions,
@@ -400,13 +387,13 @@ internal fun DialogScreen(
                                 emojiPickerAnchor = emojiPickerAnchor,
                                 showHoverPicker = showHoverPicker,
                                 emojiButtonInteraction = emojiButtonInteraction,
-                                insertIntoComposer = ui::insertIntoComposer,
-                                addAttachments = ui::addAttachments,
-                                stopRecording = ui::stopRecording,
-                                cancelRecording = ui::cancelRecording,
-                                beginRecording = ui::beginRecording,
-                                send = { ui.sendMessage(keyboardController) },
-                                sendRecording = ui::sendRecordedMedia
+                                insertIntoComposer = viewModel::insertIntoComposer,
+                                addAttachments = viewModel::addAttachments,
+                                stopRecording = viewModel::stopRecording,
+                                cancelRecording = viewModel::cancelRecording,
+                                beginRecording = viewModel::beginRecording,
+                                send = { viewModel.sendMessage(keyboardController) },
+                                sendRecording = viewModel::sendRecordedMedia
                             )
                         }
                     )
@@ -415,12 +402,12 @@ internal fun DialogScreen(
         }
 
         DialogChatOverlays(
-            ui = ui,
+            ui = viewModel,
             providerDialogId = providerDialogId,
             isMobileLayout = isMobileLayout,
             mediaRecorder = mediaRecorder,
             filePicker = filePicker,
-            onSend = { ui.sendMessage(keyboardController) }
+            onSend = { viewModel.sendMessage(keyboardController) }
         )
     }
 }
@@ -597,361 +584,30 @@ private fun DialogHeader(
                         }
                     )
                 }
-            }
-        }
-    }
-}
 
-@Composable
-private fun ForwardOptionRow(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange
-        )
-
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 8.dp)
-        )
-    }
-}
-
-@Composable
-private fun DialogChatOverlays(
-    ui: DialogScreenViewModel,
-    providerDialogId: String,
-    isMobileLayout: Boolean,
-    mediaRecorder: com.mrboomdev.scrollix.platform.media.MediaRecordingController,
-    filePicker: com.mrboomdev.scrollix.platform.files.FilePicker,
-    onSend: () -> Unit
-) = with(ui) {
-    selectTextMessage?.let { message ->
-        MessageTextSelectionDialog(
-            text = message.text,
-            onDismiss = { selectTextMessage = null }
-        )
-    }
-
-    forwardingMessageIds?.let { messageIds ->
-        AlertDialog(
-            onDismissRequest = { forwardingMessageIds = null },
-            containerColor = MaterialTheme.colorScheme.background,
-            title = { Text("Forward to") },
-            confirmButton = {
-                TextButton(onClick = { forwardingMessageIds = null }) {
-                    Text("Cancel")
-                }
-            },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
-                        value = forwardQuery,
-                        onValueChange = { value -> setForwardQuery(value) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        placeholder = { Text("Search chats") },
-                        leadingIcon = {
-                            Icon(imageVector = search_icon, contentDescription = null)
-                        },
-                        trailingIcon = {
-                            if (forwardQuery.isNotEmpty()) {
-                                IconButton(onClick = { setForwardQuery("") }) {
-                                    Icon(
-                                        imageVector = close_icon,
-                                        contentDescription = "Clear search"
-                                    )
-                                }
-                            }
+                if (session?.supportsScheduling == true && dialog?.isSavedMessages != true) {
+                    DropdownMenuItem(
+                        text = { Text("Scheduled messages") },
+                        onClick = {
+                            showMoreMenu = false
+                            showScheduledMessages = true
                         }
                     )
-
-                    if (forwardFolderOptions.size > 1) {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(count = forwardFolderOptions.size) { index ->
-                                val (key, label) = forwardFolderOptions[index]
-
-                                FilterChip(
-                                    selected = forwardFolderKey == key,
-                                    onClick = { setForwardFolder(key) },
-                                    label = { Text(label, maxLines = 1) }
-                                )
-                            }
-                        }
-                    }
-
-                    // Providers that can re-send content without the forward
-                    // header offer both options; the rest never show them.
-                    if (supportsForwardOptions) {
-                        ForwardOptionRow(
-                            label = "Hide sender",
-                            checked = forwardHideSender,
-                            onCheckedChange = { checked -> forwardHideSender = checked }
-                        )
-
-                        ForwardOptionRow(
-                            label = "Remove caption",
-                            checked = forwardRemoveCaption,
-                            onCheckedChange = { checked -> forwardRemoveCaption = checked }
-                        )
-                    }
-
-                    if (filteredForwardTargets.isEmpty()) {
-                        Text(
-                            modifier = Modifier.padding(vertical = 24.dp),
-                            text = if (forwardQuery.isBlank()) {
-                                "No chats to forward to"
-                            } else {
-                                "No chats match \"$forwardQuery\""
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    } else {
-                        LazyVerticalGrid(
-                            modifier = Modifier.fillMaxWidth(),
-                            columns = GridCells.Adaptive(minSize = 92.dp)
-                        ) {
-                            items(count = filteredForwardTargets.size) { index ->
-                                val target = filteredForwardTargets[index]
-
-                                Column(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            forwardingMessageIds = null
-                                            forwardMessages(messageIds, target.providerDialogId)
-                                        }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    if (target.isSavedMessages) {
-                                        SavedMessagesAvatar(size = 56.dp)
-                                    } else {
-                                        AvatarImage(
-                                            avatar = target.avatar ?: com.mrboomdev.scrollix.data.model.Avatar.fromName(
-                                                target.title
-                                            ),
-                                            size = 56.dp
-                                        )
-                                    }
-
-                                    Text(
-                                        text = target.title,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
-            }
-        )
-    }
 
-    deleteConfirmationIds?.let { messageIds ->
-        AlertDialog(
-            onDismissRequest = { deleteConfirmationIds = null },
-            containerColor = MaterialTheme.colorScheme.background,
-            title = {
-                Text(
-                    if (messageIds.size == 1) {
-                        "Delete this message?"
-                    } else {
-                        "Delete ${messageIds.size} messages?"
-                    }
-                )
-            },
-            text = {
-                Text(
-                    "Deleting for everyone removes the message for every" +
-                        " participant. Deleting for me only hides it here." +
-                        " This cannot be undone."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        deleteConfirmationIds = null
-                        deleteMessages(messageIds, forEveryone = true)
-                    }
+                if (
+                    session?.supportsMessageAutoDelete == true &&
+                    dialog?.isSavedMessages != true
                 ) {
-                    Text("Delete for everyone")
-                }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { deleteConfirmationIds = null }) {
-                        Text("Cancel")
-                    }
-
-                    TextButton(
+                    DropdownMenuItem(
+                        text = { Text("Auto-delete messages") },
                         onClick = {
-                            deleteConfirmationIds = null
-                            deleteMessages(messageIds, forEveryone = false)
+                            showMoreMenu = false
+                            showAutoDeleteTime = true
                         }
-                    ) {
-                        Text("Delete for me")
-                    }
+                    )
                 }
             }
-        )
-    }
-
-    if (showUnpinConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showUnpinConfirmation = false },
-            containerColor = MaterialTheme.colorScheme.background,
-            text = { Text("Unpin this message?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showUnpinConfirmation = false
-                        unpinPinnedMessage()
-                    }
-                ) {
-                    Text("Unpin")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUnpinConfirmation = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    val stickerSetId = openedStickerSetId
-
-    if (stickerSetId != null && session != null) {
-        StickerSetDialog(
-            target = StickerSetTarget.ById(stickerSetId),
-            session = session,
-            onDismiss = { openedStickerSetId = null }
-        )
-    }
-
-    val activeWebAppButton = webAppButton
-
-    if (activeWebAppButton != null) {
-        MiniAppDialog(
-            session = session,
-            providerDialogId = providerDialogId,
-            button = activeWebAppButton,
-            onDismiss = { webAppButton = null }
-        )
-    }
-
-    if (showMainWebApp) {
-        MainMiniAppDialog(
-            session = session,
-            providerDialogId = providerDialogId,
-            title = dialog?.title ?: "Mini app",
-            onDismiss = { showMainWebApp = false }
-        )
-    }
-
-    if (showPollDialog) {
-        PollCreateDialog(
-            session = session,
-            isMobile = isMobileLayout,
-            onDismiss = { showPollDialog = false },
-            onCreate = { draft ->
-                showPollDialog = false
-                sendPoll(draft)
-            }
-        )
-    }
-
-    if (showLocationDialog) {
-        LocationPickerDialog(
-            onDismiss = { showLocationDialog = false },
-            onSend = { latitude, longitude, livePeriodSeconds ->
-                showLocationDialog = false
-                sendLocation(latitude, longitude, livePeriodSeconds)
-            }
-        )
-    }
-
-    recordedMedia?.let { recording ->
-        RecordedMediaDialog(
-            recording = recording,
-            isSending = isSendingRecording,
-            error = recordingError,
-            onDiscard = { discardRecording() },
-            onSend = { sendRecordedMedia(recording) }
-        )
-    }
-
-    threadRoot?.let { root ->
-        session?.let { currentSession ->
-            MessageThreadDialog(
-                rootMessage = root,
-                session = currentSession,
-                onDismiss = { threadRoot = null }
-            )
         }
-    }
-
-    if (showTopics) {
-        val currentDialog = dialog
-
-        if (session != null && currentDialog != null) {
-            ForumTopicsDialog(
-                session = session,
-                providerDialogId = providerDialogId,
-                title = currentDialog.title,
-                onDismiss = { showTopics = false }
-            )
-        }
-    }
-
-    // Attachments are reviewed in a blocking modal: the chat stays dimmed and
-    // the composer can't be used until the message is sent or discarded.
-    if (pendingAttachments.isNotEmpty()) {
-        AttachmentReviewDialog(
-            attachments = pendingAttachments,
-            caption = input,
-            isSending = isSending,
-            isMobile = isMobileLayout,
-            session = session,
-            onCaptionChange = { value -> updateInput(value, TextRange(value.length)) },
-            onInsertEmoji = { fallback, emojiId -> appendToComposer(fallback, emojiId) },
-            onAddImages = { filePicker.pickImages() },
-            onAddFiles = { filePicker.pickFiles() },
-            onMove = { from, to -> pendingAttachments = pendingAttachments.moved(from, to) },
-            onRemove = { index ->
-                pendingAttachments = pendingAttachments.filterIndexed { itemIndex, _ ->
-                    itemIndex != index
-                }
-            },
-            onDiscard = {
-                pendingAttachments = emptyList()
-                clearComposer()
-                showAttachmentMenu = false
-            },
-            onSend = onSend
-        )
     }
 }

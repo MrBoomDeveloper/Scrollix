@@ -3,6 +3,8 @@ package com.mrboomdev.scrollix.data.outbox
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageScheduling
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
 import com.mrboomdev.scrollix.data.storage.DataUsageStore
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
@@ -76,14 +78,18 @@ object OutboxManager {
         providerDialogId: String,
         text: String,
         replyToMessageId: Long? = null,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList(),
+        scheduling: MessageScheduling? = null
     ): OutboxEntry = enqueueText(
         providerId = providerId,
         accountId = accountId,
         providerDialogId = providerDialogId,
         text = text,
         replyToMessageId = replyToMessageId,
-        customEmojis = customEmojis
+        customEmojis = customEmojis,
+        formatting = formatting,
+        scheduling = scheduling
     )
 
     suspend fun enqueueText(
@@ -92,7 +98,9 @@ object OutboxManager {
         providerDialogId: String,
         text: String,
         replyToMessageId: Long? = null,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList(),
+        scheduling: MessageScheduling? = null
     ): OutboxEntry = enqueueEntry(
         providerId = providerId,
         accountId = accountId,
@@ -100,7 +108,9 @@ object OutboxManager {
         kind = OutboxEntryKind.Text,
         text = text,
         replyToMessageId = replyToMessageId,
-        customEmojis = customEmojis
+        customEmojis = customEmojis,
+        formatting = formatting,
+        scheduling = scheduling
     )
 
     /** Queues one or more files with an optional caption. */
@@ -111,7 +121,9 @@ object OutboxManager {
         attachments: List<OutboxAttachment>,
         caption: String = "",
         replyToMessageId: Long? = null,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList(),
+        scheduling: MessageScheduling? = null
     ): OutboxEntry = enqueueEntry(
         providerId = providerId,
         accountId = accountId,
@@ -120,7 +132,9 @@ object OutboxManager {
         text = caption,
         attachments = attachments,
         replyToMessageId = replyToMessageId,
-        customEmojis = customEmojis
+        customEmojis = customEmojis,
+        formatting = formatting,
+        scheduling = scheduling
     )
 
     /** Queues an edit of an already delivered message. */
@@ -130,7 +144,9 @@ object OutboxManager {
         providerDialogId: String,
         messageId: Long,
         text: String,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList(),
+        isCaptionEdit: Boolean = false
     ): OutboxEntry = enqueueEntry(
         providerId = providerId,
         accountId = accountId,
@@ -138,7 +154,9 @@ object OutboxManager {
         kind = OutboxEntryKind.Edit,
         text = text,
         targetMessageIds = listOf(messageId),
-        customEmojis = customEmojis
+        customEmojis = customEmojis,
+        formatting = formatting,
+        isCaptionEdit = isCaptionEdit
     )
 
     /** Queues a deletion of one or more delivered messages. */
@@ -187,7 +205,9 @@ object OutboxManager {
                 providerDialogId = entry.providerDialogId,
                 text = entry.text,
                 replyToMessageId = entry.replyToMessageId,
-                customEmojis = entry.customEmojis
+                customEmojis = entry.customEmojis,
+                formatting = entry.formatting,
+                scheduling = entry.scheduling
             )
 
             OutboxEntryKind.Files -> session.sendFiles(
@@ -200,7 +220,9 @@ object OutboxManager {
                 },
                 caption = entry.text,
                 replyToMessageId = entry.replyToMessageId,
-                customEmojis = entry.customEmojis
+                customEmojis = entry.customEmojis,
+                formatting = entry.formatting,
+                scheduling = entry.scheduling
             )
 
             OutboxEntryKind.Edit -> {
@@ -208,12 +230,21 @@ object OutboxManager {
 
                 if (messageId == null) {
                     Result.failure(IllegalArgumentException("Edit has no target message"))
+                } else if (entry.isCaptionEdit) {
+                    session.editMessageCaption(
+                        providerDialogId = entry.providerDialogId,
+                        messageId = messageId,
+                        caption = entry.text,
+                        customEmojis = entry.customEmojis,
+                        formatting = entry.formatting
+                    )
                 } else {
                     session.editMessage(
                         providerDialogId = entry.providerDialogId,
                         messageId = messageId,
                         text = entry.text,
-                        customEmojis = entry.customEmojis
+                        customEmojis = entry.customEmojis,
+                        formatting = entry.formatting
                     )
                 }
             }
@@ -385,7 +416,10 @@ object OutboxManager {
         attachments: List<OutboxAttachment> = emptyList(),
         targetMessageIds: List<Long> = emptyList(),
         replyToMessageId: Long? = null,
-        customEmojis: List<CustomEmojiSpan> = emptyList()
+        customEmojis: List<CustomEmojiSpan> = emptyList(),
+        formatting: List<MessageTextFormat> = emptyList(),
+        scheduling: MessageScheduling? = null,
+        isCaptionEdit: Boolean = false
     ): OutboxEntry {
         val entry = OutboxEntry(
             id = randomId(),
@@ -399,6 +433,9 @@ object OutboxManager {
             targetMessageIds = targetMessageIds,
             replyToMessageId = replyToMessageId,
             customEmojis = customEmojis,
+            formatting = formatting,
+            scheduling = scheduling,
+            isCaptionEdit = isCaptionEdit,
             createdAt = currentTimeMillis()
         )
 

@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.update
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessageTextBlock
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.MessageVideoQuality
 import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
@@ -397,20 +399,107 @@ internal fun TelegramSession.registerDownload(fileId: Int, size: Long) {
     }
 }
 
-internal fun TelegramSession.messageCustomEmojis(content: MessageContent): List<CustomEmojiSpan> {
-    val text = when (content) {
+/** The formatted text of a message, whichever content type carries it. */
+internal fun messageFormattedText(content: MessageContent): FormattedText? {
+    return when (content) {
         is MessageText -> content.text
         is MessagePhoto -> content.caption
         is MessageDocument -> content.caption
         is MessageVideo -> content.caption
         is MessageAnimation -> content.caption
-        else -> return emptyList()
+        else -> null
     }
-
-    return customEmojiSpans(text)
 }
 
-internal fun TelegramSession.customEmojiSpans(text: FormattedText): List<CustomEmojiSpan> {
+internal fun TelegramSession.messageCustomEmojis(content: MessageContent): List<CustomEmojiSpan> {
+    return messageFormattedText(content)?.let { text -> customEmojiSpans(text) }.orEmpty()
+}
+
+/** Reads the bold/italic/quote/link ranges of a received message. */
+internal fun TelegramSession.messageFormatting(content: MessageContent): List<MessageTextFormat> {
+    return messageFormattedText(content)?.let { text -> textFormats(text) }.orEmpty()
+}
+
+internal fun textFormats(text: FormattedText): List<MessageTextFormat> {
+    return text.entities.mapNotNull { entity ->
+        val start = entity.offset
+        val end = entity.offset + entity.length
+
+        if (start < 0 || end <= start) return@mapNotNull null
+
+        val base = MessageTextFormat(start = start, end = end)
+
+        when (val type = entity.type) {
+            is TextEntityTypeBold -> base.copy(bold = true)
+            is TextEntityTypeItalic -> base.copy(italic = true)
+            is TextEntityTypeUnderline -> base.copy(underline = true)
+            is TextEntityTypeStrikethrough -> base.copy(strikethrough = true)
+            is TextEntityTypeSpoiler -> base.copy(spoiler = true)
+            is TextEntityTypeCode -> base.copy(monospace = true)
+            is TextEntityTypePre -> base.copy(block = MessageTextBlock.Code)
+            is TextEntityTypePreCode -> base.copy(block = MessageTextBlock.Code)
+            is TextEntityTypeBlockQuote -> base.copy(block = MessageTextBlock.Quote)
+            is TextEntityTypeExpandableBlockQuote -> base.copy(block = MessageTextBlock.Quote)
+            is TextEntityTypeTextUrl -> base.copy(url = type.url)
+            else -> null
+        }
+    }
+}
+
+/**
+ * Builds the formatting entities of outgoing text. Like the custom emoji
+ * entities, the offsets are moved to the trimmed text that is actually sent.
+ */
+internal fun formattingEntities(
+    text: String,
+    formatting: List<MessageTextFormat>,
+    /** False when [text] is stored as-is, as drafts are, so offsets stay put. */
+    trim: Boolean = true
+): Array<TextEntity> {
+    if (formatting.isEmpty()) return emptyArray()
+
+    val sent = if (trim) text.trim() else text
+    if (sent.isEmpty()) return emptyArray()
+
+    val leading = if (trim) text.indexOf(sent).coerceAtLeast(0) else 0
+
+    return formatting.flatMap { format ->
+        val start = (format.start - leading).coerceAtLeast(0)
+        val end = (format.end - leading).coerceAtMost(sent.length)
+
+        if (start >= end) return@flatMap emptyList()
+
+        val length = end - start
+
+        buildList {
+            if (format.bold) add(TextEntity(start, length, TextEntityTypeBold()))
+            if (format.italic) add(TextEntity(start, length, TextEntityTypeItalic()))
+            if (format.underline) add(TextEntity(start, length, TextEntityTypeUnderline()))
+            if (format.strikethrough) add(TextEntity(start, length, TextEntityTypeStrikethrough()))
+            if (format.spoiler) add(TextEntity(start, length, TextEntityTypeSpoiler()))
+            if (format.monospace) add(TextEntity(start, length, TextEntityTypeCode()))
+
+            when (format.block) {
+                MessageTextBlock.Quote -> add(
+                    TextEntity(start, length, TextEntityTypeBlockQuote())
+                )
+
+                MessageTextBlock.Code -> add(
+                    TextEntity(start, length, TextEntityTypePreCode(language = ""))
+                )
+
+                null -> Unit
+            }
+
+            format.url?.takeIf { url -> url.isNotBlank() }?.let { url ->
+                add(TextEntity(start, length, TextEntityTypeTextUrl(url = url)))
+            }
+        }
+    }.toTypedArray()
+}
+
+/** Custom emoji entities of a formatted text; the session itself is unused. */
+internal fun customEmojiSpans(text: FormattedText): List<CustomEmojiSpan> {
     return text.entities.mapNotNull { entity ->
         val type = entity.type as? TextEntityTypeCustomEmoji
             ?: return@mapNotNull null
@@ -430,20 +519,22 @@ internal fun Sticker.needsRepainting(): Boolean {
 /** Builds the custom emoji entities for outgoing formatted text. */
 internal fun TelegramSession.customEmojiEntities(
     text: String,
-    customEmojis: List<CustomEmojiSpan>
+    customEmojis: List<CustomEmojiSpan>,
+    /** False when [text] is stored as-is, as drafts are, so offsets stay put. */
+    trim: Boolean = true
 ): Array<TextEntity> {
     if (customEmojis.isEmpty()) return emptyArray()
 
-    val trimmed = text.trim()
-    if (trimmed.isEmpty()) return emptyArray()
+    val sent = if (trim) text.trim() else text
+    if (sent.isEmpty()) return emptyArray()
 
-    val leading = text.indexOf(trimmed).coerceAtLeast(0)
+    val leading = if (trim) text.indexOf(sent).coerceAtLeast(0) else 0
 
     return customEmojis.mapNotNull { span ->
         val start = span.start - leading
         val end = span.end - leading
 
-        if (start < 0 || end > trimmed.length || start >= end) {
+        if (start < 0 || end > sent.length || start >= end) {
             null
         } else {
             TextEntity(
@@ -549,6 +640,7 @@ internal fun TelegramSession.messageBody(content: MessageContent): String {
             content.document.fileName.ifBlank { "Document" }
         }
         is MessagePoll -> content.poll.question.text.ifBlank { "Poll" }
+        is MessageChecklist -> content.list.title.text.ifBlank { "Checklist" }
         is MessageLocation -> "Location"
         is MessageLiveLocation -> "Live location"
         is MessageSupergroupChatCreate -> supergroupChatCreateText(content)

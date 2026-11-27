@@ -38,6 +38,7 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +48,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
@@ -87,6 +89,9 @@ internal fun ColumnScope.DialogMessageArea(
     composer: @Composable BoxScope.() -> Unit = {},
 ) = with(ui) {
     val clipboard = LocalClipboardManager.current
+    // Translation follows the device language; the provider gets the bare
+    // language code, not the full locale tag.
+    val translationLanguage = translationLanguageCode(Locale.current.language)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -235,15 +240,43 @@ internal fun ColumnScope.DialogMessageArea(
                                     val mediaItems = message.allMedia
                                     val media = mediaItems.firstOrNull()
                                     val reply = replyFor(message, messagesById, loadedReplies)
-                                    val replyMedia = reply?.media
-                                        ?.takeIf { it.kind == MessageMediaKind.Photo }
                                     val replyThumbnail: (@Composable () -> Unit)? =
-                                        replyMedia?.let { replyImage ->
-                                            { ReplyImageThumbnail(replyImage, session) }
+                                        reply?.media?.let { replyMedia ->
+                                            { ReplyMediaThumbnail(replyMedia, session) }
                                         }
 
+                                    val checklist = message.checklist
                                     val poll = message.poll
                                     val mediaContent: (@Composable () -> Unit)? = when {
+                                        checklist != null -> {
+                                            {
+                                                MessageChecklistCard(
+                                                    checklist = checklist,
+                                                    isOutgoing = message.isOutgoing,
+                                                    customEmojiData = customEmojiData,
+                                                    customEmojiAdaptive = customEmojiAdaptive,
+                                                    onToggleTask = { task ->
+                                                        if (
+                                                            session != null &&
+                                                            checklist.canMarkTasksAsDone
+                                                        ) {
+                                                            scope.launch {
+                                                                session.setChecklistTasksDone(
+                                                                    providerDialogId =
+                                                                        providerDialogId,
+                                                                    messageId = message.messageId,
+                                                                    taskIds = listOf(task.id),
+                                                                    done = !task.isDone
+                                                                ).onFailure { throwable ->
+                                                                    error = throwable.message
+                                                                        ?: "Failed to update the checklist"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
                                         poll != null -> {
                                             {
                                                 MessagePollCard(
@@ -252,6 +285,22 @@ internal fun ColumnScope.DialogMessageArea(
                                                     session = session,
                                                     customEmojiData = customEmojiData,
                                                     customEmojiAdaptive = customEmojiAdaptive,
+                                                    canClose = message.isOutgoing &&
+                                                        session?.supportsPollClosing == true,
+                                                    onClosePoll = {
+                                                        if (session != null) {
+                                                            scope.launch {
+                                                                session.stopPoll(
+                                                                    providerDialogId =
+                                                                        providerDialogId,
+                                                                    messageId = message.messageId
+                                                                ).onFailure { throwable ->
+                                                                    error = throwable.message
+                                                                        ?: "Failed to stop the poll"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
                                                     onOptionClick = { option ->
                                                         if (session != null) {
                                                             scope.launch {
@@ -597,9 +646,10 @@ internal fun ColumnScope.DialogMessageArea(
                                             },
 
                                             onEdit = if (
-                                                message.isOutgoing &&
-                                                message.text.isNotBlank() &&
-                                                !message.isService
+                                                message.canBeEdited(
+                                                    supportsCaptionEditing =
+                                                        session?.supportsCaptionEditing == true
+                                                )
                                             ) {
                                                 { startEditing(message) }
                                             } else {
@@ -610,6 +660,17 @@ internal fun ColumnScope.DialogMessageArea(
                                                 { selectTextMessage = message }
                                             } else {
                                                 null
+                                            },
+
+                                            onShowDetails = { detailsMessage = message },
+
+                                            onShowReactions = { reaction ->
+                                                reactionListMessage = message
+                                                reactionListFocusKey =
+                                                    MessageReactionOption(
+                                                        emoji = reaction.emoji,
+                                                        customEmojiId = reaction.customEmojiId
+                                                    ).key
                                             },
 
                                             onCopyLink = if (
@@ -649,6 +710,21 @@ internal fun ColumnScope.DialogMessageArea(
                                                 searchQuery.clearText()
                                                 scrollRequest =
                                                     ScrollRequest.Message(replyMessageId)
+                                            },
+
+                                            translatedText = translations[message.messageId],
+                                            isTranslationHidden =
+                                                message.messageId in hiddenTranslations,
+                                            isTranslating =
+                                                message.messageId in translatingMessageIds,
+                                            onTranslate = if (
+                                                session?.supportsTranslation == true &&
+                                                message.text.isNotBlank() &&
+                                                !message.isService
+                                            ) {
+                                                { toggleTranslation(message, translationLanguage) }
+                                            } else {
+                                                null
                                             },
 
                                             connection = run {
@@ -707,11 +783,35 @@ internal fun ColumnScope.DialogMessageArea(
                         }
                     }
 
+                    val unreadAnchorId = unreadAnchorMessageId
+                    val unreadRowId = unreadJumpRowId(visibleMessages, unreadAnchorId)
+                    val isUnreadAnchorVisible by remember(listState, unreadRowId) {
+                        derivedStateOf {
+                            val rowId = unreadRowId ?: return@derivedStateOf false
+
+                            listState.layoutInfo.visibleItemsInfo.any { info ->
+                                info.key == rowId
+                            }
+                        }
+                    }
+                    val showUnreadJump = unreadAnchorId != null &&
+                        !unreadJumpDismissed &&
+                        !messageListState.hasNewMessages &&
+                        !isUnreadAnchorVisible
+
                     MessageListOverlays(
                         isLoadingMore = history.isLoadingOlder,
                         showNewMessages = messageListState.hasNewMessages,
+                        showUnreadJump = showUnreadJump,
                         isAtBottom = messageListState.isAtBottom,
                         bottomInset = composerInset,
+                        onScrollToUnread = {
+                            unreadJumpDismissed = true
+
+                            if (unreadAnchorId != null) {
+                                scrollRequest = ScrollRequest.Message(unreadAnchorId)
+                            }
+                        },
                         onScrollToLatest = { scrollRequest = ScrollRequest.Latest }
                     )
 

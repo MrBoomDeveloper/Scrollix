@@ -2,10 +2,41 @@ package com.mrboomdev.scrollix
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
+
+@Composable
+fun PaddingValues.add(
+    start: Dp = 0.dp, 
+    top: Dp = 0.dp, 
+    end: Dp = 0.dp, 
+    bottom: Dp = 0.dp
+): PaddingValues = PaddingValues(
+    start = calculateStartPadding(LocalLayoutDirection.current) + start,
+    top = calculateTopPadding() + top,
+    end = calculateEndPadding(LocalLayoutDirection.current) + end,
+    bottom = calculateBottomPadding() + bottom,
+)
+
+@Composable
+fun PaddingValues.add(
+    all: Dp
+) = add(all, all, all, all)
+
+@Composable
+fun PaddingValues.add(
+    vertical: Dp = 0.dp, 
+    horizontal: Dp = 0.dp
+) = add(horizontal, vertical, horizontal, vertical)
 
 expect fun Modifier.onSecondaryClick(action: () -> Unit): Modifier
 

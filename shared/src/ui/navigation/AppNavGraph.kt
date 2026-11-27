@@ -6,6 +6,7 @@ import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.features.accounts.AccountsScreen
 import com.mrboomdev.scrollix.features.diagnostics.DiagnosticsScreen
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
+import com.mrboomdev.scrollix.features.drafts.DraftsScreen
 import com.mrboomdev.scrollix.features.home.HomeScreen
 import com.mrboomdev.scrollix.features.login.LoginScreen
 import com.mrboomdev.scrollix.features.profile.ProfileScreen
@@ -46,7 +47,8 @@ import kotlinx.coroutines.launch
 fun rememberAppEntryProvider(
     backStack: NavBackStack<NavKey>,
     selectedDialog: State<Route.Dialog?>,
-    onSelectDialog: (Route.Dialog?) -> Unit
+    onSelectDialog: (Route.Dialog?) -> Unit,
+    onScanQr: () -> Unit
 ): (NavKey) -> NavEntry<NavKey> {
     return entryProvider {
         // The home entry is the list pane of the Navigation 3 list/detail
@@ -68,6 +70,12 @@ fun rememberAppEntryProvider(
                 onOpenSettingsScreen = {
                     backStack += Route.Settings
                 },
+                onOpenDraftsScreen = {
+                    if (backStack.lastOrNull() != Route.Drafts) {
+                        backStack += Route.Drafts
+                    }
+                },
+                onScanQr = onScanQr,
                 onOpenDialog = { entry ->
                     backStack.openDialog(
                         Route.Dialog(
@@ -185,6 +193,33 @@ fun rememberAppEntryProvider(
                         providerDialogId = providerDialogId,
                         userId = userId
                     )
+                }
+            )
+        }
+
+        entry<Route.Drafts> {
+            val isTwoPane = isTwoPaneLayout()
+
+            DraftsScreen(
+                onBack = {
+                    backStack.removeLastOrNull()
+                },
+                onOpenDialog = { accountId, providerDialogId ->
+                    val target = Route.Dialog(
+                        accountId = accountId,
+                        providerDialogId = providerDialogId
+                    )
+
+                    // On a wide layout the chat is shown in the detail pane, so
+                    // the home list stays behind it; on a phone the chat is
+                    // pushed on top and Back returns to the draft list.
+                    if (isTwoPane) {
+                        onSelectDialog(target)
+                        backStack.clear()
+                        backStack.add(Route.Home)
+                    } else {
+                        backStack += target
+                    }
                 }
             )
         }

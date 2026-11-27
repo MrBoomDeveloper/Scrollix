@@ -8,17 +8,20 @@ import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.features.settings.icon
 import com.mrboomdev.scrollix.moved
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.components.AppMenuItem
+import com.mrboomdev.scrollix.ui.components.AppOverflowMenu
 import com.mrboomdev.scrollix.ui.components.ReorderDialog
 import com.mrboomdev.scrollix.ui.components.ReorderItem
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.brand_awareness_icon
+import com.mrboomdev.scrollix.ui.components.appMenuItems
+import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
-import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.icons.smart_toy_icon
 
 import androidx.compose.foundation.background
@@ -47,11 +50,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
@@ -72,15 +73,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mrboomdev.scrollix.ui.icons.scrollix_icon
 import kotlin.math.abs
 
 internal const val TAB_ALL = 0
@@ -94,6 +98,8 @@ internal const val TAB_BOTS = 4
 internal fun HomeScreen(
     onOpenAccountsScreen: () -> Unit,
     onOpenSettingsScreen: () -> Unit,
+    onOpenDraftsScreen: () -> Unit,
+    onScanQr: () -> Unit,
     onOpenDialog: (AccountDialogEntry) -> Unit,
     selectedDialogAccountId: String? = null,
     selectedDialogProviderDialogId: String? = null,
@@ -138,6 +144,10 @@ internal fun HomeScreen(
     val loadingDialogs by ApiManager.dialogsLoading.collectAsState()
     val entries by ApiManager.dialogs.collectAsState()
     val folders by ApiManager.folders.collectAsState()
+    val sessions by ApiManager.sessions.collectAsState()
+    val canMarkAllRead = remember(sessions) {
+        sessions.values.any { session -> session.supportsMarkAllRead }
+    }
 
     val selectedNativeFolder = remember(
         selectedNativeFolderKey,
@@ -366,12 +376,8 @@ internal fun HomeScreen(
 
             entries
                 .filter { entry ->
-                    if (folderId == null) {
-                        true
-                    } else {
-                        entry.account.id == selectedNativeFolder.account.id &&
+                    folderId == null || entry.account.id == selectedNativeFolder.account.id &&
                             folderId in entry.dialog.folderIds
-                    }
                 }
                 .let { filtered -> sortDialogs(filtered, folderId) }
         } else {
@@ -397,104 +403,88 @@ internal fun HomeScreen(
             color = MaterialTheme.colorScheme.background
         ) {
             Column(Modifier.fillMaxWidth()) {
-                if(layoutInfo.size < AdaptiveLayoutSize.EXPANDED) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp, 8.dp, 8.dp, 0.dp)
-                            .windowInsetsPadding(
-                                WindowInsets.safeDrawing.only(
-                                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                                )
-                            ),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-//                        Image(
-//                            modifier = Modifier.size(IconButtonDefaults.smallContainerSize()),
-//                            painter = rememberVectorPainter(home_icon),
-//                            contentDescription = null
-//                        )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp, 8.dp, 8.dp, 0.dp)
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(
+                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                            )
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        imageVector = scrollix_icon,
+                        contentDescription = null
+                    )
 
-                        Text(
-                            modifier = Modifier.padding(start = 4.dp),
-                            text = "Scrollix",
-                            style = MaterialTheme.typography.titleLarge
-                        )
+                    Text(
+                        modifier = Modifier.padding(start = 4.dp),
+                        text = "Scrollix",
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    
+                    Spacer(Modifier.weight(1f))
+
+                    Box {
+                        var expand by remember { mutableStateOf(false) }
                         
-                        Spacer(Modifier.weight(1f))
-
-                        Box {
-                            var expand by remember { mutableStateOf(false) }
-                            
-                            IconButton(
-                                onClick = {
-                                    expand = !expand
-                                }
-                            ) {
-                                Icon(
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    imageVector = more_vertical_icon,
-                                    contentDescription = null
-                                )
+                        IconButton(
+                            onClick = {
+                                expand = !expand
                             }
-
-                            DropdownMenu(
-                                expanded = expand,
-                                onDismissRequest = { expand = false },
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = settings_icon,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    
-                                    text = {
-                                        Text(
-                                            text = "Settings"
-                                        )
-                                    },
-                                    
-                                    onClick = {
-                                        onOpenSettingsScreen()
-                                        expand = false
-                                    }
-                                )
-
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = select_check_box_icon,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    text = { Text("Reorder folders") },
-                                    onClick = {
-                                        viewModel.openFolderOrder()
-                                        expand = false
-                                    }
-                                )
-
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = keep_icon,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    text = { Text("Reorder pinned chats") },
-                                    onClick = {
-                                        viewModel.openPinnedOrder()
-                                        expand = false
-                                    }
-                                )
-                            }
+                        ) {
+                            Icon(
+                                tint = MaterialTheme.colorScheme.secondary,
+                                imageVector = more_vertical_icon,
+                                contentDescription = null
+                            )
                         }
+
+                        AppOverflowMenu(
+                            expanded = expand,
+                            onDismissRequest = { expand = false },
+                            items = appMenuItems(
+                                onOpenDrafts = onOpenDraftsScreen,
+                                onOpenSettings = onOpenSettingsScreen,
+                                onScanQr = onScanQr,
+                                extra = buildList {
+                                    add(
+                                        AppMenuItem(
+                                            title = "Reorder folders",
+                                            icon = select_check_box_icon,
+                                            onClick = { viewModel.openFolderOrder() }
+                                        )
+                                    )
+
+                                    add(
+                                        AppMenuItem(
+                                            title = "Reorder pinned chats",
+                                            icon = keep_icon,
+                                            onClick = { viewModel.openPinnedOrder() }
+                                        )
+                                    )
+
+                                    // Only offered while a provider can clear
+                                    // the counters in bulk, not chat by chat.
+                                    if (canMarkAllRead) {
+                                        add(
+                                            AppMenuItem(
+                                                title = "Mark all as read",
+                                                icon = done_all_icon,
+                                                onClick = { viewModel.markAllChatsRead() }
+                                            )
+                                        )
+                                    }
+                                }
+                            )
+                        )
                     }
-                } else {
-                    Spacer(Modifier.height(8.dp))
                 }
                 
                 CompositionLocalProvider(

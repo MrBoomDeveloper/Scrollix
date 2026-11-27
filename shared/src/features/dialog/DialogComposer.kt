@@ -200,7 +200,14 @@ internal fun BoxScope.DialogComposer(
                 ) {
                     Text(
                         modifier = Modifier.weight(1f),
-                        text = "Editing: ${message.text.take(40)}",
+                        text = if (message.editsCaption) {
+                            "Editing caption" +
+                                message.text.take(40).takeIf { it.isNotBlank() }
+                                    ?.let { " — $it" }
+                                    .orEmpty()
+                        } else {
+                            "Editing: ${message.text.take(40)}"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary,
                         maxLines = 1,
@@ -366,6 +373,41 @@ internal fun BoxScope.DialogComposer(
             if (dialog?.canSendMessages == false) {
                 NotSendableNotice()
             } else Column {
+                // The formatting row shows up while a range is selected, so it
+                // does not take vertical space from every chat.
+                if (!inputSelection.collapsed || inputFormatting.isNotEmpty()) {
+                    ComposerFormattingBar(
+                        formatting = inputFormatting,
+                        selection = inputSelection,
+                        onToggle = { style -> toggleComposerFormat(style) },
+                        onEditLink = { showLinkDialog = true },
+                        onClearFormatting = { clearComposerFormatting() }
+                    )
+                }
+
+                if (showLinkDialog) {
+                    ComposerLinkDialog(
+                        initialUrl = inputFormatting
+                            .linkAt(inputSelection)
+                            .orEmpty(),
+                        onDismiss = { showLinkDialog = false },
+                        onConfirm = { url -> applyComposerLink(url) }
+                    )
+                }
+
+                if (showSchedulePicker) {
+                    ScheduleMessageDialog(
+                        title = "Schedule message",
+                        onDismiss = { showSchedulePicker = false },
+                        onSchedule = { scheduling ->
+                            showSchedulePicker = false
+                            sendMessage(
+                                keyboardController = null,
+                                scheduling = scheduling
+                            )
+                        }
+                    )
+                }
                 // The composer slides away while recording, leaving a slim
                 // bar with the elapsed time and a pause action.
                 AnimatedVisibility(
@@ -416,6 +458,19 @@ internal fun BoxScope.DialogComposer(
                     },
                     onBeginRecording = { kind -> beginRecording(kind) },
                     onSend = send,
+                    onSchedule = if (
+                        editingMessage == null &&
+                        dialog?.isSavedMessages != true &&
+                        session?.supportsScheduling == true
+                    ) {
+                        { showSchedulePicker = true }
+                    } else {
+                        null
+                    },
+                    canUndo = canUndoComposer,
+                    canRedo = canRedoComposer,
+                    onUndo = { undoComposer() },
+                    onRedo = { redoComposer() },
                     focusRequester = inputFocusRequester,
                     autoFocus = isDesktopPlatform()
                 )

@@ -1,7 +1,9 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.DeepLinkHandler
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.features.home.FolderEmojiImage
@@ -13,6 +15,7 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
@@ -50,6 +54,7 @@ internal fun CustomEmojiMessageText(
     text: String,
     lineHeight: TextUnit = TextUnit.Unspecified,
     emojis: List<CustomEmojiSpan>,
+    formatting: List<MessageTextFormat> = emptyList(),
     data: Map<Long, ByteArray>,
     adaptiveEmojis: Set<Long> = emptySet(),
     style: TextStyle = LocalTextStyle.current,
@@ -73,6 +78,7 @@ internal fun CustomEmojiMessageText(
 
     if (
         spans.isEmpty() &&
+        formatting.isEmpty() &&
         trailingContent == null &&
         onMentionClick == null &&
         onPhoneClick == null &&
@@ -94,6 +100,10 @@ internal fun CustomEmojiMessageText(
 
     /** Natural width of [trailingContent], measured during layout. */
     var trailingWidth by remember { mutableStateOf(0) }
+
+    // A spoiler is hidden until the reader taps it; the state is per message
+    // and resets when a different text is rendered in this slot.
+    var revealedSpoilers by remember(text) { mutableStateOf(false) }
 
     val annotated = buildAnnotatedString {
         if (spans.isEmpty()) {
@@ -140,6 +150,58 @@ internal fun CustomEmojiMessageText(
                 alternateText = TrailingContentAlternateText,
                 id = TrailingContentId
             )
+        }
+
+        formatting.forEach { format ->
+            val start = format.start.coerceIn(0, text.length)
+            val end = format.end.coerceIn(start, text.length)
+
+            if (start >= end) return@forEach
+
+            val hidden = format.spoiler && !revealedSpoilers
+
+            addStyle(
+                style = format.spanStyle(
+                    linkColor = MaterialTheme.colorScheme.primary,
+                    spoilerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                    spoilerHidden = hidden,
+                    blockColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                start = start,
+                end = end
+            )
+
+            format.url?.takeIf { url -> url.isNotBlank() }?.let { url ->
+                // Telegram links stay inside the app, the same way the
+                // auto-detected links of a message do.
+                if (DeepLinkHandler.isTelegramLink(url)) {
+                    addLink(
+                        clickable = LinkAnnotation.Clickable(
+                            tag = "deep-link:$url",
+                            linkInteractionListener = { DeepLinkHandler.publish(url) }
+                        ),
+                        start = start,
+                        end = end
+                    )
+                } else {
+                    addLink(
+                        url = LinkAnnotation.Url(url = url),
+                        start = start,
+                        end = end
+                    )
+                }
+            }
+
+            if (hidden) {
+                addLink(
+                    clickable = LinkAnnotation.Clickable(
+                        tag = "spoiler:$start:$end",
+                        linkInteractionListener = { revealedSpoilers = true }
+                    ),
+                    start = start,
+                    end = end
+                )
+            }
         }
     }
 

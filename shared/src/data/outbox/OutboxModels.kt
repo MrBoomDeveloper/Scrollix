@@ -1,6 +1,8 @@
 package com.mrboomdev.scrollix.data.outbox
 
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageScheduling
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 
 import kotlinx.serialization.Serializable
 
@@ -73,6 +75,15 @@ data class OutboxEntry(
     val targetMessageIds: List<Long> = emptyList(),
     val replyToMessageId: Long? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
+    /** Rich text ranges of [text]; empty when the message is plain. */
+    val formatting: List<MessageTextFormat> = emptyList(),
+    /** Non-null when the queued send itself is scheduled for later. */
+    val scheduling: MessageScheduling? = null,
+    /**
+     * True when an [OutboxEntryKind.Edit] replaces a media caption instead of
+     * plain text, which providers edit through a different call.
+     */
+    val isCaptionEdit: Boolean = false,
     val createdAt: Long,
     val attempts: Int = 0,
     val lastAttemptAt: Long = 0,

@@ -26,6 +26,8 @@ internal data class ChatEntry(
     val lastReadOutboxMessageId: Long,
     val isMarkedAsUnread: Boolean,
     val typingText: String? = null,
+    /** Text draft stored on the server, shown by the draft center. */
+    val draftText: String = "",
     /** The chat is shown as a list of forum topics (`viewAsTopics`). */
     val viewAsTopics: Boolean = false
 ) {
@@ -46,6 +48,10 @@ internal data class ChatEntry(
                 unreadCount = chat.unreadCount,
                 lastReadOutboxMessageId = chat.lastReadOutboxMessageId,
                 isMarkedAsUnread = chat.isMarkedAsUnread,
+                draftText = (chat.draftMessage?.content as? DraftMessageContentText)
+                    ?.text
+                    ?.text
+                    .orEmpty(),
                 viewAsTopics = chat.viewAsTopics
             )
         }

@@ -44,6 +44,19 @@ internal suspend fun TelegramSession.handleUpdate(update: Update) {
             }
         }
 
+        // A draft saved here or on another device arrives as an update, so the
+        // draft center can stay current without a full dialog reload.
+        is UpdateChatDraftMessage -> {
+            updateChat(update.chatId) { entry ->
+                entry.copy(
+                    draftText = (update.draftMessage?.content as? DraftMessageContentText)
+                        ?.text
+                        ?.text
+                        .orEmpty()
+                )
+            }
+        }
+
         is UpdateChatPosition -> {
             updateChat(update.chatId) { entry ->
                 val positions = entry.positions.filterNot {
@@ -227,6 +240,16 @@ internal fun TelegramSession.refreshReactionAvatars() {
                         reaction.copy(
                             reactorAvatars = reaction.reactorIds.mapNotNull { userId ->
                                 users[userId]?.let(::userAvatar)
+                            },
+                            // Names arrive with the user, so the reactor list
+                            // fills in as TDLib answers the user requests.
+                            reactors = reaction.reactors.map { reactor ->
+                                val user = users[reactor.id] ?: return@map reactor
+
+                                reactor.copy(
+                                    name = userDisplayName(user),
+                                    avatar = userAvatar(user)
+                                )
                             }
                         )
                     }
@@ -292,6 +315,10 @@ internal fun TelegramSession.updateMessageReactions(
 }
 
 internal fun TelegramSession.upsertMessage(message: Message) {
+    // A scheduled message is not part of the history yet; it waits in the
+    // chat's schedule queue and is opened from the scheduled-messages dialog.
+    if (message.schedulingState != null) return
+
     val content = message.content
 
     // The related UpdateChatBackground normally arrives separately, but
@@ -341,6 +368,9 @@ internal fun TelegramSession.updateMessageContent(chatId: Long, messageId: Long,
                 text = messageText(content),
                 media = mapMedia(content),
                 location = mapLocation(content),
+                // A checklist task toggle arrives as a content update, so the
+                // card has to be re-read here or the new state never shows.
+                checklist = mapChecklist(content),
                 isService = isServiceContent(content)
             )
         } else {

@@ -6,11 +6,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.data.diagnostics.AppLog
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import kotlinx.coroutines.launch
+
+private const val HOME_LOG_TAG = "home"
 
 /** Unread counters for the chip row, split the way the chips consume them. */
 internal data class HomeUnreadCounts(
@@ -88,6 +91,19 @@ internal class HomeScreenViewModel : ViewModel() {
     fun applyFolderOrder(keys: List<String>) {
         showFolderOrderDialog = false
         AppSettingsStore.update { current -> current.copy(folderOrder = keys) }
+    }
+
+    /**
+     * Clears the unread counters of every account whose provider can do it in
+     * bulk. A failure is only logged: the counters that remain already show
+     * what is left, so there is nothing to revert in the UI.
+     */
+    fun markAllChatsRead() {
+        viewModelScope.launch {
+            ApiManager.markAllChatsRead().onFailure { cause ->
+                AppLog.warning(HOME_LOG_TAG, "Mark all as read failed", cause)
+            }
+        }
     }
 
     /**

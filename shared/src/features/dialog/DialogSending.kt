@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.outbox.OutboxAttachment
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.platform.media.MediaRecordingKind
@@ -48,13 +49,23 @@ internal fun DialogScreenViewModel.applyMessageReaction(
     }
 }
 
-internal fun DialogScreenViewModel.sendMessage(keyboardController: SoftwareKeyboardController?) {
+internal fun DialogScreenViewModel.sendMessage(
+    keyboardController: SoftwareKeyboardController?,
+    scheduling: MessageScheduling? = null
+) {
     val text = input.trim()
     val attachments = pendingAttachments
     val currentSession = session ?: return
 
-    if (text.isEmpty() && attachments.isEmpty()) return
+    // A caption edit may empty the caption on purpose, so it is exempt from the
+    // "nothing to send" guard.
+    val editingCaption = editingMessage?.editsCaption == true
+
+    if (text.isEmpty() && attachments.isEmpty() && !editingCaption) return
     if (editingMessage != null && attachments.isNotEmpty()) return
+    // Edits keep their own flow; a scheduled edit would target a message that
+    // does not exist yet.
+    if (editingMessage != null && scheduling != null) return
 
     keyboardController?.hide()
 
@@ -64,6 +75,7 @@ internal fun DialogScreenViewModel.sendMessage(keyboardController: SoftwareKeybo
     // only a plain text message is shown optimistically.
     if (editing != null || attachments.isNotEmpty()) {
         val spans = inputCustomEmojis
+        val formatting = inputFormatting
         val replyToMessageId = replyingTo?.messageId
 
         clearComposer()
@@ -81,7 +93,9 @@ internal fun DialogScreenViewModel.sendMessage(keyboardController: SoftwareKeybo
                     providerDialogId = providerDialogId,
                     messageId = editing.messageId,
                     text = text,
-                    customEmojis = spans
+                    customEmojis = spans,
+                    formatting = formatting,
+                    isCaptionEdit = editing.editsCaption
                 )
 
                 OutboxManager.sendNow(entry.id).onFailure { failure ->
@@ -96,7 +110,11 @@ internal fun DialogScreenViewModel.sendMessage(keyboardController: SoftwareKeybo
 
         pendingAttachments = emptyList()
         replyingTo = null
-        scrollRequest = ScrollRequest.Latest
+
+        // A scheduled message stays in the queue instead of jumping the list.
+        if (scheduling == null) {
+            scrollRequest = ScrollRequest.Latest
+        }
 
         viewModelScope.launch {
             isSending = true
@@ -114,7 +132,9 @@ internal fun DialogScreenViewModel.sendMessage(keyboardController: SoftwareKeybo
                 },
                 caption = text,
                 replyToMessageId = replyToMessageId,
-                customEmojis = spans
+                customEmojis = spans,
+                formatting = formatting,
+                scheduling = scheduling
             )
 
             OutboxManager.sendNow(entry.id).onFailure { failure ->
@@ -132,12 +152,16 @@ internal fun DialogScreenViewModel.sendMessage(keyboardController: SoftwareKeybo
     // (offline, timeout, flood wait) stay queued and are retried with backoff;
     // only a permanent provider error marks the row failed.
     val spans = inputCustomEmojis
+    val formatting = inputFormatting
     val replyToMessageId = replyingTo?.messageId
 
     clearComposer()
     replyingTo = null
     error = null
-    scrollRequest = ScrollRequest.Latest
+
+    if (scheduling == null) {
+        scrollRequest = ScrollRequest.Latest
+    }
 
     viewModelScope.launch {
         val entry = OutboxManager.enqueue(
@@ -146,7 +170,9 @@ internal fun DialogScreenViewModel.sendMessage(keyboardController: SoftwareKeybo
             providerDialogId = providerDialogId,
             text = text,
             replyToMessageId = replyToMessageId,
-            customEmojis = spans
+            customEmojis = spans,
+            formatting = formatting,
+            scheduling = scheduling
         )
 
         OutboxManager.sendNow(entry.id).onFailure { failure ->

@@ -65,6 +65,8 @@ data class Dialog(
     val typingText: String? = null,
     val emojiStatusId: Long? = null,
     val preview: String,
+    /** Unsent composer text, empty when the chat has no draft. */
+    val draftText: String = "",
     @Transient val previewCustomEmojis: List<CustomEmojiSpan> = emptyList(),
     @Transient val lastMessageMedia: MessageMedia? = null,
     val lastMessageIsOutgoing: Boolean = false,

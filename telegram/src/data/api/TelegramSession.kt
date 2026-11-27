@@ -54,6 +54,8 @@ import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageScheduling
+import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.ChatMemberInfo
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.ChatWallpaper
@@ -67,6 +69,7 @@ import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageDraft
 import com.mrboomdev.scrollix.data.model.MessageLinkPreview
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
+import com.mrboomdev.scrollix.data.model.LastSeenVisibility
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.ChatTopic
@@ -711,15 +714,27 @@ class TelegramSession(
     override suspend fun loadCachedMedia(remoteUniqueId: String): ByteArray? = loadCachedMediaImpl(remoteUniqueId)
     override suspend fun loadFileIfUnique(fileId: Int, uniqueId: String): Result<ByteArray> = loadFileIfUniqueImpl(fileId, uniqueId)
     override suspend fun loadMessageThread(providerDialogId: String, messageId: Long, limit: Int): Result<com.mrboomdev.scrollix.data.model.ChatMessageThread> = loadMessageThreadImpl(providerDialogId, messageId, limit)
-    override suspend fun sendMessageToThread(threadChatId: String, rootMessageId: Long, text: String, customEmojis: List<CustomEmojiSpan>): Result<Unit> = sendMessageToThreadImpl(threadChatId, rootMessageId, text, customEmojis)
-    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>): Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis)
+    override suspend fun sendMessageToThread(threadChatId: String, rootMessageId: Long, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> = sendMessageToThreadImpl(threadChatId, rootMessageId, text, customEmojis, formatting)
+    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?): Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting, scheduling)
     override suspend fun sendFile(providerDialogId: String, path: String, asPhoto: Boolean): Result<Unit> = sendFileImpl(providerDialogId, path, asPhoto)
     override suspend fun sendVoiceNote(providerDialogId: String, path: String, durationSeconds: Int): Result<Unit> = sendVoiceNoteImpl(providerDialogId, path, durationSeconds)
     override suspend fun sendVideoNote(providerDialogId: String, path: String, durationSeconds: Int): Result<Unit> = sendVideoNoteImpl(providerDialogId, path, durationSeconds)
     override suspend fun sendPoll(providerDialogId: String, question: String, options: List<String>, isAnonymous: Boolean, allowsMultipleAnswers: Boolean, allowsRevoting: Boolean, questionCustomEmojis: List<CustomEmojiSpan>, optionCustomEmojis: List<List<CustomEmojiSpan>>, optionMediaPaths: List<String?>, isQuiz: Boolean, correctOptionIndex: Int?, explanation: String): Result<Unit> = sendPollImpl(providerDialogId, question, options, isAnonymous, allowsMultipleAnswers, allowsRevoting, questionCustomEmojis, optionCustomEmojis, optionMediaPaths, isQuiz, correctOptionIndex, explanation)
     override suspend fun sendLocation(providerDialogId: String, latitude: Double, longitude: Double, livePeriodSeconds: Int): Result<Long> = sendLocationImpl(providerDialogId, latitude, longitude, livePeriodSeconds)
     override suspend fun stopLiveLocation(providerDialogId: String, messageId: Long): Result<Unit> = stopLiveLocationImpl(providerDialogId, messageId)
-    override suspend fun sendFiles(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>): Result<Unit> = sendFilesImpl(providerDialogId, attachments, caption, replyToMessageId, customEmojis)
+    override suspend fun sendFiles(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?): Result<Unit> = sendFilesImpl(providerDialogId, attachments, caption, replyToMessageId, customEmojis, formatting, scheduling)
+
+    override val supportsScheduling: Boolean get() = true
+
+    override suspend fun loadScheduledMessages(providerDialogId: String): Result<List<ChatMessage>> = loadScheduledMessagesImpl(providerDialogId)
+
+    override val supportsMessageAutoDelete: Boolean get() = true
+
+    override suspend fun loadMessageAutoDeleteTime(providerDialogId: String): Result<Int> = loadMessageAutoDeleteTimeImpl(providerDialogId)
+
+    override suspend fun setMessageAutoDeleteTime(providerDialogId: String, seconds: Int): Result<Unit> = setMessageAutoDeleteTimeImpl(providerDialogId, seconds)
+
+    override suspend fun rescheduleMessage(providerDialogId: String, messageId: Long, scheduling: MessageScheduling?): Result<Unit> = rescheduleMessageImpl(providerDialogId, messageId, scheduling)
     override val supportsForwardOptions: Boolean get() = true
 
     override val supportsMessageLinks: Boolean get() = true
@@ -734,15 +749,25 @@ class TelegramSession(
     override suspend fun messageLink(providerDialogId: String, messageId: Long): Result<String> = messageLinkImpl(providerDialogId, messageId)
     override suspend fun setMessagePinned(providerDialogId: String, messageId: Long, isPinned: Boolean): Result<Unit> = setMessagePinnedImpl(providerDialogId, messageId, isPinned)
     override suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?> = loadPinnedMessageIdImpl(providerDialogId)
-    override suspend fun editMessage(providerDialogId: String, messageId: Long, text: String, customEmojis: List<CustomEmojiSpan>): Result<Unit> = editMessageImpl(providerDialogId, messageId, text, customEmojis)
+    override suspend fun editMessage(providerDialogId: String, messageId: Long, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> = editMessageImpl(providerDialogId, messageId, text, customEmojis, formatting)
+    override val supportsCaptionEditing: Boolean get() = true
+    override suspend fun editMessageCaption(providerDialogId: String, messageId: Long, caption: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> = editMessageCaptionImpl(providerDialogId, messageId, caption, customEmojis, formatting)
+    override val supportsChecklists: Boolean get() = true
+    override suspend fun setChecklistTasksDone(providerDialogId: String, messageId: Long, taskIds: List<Int>, done: Boolean): Result<Unit> = setChecklistTasksDoneImpl(providerDialogId, messageId, taskIds, done)
     override suspend fun addContact(userId: Long, firstName: String, lastName: String): Result<Unit> = addContactImpl(userId, firstName, lastName)
     override suspend fun removeContact(userId: Long): Result<Unit> = removeContactImpl(userId)
     override suspend fun setUserBlocked(userId: Long, blocked: Boolean): Result<Unit> = setUserBlockedImpl(userId, blocked)
     override suspend fun votePoll(providerDialogId: String, messageId: Long, optionIds: List<String>): Result<Unit> = votePollImpl(providerDialogId, messageId, optionIds)
+    override val supportsPollClosing: Boolean get() = true
+    override val supportsMarkAllRead: Boolean get() = true
+    override suspend fun markAllChatsRead(): Result<Unit> = markAllChatsReadImpl()
+    override suspend fun stopPoll(providerDialogId: String, messageId: Long): Result<Unit> = stopPollImpl(providerDialogId, messageId)
+    override val supportsTranslation: Boolean get() = true
+    override suspend fun translateText(text: String, languageCode: String?): Result<String> = translateTextImpl(text, languageCode)
     override suspend fun loadMessage(providerDialogId: String, messageId: Long): Result<ChatMessage?> = loadMessageImpl(providerDialogId, messageId)
     override suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray) = markMessagesReadImpl(providerDialogId, messageIds)
     override suspend fun loadDraft(providerDialogId: String): Result<MessageDraft> = loadDraftImpl(providerDialogId)
-    override suspend fun saveDraft(providerDialogId: String, text: String, customEmojis: List<CustomEmojiSpan>): Result<Unit> = saveDraftImpl(providerDialogId, text, customEmojis)
+    override suspend fun saveDraft(providerDialogId: String, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> = saveDraftImpl(providerDialogId, text, customEmojis, formatting)
 
     override suspend fun searchMessages(providerDialogId: String, query: String, limit: Int): Result<List<ChatMessage>> = searchMessagesImpl(providerDialogId, query, limit)
     override suspend fun searchGlobalMessages(query: String, limit: Int): Result<List<ChatMessage>> = searchGlobalMessagesImpl(query, limit)
@@ -756,13 +781,21 @@ class TelegramSession(
     override suspend fun loadMentionAvatars(text: String): Map<String, Avatar> = loadMentionAvatarsImpl(text)
 
     override suspend fun loadNotificationSettings(): Result<NotificationSettings> = loadNotificationSettingsImpl()
+    override val supportsLastSeenPrivacy: Boolean get() = true
+    override suspend fun loadLastSeenVisibility(): Result<LastSeenVisibility> = loadLastSeenVisibilityImpl()
+    override suspend fun setLastSeenVisibility(visibility: LastSeenVisibility): Result<Unit> = setLastSeenVisibilityImpl(visibility)
     override suspend fun setScopeMuted(scope: NotificationScope, muted: Boolean): Result<Unit> = setScopeMutedImpl(scope, muted)
     override suspend fun setDialogMuted(providerDialogId: String, muted: Boolean): Result<Unit> = setDialogMutedImpl(providerDialogId, muted)
     override suspend fun loadNotificationExceptions(scope: NotificationScope): Result<List<NotificationException>> = loadNotificationExceptionsImpl(scope)
     override suspend fun resetDialogNotificationSettings(providerDialogId: String): Result<Unit> = resetDialogNotificationSettingsImpl(providerDialogId)
-    override suspend fun loadTopics(providerDialogId: String): Result<List<ChatTopic>> = loadTopicsImpl(providerDialogId)
+    override suspend fun loadTopics(providerDialogId: String, query: String): Result<List<ChatTopic>> = loadTopicsImpl(providerDialogId, query)
     override suspend fun loadTopicMessages(providerDialogId: String, topicId: Long, limit: Int): Result<List<ChatMessage>> = loadTopicMessagesImpl(providerDialogId, topicId, limit)
     override suspend fun sendTopicMessage(providerDialogId: String, topicId: Long, text: String, customEmojis: List<CustomEmojiSpan>): Result<Unit> = sendTopicMessageImpl(providerDialogId, topicId, text, customEmojis)
+    override val supportsTopicManagement: Boolean get() = true
+    override suspend fun createForumTopic(providerDialogId: String, title: String): Result<Long> = createForumTopicImpl(providerDialogId, title)
+    override suspend fun editForumTopicTitle(providerDialogId: String, topicId: Long, title: String): Result<Unit> = editForumTopicTitleImpl(providerDialogId, topicId, title)
+    override suspend fun setForumTopicClosed(providerDialogId: String, topicId: Long, closed: Boolean): Result<Unit> = setForumTopicClosedImpl(providerDialogId, topicId, closed)
+    override suspend fun setForumTopicPinned(providerDialogId: String, topicId: Long, pinned: Boolean): Result<Unit> = setForumTopicPinnedImpl(providerDialogId, topicId, pinned)
     override suspend fun isDialogMuted(providerDialogId: String): Boolean? = isDialogMutedImpl(providerDialogId)
     override suspend fun loadDataUsage(): Result<DataUsageSummary> = loadDataUsageImpl()
     override suspend fun resetDataUsageStatistics(): Result<Unit> = resetDataUsageStatisticsImpl()

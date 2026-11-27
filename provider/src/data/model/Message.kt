@@ -109,6 +109,15 @@ data class MessageReactionOption(
         get() = customEmojiId?.let { "custom:$it" } ?: "emoji:$emoji"
 }
 
+/** One account that reacted with a given reaction. */
+@Serializable
+data class MessageReactionReactor(
+    val id: Long,
+    /** Display name, empty until the provider knows the account. */
+    val name: String = "",
+    val avatar: Avatar? = null
+)
+
 @Serializable
 data class MessageReactionInfo(
     val emoji: String,
@@ -116,13 +125,20 @@ data class MessageReactionInfo(
     val isChosen: Boolean = false,
     val reactorIds: List<Long> = emptyList(),
     val reactorAvatars: List<Avatar> = emptyList(),
+    /**
+     * The reactors the provider lists for this reaction. Telegram only sends a
+     * recent window, so [count] can be larger; see
+     * `reactionExtraCount`. Older cached messages decode this as empty.
+     */
+    val reactors: List<MessageReactionReactor> = emptyList(),
     val customEmojiId: Long? = null
 )
 
 @Serializable
 data class MessageDraft(
     val text: String = "",
-    val customEmojis: List<CustomEmojiSpan> = emptyList()
+    val customEmojis: List<CustomEmojiSpan> = emptyList(),
+    val formatting: List<MessageTextFormat> = emptyList()
 )
 
 @Serializable
@@ -174,7 +190,10 @@ data class ChatTopic(
     val isClosed: Boolean = false,
     val lastMessageText: String = "",
     val lastMessageTimestamp: Long = 0,
-    val iconCustomEmojiId: Long? = null
+    val iconCustomEmojiId: Long? = null,
+    /** The General topic cannot be renamed, closed or pinned. */
+    val isGeneral: Boolean = false,
+    val isPinned: Boolean = false
 )
 
 /** A provider message thread, with the chat that actually holds the replies. */
@@ -215,6 +234,32 @@ data class OutgoingAttachment(
     /** True for image picker selections, false for document picker selections. */
     val asPhoto: Boolean
 )
+
+/** One task of a checklist message. */
+@Serializable
+data class MessageChecklistTaskInfo(
+    val id: Int,
+    val text: String,
+    val isDone: Boolean = false,
+    val customEmojis: List<CustomEmojiSpan> = emptyList()
+)
+
+/**
+ * A checklist message: a titled list whose tasks can be marked done. Whether
+ * this account may toggle them is decided by the provider, because Telegram
+ * gates it behind message properties and a premium subscription.
+ */
+@Serializable
+data class MessageChecklistInfo(
+    val title: String,
+    val tasks: List<MessageChecklistTaskInfo> = emptyList(),
+    val canMarkTasksAsDone: Boolean = false,
+    val customEmojis: List<CustomEmojiSpan> = emptyList()
+) {
+    /** How many tasks are already completed, for the progress line. */
+    val completedCount: Int
+        get() = tasks.count { task -> task.isDone }
+}
 
 @Serializable
 data class MessagePollOptionInfo(
@@ -316,6 +361,15 @@ data class ChatMessage(
     val forwardedFromAvatar: Avatar? = null,
     val text: String,
     val timestamp: Long,
+    /** When the message was last edited, in millis; 0 while it never was. */
+    val editDate: Long = 0,
+    /**
+     * Absolute time, in millis, when the message deletes itself; 0 when the
+     * chat has no auto-delete timer. Providers report the time left, so the
+     * deadline is computed once when the message is mapped and stays stable
+     * across caching and the countdown's ticking.
+     */
+    val autoDeleteAt: Long = 0,
     val isOutgoing: Boolean,
     /**
      * True for Telegram service messages (wallpaper changed, gift, pin…).
@@ -330,7 +384,12 @@ data class ChatMessage(
     /** TDLib message ids merged into this row; empty unless this is an album. */
     val messageIds: List<Long> = emptyList(),
     val poll: MessagePollInfo? = null,
+    /** Non-null for a checklist message. */
+    val checklist: MessageChecklistInfo? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
+    val formatting: List<MessageTextFormat> = emptyList(),
+    /** Non-null while the message waits in the chat's schedule queue. */
+    val scheduling: MessageScheduling? = null,
     val richBlocks: List<MessageRichBlock> = emptyList(),
     val linkPreview: MessageLinkPreview? = null,
     val location: MessageLocationInfo? = null,

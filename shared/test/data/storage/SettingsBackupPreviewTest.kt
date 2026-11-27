@@ -111,7 +111,7 @@ class SettingsBackupPreviewTest {
     fun `the data saver switches are part of the preview`() {
         val imported = AppSettings().copy(
             settingsVersion = 1,
-            dataSaving = DataSavingSettings.of(DataSavingPreset.Low)
+            dataSaving = DataSavingSettings(animations = false, videoNotes = false)
         )
 
         val ready = assertIs<SettingsImportPreview.Ready>(

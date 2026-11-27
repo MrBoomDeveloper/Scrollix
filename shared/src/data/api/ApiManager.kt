@@ -65,6 +65,26 @@ object ApiManager {
         entries.sumOf { entry -> entry.dialog.unreadCount }
     }
 
+    /**
+     * Keeps the chat list's draft in sync with a draft that was just saved.
+     * Without it the draft center would only learn about a draft on the next
+     * full dialog refresh, which the local save does not trigger.
+     */
+    fun setDraftText(accountId: String, providerDialogId: String, text: String) {
+        _dialogs.update { entries ->
+            entries.map { entry ->
+                if (
+                    entry.account.id == accountId &&
+                    entry.dialog.providerDialogId == providerDialogId
+                ) {
+                    entry.copy(dialog = entry.dialog.copy(draftText = text))
+                } else {
+                    entry
+                }
+            }
+        }
+    }
+
 
     private val _folders = MutableStateFlow<List<AccountDialogFolder>>(emptyList())
     val folders: StateFlow<List<AccountDialogFolder>> = _folders.asStateFlow()
@@ -361,14 +381,43 @@ object ApiManager {
         return session.votePoll(providerDialogId, messageId, optionIds)
     }
 
+    /**
+     * Marks every unread chat of every account as read. Accounts whose provider
+     * cannot do it in bulk are skipped, and a failure on one account does not
+     * stop the others.
+     */
+    suspend fun markAllChatsRead(): Result<Unit> {
+        var failure: Throwable? = null
+
+        _sessions.value.values.toList().forEach { session ->
+            if (!session.supportsMarkAllRead) return@forEach
+
+            session.markAllChatsRead().onFailure { cause ->
+                if (failure == null) failure = cause
+            }
+        }
+
+        return failure?.let { cause -> Result.failure(cause) } ?: Result.success(Unit)
+    }
+
+    /**
+     * Message search across every signed in account, or only [accountIds] when
+     * the caller narrowed it. Results are newest first and cut to [limit], so a
+     * chatty account cannot push the others out of the page.
+     */
     suspend fun searchGlobalMessages(
         query: String,
-        limit: Int = 50
+        limit: Int = 50,
+        accountIds: Set<String>? = null
     ): Result<List<ChatMessage>> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return Result.success(emptyList())
 
-        val sessions = _sessions.value.values.toList()
+        val sessions = _sessions.value
+            .filterKeys { accountId -> accountIds == null || accountId in accountIds }
+            .values
+            .toList()
+
         if (sessions.isEmpty()) return Result.success(emptyList())
 
         val results = sessions.flatMap { session ->

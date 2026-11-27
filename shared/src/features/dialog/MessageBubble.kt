@@ -6,6 +6,7 @@ import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
@@ -22,10 +23,12 @@ import com.mrboomdev.scrollix.ui.icons.delete_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.ui.icons.edit_icon
 import com.mrboomdev.scrollix.ui.icons.forward_icon
+import com.mrboomdev.scrollix.ui.icons.info_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
 import com.mrboomdev.scrollix.ui.icons.keep_off_icon
 import com.mrboomdev.scrollix.ui.icons.reply_icon
 import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
+import com.mrboomdev.scrollix.ui.icons.translate_icon
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -105,15 +108,26 @@ fun MessageBubble(
     onCopyLink: (() -> Unit)? = null,
     /** Opens the text in a selectable block; null for non-text messages. */
     onSelectText: (() -> Unit)? = null,
+    /** Opens the metadata sheet (timestamps, media, permalink). */
+    onShowDetails: (() -> Unit)? = null,
     onPin: (() -> Unit)? = null,
     onReaction: ((MessageReactionOption) -> Unit)? = null,
+    /** Opens the reactor list of a reaction; null when the menu has no room. */
+    onShowReactions: ((MessageReactionInfo) -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
     onCancelSend: (() -> Unit)? = null,
     /** Retries a queued message that the provider permanently rejected. */
     onRetrySend: (() -> Unit)? = null,
     onMentionClick: ((String) -> Unit)? = null,
     onHashtagClick: ((String) -> Unit)? = null,
-    onReplyClick: ((Long) -> Unit)? = null
+    onReplyClick: ((Long) -> Unit)? = null,
+    /** Translation of [message]'s text, when one has been requested. */
+    translatedText: String? = null,
+    /** True while the bubble shows the original text instead of [translatedText]. */
+    isTranslationHidden: Boolean = false,
+    isTranslating: Boolean = false,
+    /** Requests a translation or switches between the original and translated text. */
+    onTranslate: (() -> Unit)? = null
 ) {
     val layoutInfo = currentAdaptiveLayoutInfo()
     val clipboard = LocalClipboardManager.current
@@ -261,6 +275,8 @@ fun MessageBubble(
                 Surface(
                     modifier = Modifier
                         .combinedClickable(
+                            indication = null,
+                            interactionSource = null,
                             onClick = {
                                 if (isSelectionMode) onToggleSelection?.invoke()
                             },
@@ -460,6 +476,7 @@ fun MessageBubble(
                                             customEmojiAdaptive = customEmojiAdaptive,
                                             session = session,
                                             onReaction = onReaction,
+                                            onShowReactions = onShowReactions,
                                             onRetrySend = onRetrySend,
                                             modifier = Modifier
                                                 .align(Alignment.BottomEnd)
@@ -521,6 +538,7 @@ fun MessageBubble(
                                         lineHeight = 20.sp,
                                         text = message.text,
                                         emojis = message.customEmojis,
+                                        formatting = message.formatting,
                                         data = customEmojiData,
                                         adaptiveEmojis = customEmojiAdaptive,
                                         onMentionClick = onMentionClick,
@@ -547,6 +565,23 @@ fun MessageBubble(
                                 LinkPreviewCard(
                                     preview = preview,
                                     modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+
+                            if (translatedText != null && !isTranslationHidden) {
+                                TranslatedTextBlock(
+                                    modifier = Modifier.padding(top = 4.dp),
+                                    text = translatedText,
+                                    isOutgoing = message.isOutgoing,
+                                    onHide = onTranslate
+                                )
+                            }
+
+                            if (message.autoDeleteAt > 0) {
+                                AutoDeleteCountdown(
+                                    modifier = Modifier.padding(top = 4.dp),
+                                    autoDeleteAt = message.autoDeleteAt,
+                                    isOutgoing = message.isOutgoing
                                 )
                             }
 
@@ -597,6 +632,7 @@ fun MessageBubble(
                                     customEmojiAdaptive = customEmojiAdaptive,
                                     session = session,
                                     onReaction = onReaction,
+                                    onShowReactions = onShowReactions,
                                     onRetrySend = onRetrySend,
                                     modifier = Modifier
                                         .align(Alignment.End)
@@ -619,6 +655,7 @@ fun MessageBubble(
                                     customEmojiAdaptive = customEmojiAdaptive,
                                     session = session,
                                     onReaction = onReaction,
+                                    onShowReactions = onShowReactions,
                                     onRetrySend = onRetrySend,
                                     modifier = Modifier
                                         .align(Alignment.End)
@@ -802,6 +839,31 @@ fun MessageBubble(
                                     text = "Select text",
                                     icon = content_copy_icon,
                                     onClick = onSelectText
+                                )
+                            }
+
+                            if (
+                                onTranslate != null &&
+                                message.text.isNotBlank() &&
+                                !message.isService
+                            ) {
+                                action(
+                                    text = when {
+                                        isTranslating -> "Translating…"
+                                        translatedText == null -> "Translate"
+                                        isTranslationHidden -> "Show translation"
+                                        else -> "Hide translation"
+                                    },
+                                    icon = translate_icon,
+                                    onClick = onTranslate
+                                )
+                            }
+
+                            if (onShowDetails != null) {
+                                action(
+                                    text = "Message details",
+                                    icon = info_icon,
+                                    onClick = onShowDetails
                                 )
                             }
                         }

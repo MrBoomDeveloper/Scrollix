@@ -441,6 +441,8 @@ internal fun SettingsCategoryContent(
 
             SettingsCategory.Storage -> SettingsStorageContent()
 
+            SettingsCategory.Privacy -> SettingsPrivacyContent()
+
             SettingsCategory.Sessions -> SettingsSessionsContent()
 
             SettingsCategory.DataUsage -> SettingsDataUsageContent()

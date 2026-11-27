@@ -13,8 +13,10 @@ import com.mrboomdev.scrollix.features.home.firstUnreadEntry
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.features.settings.icon
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
+import com.mrboomdev.scrollix.ui.components.AppOverflowMenu
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
+import com.mrboomdev.scrollix.ui.components.appMenuItems
 import com.mrboomdev.scrollix.ui.components.QrScannerDialog
 import com.mrboomdev.scrollix.ui.components.ShortcutCheatSheetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
@@ -25,9 +27,7 @@ import com.mrboomdev.scrollix.ui.icons.explore_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
-import com.mrboomdev.scrollix.ui.icons.qr_code_scanner_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
-import com.mrboomdev.scrollix.ui.icons.settings_icon
 import com.mrboomdev.scrollix.ui.navigation.LocalSharedTransitionScope
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
@@ -50,9 +50,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +79,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -505,6 +503,7 @@ fun App() {
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = Color.Black,
+            surface = Color.Black,
             surfaceContainer = Color(0xff101010),
             secondaryContainer = Color(0xFF3A1E5A)
         ),
@@ -537,54 +536,23 @@ fun App() {
                                             )
                                         }
 
-                                        DropdownMenu(
+                                        AppOverflowMenu(
                                             expanded = expand,
                                             onDismissRequest = { expand = false },
-                                            shape = RoundedCornerShape(16.dp)
-                                        ) {
-                                            DropdownMenuItem(
-                                                leadingIcon = {
-                                                    Icon(
-                                                        imageVector = settings_icon,
-                                                        contentDescription = null
-                                                    )
+                                            items = appMenuItems(
+                                                onOpenDrafts = {
+                                                    if (backStack.lastOrNull() != Route.Drafts) {
+                                                        backStack.add(Route.Drafts)
+                                                    }
                                                 },
-
-                                                text = {
-                                                    Text(
-                                                        text = "Settings"
-                                                    )
-                                                },
-
-                                                onClick = {
-                                                    if(backStack.lastOrNull() != Route.Settings) {
+                                                onOpenSettings = {
+                                                    if (backStack.lastOrNull() != Route.Settings) {
                                                         backStack.add(Route.Settings)
                                                     }
-
-                                                    expand = false
-                                                }
-                                            )
-
-                                            DropdownMenuItem(
-                                                leadingIcon = {
-                                                    Icon(
-                                                        imageVector = qr_code_scanner_icon,
-                                                        contentDescription = null
-                                                    )
                                                 },
-
-                                                text = {
-                                                    Text(
-                                                        text = "Scan QR"
-                                                    )
-                                                },
-
-                                                onClick = {
-                                                    showQrScanner = true
-                                                    expand = false
-                                                }
+                                                onScanQr = { showQrScanner = true }
                                             )
-                                        }
+                                        )
                                     }
                                 }
                             ) {
@@ -596,7 +564,9 @@ fun App() {
                                         colors = NavigationRailItemDefaults.colors(
                                             indicatorColor = MaterialTheme.colorScheme.primary,
                                             selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                                            selectedTextColor = MaterialTheme.colorScheme.primary
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            unselectedTextColor = MaterialTheme.colorScheme.secondary,
+                                            unselectedIconColor = MaterialTheme.colorScheme.secondary
                                         ),
 
                                         icon = {
@@ -638,7 +608,8 @@ fun App() {
                                     if (!DialogRecordingState.isActive) {
                                         selectedDialog.value = it
                                     }
-                                }
+                                },
+                                onScanQr = { showQrScanner = true }
                             ),
 
                             transitionSpec = {
@@ -707,6 +678,8 @@ fun App() {
                                         colors = ShortNavigationBarItemDefaults.colors(
                                             selectedIndicatorColor = MaterialTheme.colorScheme.primary,
                                             selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                                            unselectedTextColor = MaterialTheme.colorScheme.secondary,
+                                            unselectedIconColor = MaterialTheme.colorScheme.secondary,
                                             selectedTextColor = if(layoutInfo.size >= AdaptiveLayoutSize.MEDIUM) {
                                                 MaterialTheme.colorScheme.onPrimary
                                             } else MaterialTheme.colorScheme.primary,
@@ -723,7 +696,10 @@ fun App() {
 
                                         label = {
                                             Text(
-                                                text = tab.title
+                                                text = tab.title,
+                                                fontWeight = if(layoutInfo.size >= AdaptiveLayoutSize.MEDIUM && tab.isActive) {
+                                                    FontWeight.SemiBold
+                                                } else null
                                             )
                                         }
                                     )

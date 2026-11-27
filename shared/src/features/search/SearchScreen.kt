@@ -10,6 +10,7 @@ import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
 import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
+import com.mrboomdev.scrollix.features.dialog.DialogSearchFilter
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.isTwoPaneLayout
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
@@ -30,15 +31,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.material3.Button
+import androidx.compose.material3.DockedSearchBar
+import androidx.compose.material3.ExpandedDockedSearchBar
+import androidx.compose.material3.ExpandedFullScreenContainedSearchBar
+import androidx.compose.material3.ExpandedFullScreenSearchBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -60,6 +74,7 @@ internal const val SearchPageSize = 30
 
 internal enum class SearchTab(val title: String, val publicKind: PublicChatSearchKind) {
     Chats("Chats", PublicChatSearchKind.Any),
+    Messages("Messages", PublicChatSearchKind.Any),
     Channels("Channels", PublicChatSearchKind.Channels),
     Bots("Bots", PublicChatSearchKind.Bots),
     Posts("Posts", PublicChatSearchKind.Any),
@@ -88,6 +103,22 @@ internal fun SearchScreen(
 ) {
     val isTwoPane = isTwoPaneLayout()
     val entries by ApiManager.dialogs.collectAsState()
+    val accountState by ApiManager.accountState.collectAsState()
+
+    val accountOptions = remember(accountState.accounts) {
+        accountState.accounts.map { account -> account.id to account.displayName }
+    }
+
+    val messageSearchState = MessageSearchState(
+        results = viewModel.visibleMessageResults,
+        filter = viewModel.messageFilter,
+        accountOptions = accountOptions,
+        accountId = viewModel.messageAccountId,
+        savedSearches = viewModel.savedSearches,
+        hasSearched = viewModel.messageSearched,
+        isSearching = viewModel.isSearchingMessages,
+        error = viewModel.messageError
+    )
 
     LaunchedEffect(Unit) {
         viewModel.initialize(initialQuery)
@@ -155,6 +186,13 @@ internal fun SearchScreen(
             postLimitsExceeded = postLimitsExceeded,
             isSearchingPosts = isSearchingPosts,
             postError = postError,
+            messages = messageSearchState,
+            onSearchMessages = { viewModel.searchMessages() },
+            onSetMessageFilter = { filter -> viewModel.applyMessageFilter(filter) },
+            onSetMessageAccount = { accountId -> viewModel.setMessageAccountFilter(accountId) },
+            onSaveQuery = { viewModel.saveCurrentSearch() },
+            onDeleteQuery = { saved -> viewModel.forgetSavedSearch(saved) },
+            onRunQuery = { saved -> viewModel.runSavedSearch(saved) },
             onSearchPosts = { viewModel.searchPosts(false) },
             onLoadMorePosts = { viewModel.searchPosts(true) },
             onOpenEntry = { entry ->
@@ -200,6 +238,15 @@ internal fun SearchScreen(
                 postLimitsExceeded = postLimitsExceeded,
                 isSearchingPosts = isSearchingPosts,
                 postError = postError,
+                messages = messageSearchState,
+                onSearchMessages = { viewModel.searchMessages() },
+                onSetMessageFilter = { filter -> viewModel.applyMessageFilter(filter) },
+                onSetMessageAccount = { accountId ->
+                    viewModel.setMessageAccountFilter(accountId)
+                },
+                onSaveQuery = { viewModel.saveCurrentSearch() },
+                onDeleteQuery = { saved -> viewModel.forgetSavedSearch(saved) },
+                onRunQuery = { saved -> viewModel.runSavedSearch(saved) },
                 onSearchPosts = { viewModel.searchPosts(false) },
                 onLoadMorePosts = { viewModel.searchPosts(true) },
                 onOpenEntry = { entry ->
@@ -279,6 +326,7 @@ internal fun SearchScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SearchPanel(
     modifier: Modifier = Modifier,
@@ -302,6 +350,13 @@ private fun SearchPanel(
     postLimitsExceeded: Boolean,
     isSearchingPosts: Boolean,
     postError: String?,
+    messages: MessageSearchState,
+    onSearchMessages: () -> Unit,
+    onSetMessageFilter: (DialogSearchFilter) -> Unit,
+    onSetMessageAccount: (String?) -> Unit,
+    onSaveQuery: () -> Unit,
+    onDeleteQuery: (String) -> Unit,
+    onRunQuery: (String) -> Unit,
     onSearchPosts: () -> Unit,
     onLoadMorePosts: () -> Unit,
     onOpenEntry: (AccountDialogEntry) -> Unit,
@@ -318,44 +373,45 @@ private fun SearchPanel(
                 )
             )
     ) {
-        Row(
+        val searchBarState = rememberSearchBarState()
+        val searchBarInputState = rememberTextFieldState()
+        
+        SearchBar(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    tint = MaterialTheme.colorScheme.secondary,
-                    imageVector = arrow_back_icon,
-                    contentDescription = "Back"
+                .padding(start = 8.dp, top = 8.dp, end = 8.dp),
+            state = searchBarState,
+            
+            colors = SearchBarDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                inputFieldColors = TextFieldDefaults.colors(
+                    unfocusedLeadingIconColor = MaterialTheme.colorScheme.secondary,
+                    unfocusedTextColor = MaterialTheme.colorScheme.secondary
                 )
-            }
-
-            Text(
-                modifier = Modifier.padding(start = 4.dp),
-                text = "Search",
-                style = MaterialTheme.typography.titleLarge
-            )
-        }
-
-        OutlinedTextField(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            value = query,
-            onValueChange = onQueryChange,
-            singleLine = true,
-            leadingIcon = {
-                Icon(
-                    imageVector = search_icon,
-                    contentDescription = null
+            ),
+            
+            inputField = { 
+                SearchBarDefaults.InputField(
+                    searchBarInputState, 
+                    searchBarState, 
+                    onSearch = {}, 
+                    
+                    leadingIcon = {
+                        Icon(
+                            imageVector = search_icon,
+                            contentDescription = null
+                        )
+                    },
+                    
+                    placeholder = { 
+                        Text("Search") 
+                    }
                 )
-            },
-            placeholder = {
-                Text(if (selectedTab == SearchTab.Posts) "Search public posts" else "Search")
             }
         )
+        
+        LaunchedEffect(searchBarInputState.text) {
+            onQueryChange(searchBarInputState.text.toString())
+        }
 
         ScrollableTabRow(
             modifier = Modifier
@@ -409,6 +465,20 @@ private fun SearchPanel(
                 kinds = BotKinds,
                 isSearching = isSearchingChats,
                 onOpen = onOpenEntry
+            )
+
+            SearchTab.Messages -> MessageSearchTab(
+                modifier = Modifier.fillMaxSize(),
+                state = messages,
+                query = trimmedQuery,
+                entries = entries,
+                onSearch = onSearchMessages,
+                onSetFilter = onSetMessageFilter,
+                onSetAccount = onSetMessageAccount,
+                onSaveQuery = onSaveQuery,
+                onDeleteQuery = onDeleteQuery,
+                onRunQuery = onRunQuery,
+                onOpen = onOpenPost
             )
 
             SearchTab.Posts -> Column(modifier = Modifier.fillMaxSize()) {
