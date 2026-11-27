@@ -1,7 +1,9 @@
 package com.mrboomdev.scrollix.features.drafts
 
 import com.mrboomdev.scrollix.data.api.ApiManager
+import com.mrboomdev.scrollix.ui.components.EmptyState
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.draft_icon
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -71,11 +73,11 @@ fun DraftsScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
         if (drafts.isEmpty()) {
-            Text(
-                modifier = Modifier.padding(16.dp),
-                text = "No unfinished drafts.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary
+            EmptyState(
+                title = "No unfinished drafts",
+                message = "Text you leave in a composer appears here until it is " +
+                    "sent or cleared.",
+                icon = draft_icon
             )
             return@Column
         }

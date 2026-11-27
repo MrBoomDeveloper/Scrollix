@@ -23,6 +23,15 @@ sealed interface Route: NavKey {
     data object Drafts : Route
 
     @Serializable
+    data object Onboarding : Route
+
+    @Serializable
+    data object Notifications : Route
+
+    @Serializable
+    data object StorageCenter : Route
+
+    @Serializable
     data object Diagnostics : Route
 
     @Serializable

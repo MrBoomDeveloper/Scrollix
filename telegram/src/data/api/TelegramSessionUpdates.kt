@@ -80,6 +80,18 @@ internal suspend fun TelegramSession.handleUpdate(update: Update) {
             updateChat(update.chatId) { it.copy(unreadCount = update.unreadCount) }
         }
 
+        is UpdateChatUnreadMentionCount -> {
+            updateChat(update.chatId) {
+                it.copy(unreadMentionCount = update.unreadMentionCount)
+            }
+        }
+
+        is UpdateChatUnreadReactionCount -> {
+            updateChat(update.chatId) {
+                it.copy(unreadReactionCount = update.unreadReactionCount)
+            }
+        }
+
         is UpdateChatReadOutbox -> handleChatReadOutbox(
             chatId = update.chatId,
             lastReadOutboxMessageId = update.lastReadOutboxMessageId

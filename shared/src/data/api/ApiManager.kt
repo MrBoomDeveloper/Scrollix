@@ -29,6 +29,7 @@ import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.randomId
+import com.mrboomdev.scrollix.ui.notice.NoticeCenter
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +57,13 @@ object ApiManager {
 
     private val _dialogs = MutableStateFlow<List<AccountDialogEntry>>(emptyList())
     val dialogs: StateFlow<List<AccountDialogEntry>> = _dialogs.asStateFlow()
+
+    /**
+     * Chats hidden during the undo window of a delete. They are filtered out
+     * of [dialogs] without telling the provider, so tapping Undo only has to
+     * drop the key and the row comes back from the session's own list.
+     */
+    private val hiddenDialogKeys = MutableStateFlow<Set<String>>(emptySet())
 
     /**
      * Total unread across every account. OS surfaces such as the desktop tray
@@ -287,6 +295,10 @@ object ApiManager {
             if (loggedOut != true) {
                 runCatching { session.close() }
             }
+        }
+
+        hiddenDialogKeys.update { keys ->
+            keys.filterNot { key -> key.startsWith("$accountId:") }.toSet()
         }
 
         _sessions.update { it - accountId }
@@ -759,10 +771,73 @@ object ApiManager {
 
     private fun recomputeDialogs() {
         val accounts = accountStore?.state?.value?.accounts ?: _accountState.value.accounts
-        _dialogs.value = DialogAggregator.aggregate(
+        val hidden = hiddenDialogKeys.value
+
+        val aggregated = DialogAggregator.aggregate(
             accounts = accounts,
             dialogsByAccount = _dialogsByAccount.value
         )
+
+        _dialogs.value = if (hidden.isEmpty()) {
+            aggregated
+        } else {
+            aggregated.filterNot { entry ->
+                "${entry.account.id}:${entry.dialog.providerDialogId}" in hidden
+            }
+        }
+    }
+
+    /** Hides a chat while its delete waits out the undo window. */
+    fun hideDialog(accountId: String, providerDialogId: String) {
+        hiddenDialogKeys.update { current ->
+            current + "$accountId:$providerDialogId"
+        }
+
+        recomputeDialogs()
+    }
+
+    /** Brings a hidden chat back after the user tapped Undo. */
+    fun restoreHiddenDialog(accountId: String, providerDialogId: String) {
+        hiddenDialogKeys.update { current ->
+            current - "$accountId:$providerDialogId"
+        }
+
+        recomputeDialogs()
+    }
+
+    /**
+     * Commits a delete the user already confirmed. It runs on the app scope so
+     * the call survives the chat row leaving the composition when it is hidden.
+     */
+    fun deleteHiddenDialog(accountId: String, providerDialogId: String, revoke: Boolean = true) {
+        if (!initialized) init()
+
+        appScope.launch {
+            val result = deleteDialog(
+                accountId = accountId,
+                providerDialogId = providerDialogId,
+                revoke = revoke
+            )
+
+            hiddenDialogKeys.update { current ->
+                current - "$accountId:$providerDialogId"
+            }
+
+            if (result.isFailure) {
+                AppLog.error(
+                    "dialogs",
+                    "Failed to delete a chat after the undo window",
+                    result.exceptionOrNull()
+                )
+
+                NoticeCenter.error(
+                    message = result.exceptionOrNull()?.message
+                        ?: "Could not delete the chat"
+                )
+
+                recomputeDialogs()
+            }
+        }
     }
 
     private fun recomputeDownloads() {

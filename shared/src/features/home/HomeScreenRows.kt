@@ -10,7 +10,9 @@ import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.features.dialog.CustomEmojiMessageText
 import com.mrboomdev.scrollix.features.dialog.MainMiniAppDialog
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
+import com.mrboomdev.scrollix.ui.notice.NoticeCenter
 import com.mrboomdev.scrollix.ui.icons.check_icon
 import com.mrboomdev.scrollix.ui.icons.delete_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
@@ -467,40 +469,43 @@ internal fun DialogItem(
         val isSharedChat = dialog.kind == DialogKind.Group ||
             dialog.kind == DialogKind.Channel
 
-        AlertDialog(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete chat") },
-            text = {
-                Text(
-                    if (isSharedChat) {
-                        "Leave \"${dialog.title}\" and remove it from your chat list?"
+        ConfirmDeleteDialog(
+            title = if (isSharedChat) "Leave chat" else "Delete chat",
+            message = if (isSharedChat) {
+                "Leave \"${dialog.title}\" and remove it from your chat list?"
+            } else {
+                "Delete the conversation with \"${dialog.title}\" for both sides?"
+            },
+            confirmLabel = if (isSharedChat) "Leave" else "Delete",
+            onConfirm = {
+                // The row disappears at once but the provider call waits for
+                // the undo window; Undo brings the row back untouched.
+                ApiManager.hideDialog(
+                    accountId = entry.account.id,
+                    providerDialogId = dialog.providerDialogId
+                )
+
+                NoticeCenter.undo(
+                    message = if (isSharedChat) {
+                        "Left \"${dialog.title}\""
                     } else {
-                        "Delete the conversation with \"${dialog.title}\" for both sides?"
+                        "Chat deleted"
+                    },
+                    undo = {
+                        ApiManager.restoreHiddenDialog(
+                            accountId = entry.account.id,
+                            providerDialogId = dialog.providerDialogId
+                        )
+                    },
+                    commit = {
+                        ApiManager.deleteHiddenDialog(
+                            accountId = entry.account.id,
+                            providerDialogId = dialog.providerDialogId
+                        )
                     }
                 )
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDelete = false
-
-                        scope.launch {
-                            ApiManager.deleteDialog(
-                                accountId = entry.account.id,
-                                providerDialogId = dialog.providerDialogId
-                            )
-                        }
-                    }
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { confirmDelete = false }
         )
     }
 }
@@ -551,35 +556,3 @@ internal fun sortDialogs(
     )
 }
 
-@Composable
-internal fun EmptyState(
-    hasAccounts: Boolean,
-    onOpenAccountsScreen: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            style = MaterialTheme.typography.titleMedium,
-            text = if (hasAccounts) "No dialogs yet" else "No accounts yet"
-        )
-
-        Text(
-            color = MaterialTheme.colorScheme.secondary,
-            style = MaterialTheme.typography.bodyMedium,
-            text = if (hasAccounts) {
-                "Dialogs will appear here after the accounts finish loading."
-            } else {
-                "Add a Telegram account to see its dialogs here."
-            }
-        )
-
-        Button(onClick = onOpenAccountsScreen) {
-            Text(if (hasAccounts) "Manage accounts" else "Add account")
-        }
-    }
-}

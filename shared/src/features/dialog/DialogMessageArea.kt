@@ -12,8 +12,11 @@ import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.components.EmptyState
 import com.mrboomdev.scrollix.ui.components.LoadingContent
 import com.mrboomdev.scrollix.ui.components.MediaViewer
+import com.mrboomdev.scrollix.ui.components.SkeletonList
+import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -150,20 +153,20 @@ internal fun ColumnScope.DialogMessageArea(
 
                     Box(modifier = Modifier.fillMaxSize()) {
                     when {
-                        history.isLoadingInitial -> {
-                            LoadingContent(
-                                modifier = Modifier.align(Alignment.Center),
-                                text = "Loading messages..."
-                            )
-                        }
+                        history.isLoadingInitial -> SkeletonList(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.TopCenter)
+                                .padding(top = 16.dp),
+                            rows = 6
+                        )
 
-                        messages.isEmpty() -> {
-                            Text(
-                                modifier = Modifier.align(Alignment.Center),
-                                text = "No messages yet",
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
+                        messages.isEmpty() -> EmptyState(
+                            modifier = Modifier.align(Alignment.Center),
+                            title = "No messages yet",
+                            message = "Send the first message to start this chat.",
+                            icon = chat_bubble_icon
+                        )
 
                         // The list is revealed only after it has been scrolled
                         // to its restored anchor, so it never flashes the wrong

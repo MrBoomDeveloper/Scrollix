@@ -7,6 +7,7 @@ import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
 import com.mrboomdev.scrollix.features.home.adjacentDialogEntry
 import com.mrboomdev.scrollix.features.home.firstUnreadEntry
@@ -30,6 +31,9 @@ import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
+import com.mrboomdev.scrollix.ui.notice.AppNoticeHost
+import com.mrboomdev.scrollix.ui.notice.NoticeCenter
+import com.mrboomdev.scrollix.ui.rememberMotionTokens
 import com.mrboomdev.scrollix.ui.theme.appTypography
 
 import androidx.compose.animation.AnimatedVisibility
@@ -58,7 +62,6 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.ShortNavigationBarItemDefaults
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -157,9 +160,34 @@ fun App() {
     val currentRoute = backStack.lastOrNull()
     val uriHandler = LocalUriHandler.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val motion = rememberMotionTokens()
+    val settings by AppSettingsStore.state.collectAsState()
     val listDetailStrategy = rememberListDetailSceneStrategy<NavKey>()
     var stickerSetOverlay by remember {
         mutableStateOf<Pair<String, StickerSetTarget>?>(null)
+    }
+
+    // First run: nothing is blocked. The onboarding route is only pushed when
+    // there is no account and the user has not dismissed it yet; existing
+    // installs already have accounts, so they never see it.
+    val initialDialogsReady by ApiManager.initialDialogsReady.collectAsState()
+
+    LaunchedEffect(
+        initialDialogsReady,
+        accountState.accounts,
+        settings.onboardingCompleted,
+        currentRoute
+    ) {
+        if (!initialDialogsReady) return@LaunchedEffect
+        if (settings.onboardingCompleted) return@LaunchedEffect
+        if (accountState.accounts.isNotEmpty()) return@LaunchedEffect
+        if (currentRoute is Route.Login || currentRoute is Route.Onboarding) {
+            return@LaunchedEffect
+        }
+
+        if (backStack.none { route -> route is Route.Onboarding }) {
+            backStack += Route.Onboarding
+        }
     }
 
     // Desktop notifications for chats that receive a new message while their
@@ -314,9 +342,7 @@ fun App() {
                     "Could not open ${request.url}: ${lastError ?: "unknown error"}"
                 )
 
-                snackbarHostState.showSnackbar(
-                    lastError ?: "This link could not be opened"
-                )
+                NoticeCenter.error(lastError ?: "This link could not be opened")
             }
 
             return@LaunchedEffect
@@ -360,6 +386,16 @@ fun App() {
             MediaViewer.isShowing -> MediaViewer.close()
             stickerSetOverlay != null -> stickerSetOverlay = null
             showQrScanner -> showQrScanner = false
+
+            // Back on the first-run screen means "not now": the flag is set
+            // so the screen does not immediately reappear on the next frame.
+            backStack.lastOrNull() == Route.Onboarding -> {
+                AppSettingsStore.update { settings ->
+                    settings.copy(onboardingCompleted = true)
+                }
+
+                backStack.removeLastOrNull()
+            }
 
             backStack.size > 1 -> backStack.removeAt(backStack.lastIndex)
             else -> selectedDialog.value = null
@@ -415,7 +451,9 @@ fun App() {
 
                 if (target == null) {
                     if (request.shortcut == AppShortcut.JumpToUnread) {
-                        snackbarHostState.showSnackbar("No unread chats")
+                        NoticeCenter.post(
+                            com.mrboomdev.scrollix.ui.notice.AppNotice("No unread chats")
+                        )
                     }
                 } else {
                     val route = Route.Dialog(
@@ -532,7 +570,7 @@ fun App() {
                                             Icon(
                                                 tint = MaterialTheme.colorScheme.secondary,
                                                 imageVector = menu_icon,
-                                                contentDescription = null
+                                                contentDescription = "Main menu"
                                             )
                                         }
 
@@ -550,7 +588,13 @@ fun App() {
                                                         backStack.add(Route.Settings)
                                                     }
                                                 },
-                                                onScanQr = { showQrScanner = true }
+                                                onScanQr = { showQrScanner = true },
+                                                onOpenNotifications = {
+                                                    backStack.add(Route.Notifications)
+                                                },
+                                                onOpenStorage = {
+                                                    backStack.add(Route.StorageCenter)
+                                                }
                                             )
                                         )
                                     }
@@ -609,44 +653,44 @@ fun App() {
                             ),
 
                             transitionSpec = {
-                                if(useRail) {
+                                if (useRail || motion.reduceMotion) {
                                     return@NavDisplay ContentTransform(
-                                        fadeIn(spring(stiffness = Spring.StiffnessHigh)),
-                                        fadeOut(spring(stiffness = Spring.StiffnessHigh))
-                                    ) 
+                                        fadeIn(motion.fade),
+                                        fadeOut(motion.fade)
+                                    )
                                 }
-                                
+
                                 ContentTransform(
-                                    fadeIn() + scaleIn(animationSpec = spring(stiffness = Spring.StiffnessHigh), initialScale = 1.1f) + slideIn(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(it.width, 0) },
-                                    fadeOut() + slideOut(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(-it.width, 0) }
+                                    fadeIn() + scaleIn(animationSpec = spring(stiffness = Spring.StiffnessHigh), initialScale = 1.1f) + slideIn(motion.spatial) { IntOffset(it.width, 0) },
+                                    fadeOut() + slideOut(motion.spatial) { IntOffset(-it.width, 0) }
                                 )
                             },
 
                             popTransitionSpec = {
-                                if(useRail) {
+                                if (useRail || motion.reduceMotion) {
                                     return@NavDisplay ContentTransform(
-                                        fadeIn(spring(stiffness = Spring.StiffnessHigh)),
-                                        fadeOut(spring(stiffness = Spring.StiffnessHigh))
+                                        fadeIn(motion.fade),
+                                        fadeOut(motion.fade)
                                     )
                                 }
-                                
+
                                 ContentTransform(
-                                    fadeIn() + slideIn(spring()) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
-                                    fadeOut() + slideOut(spring()) { IntOffset(it.width, 0) }
+                                    fadeIn() + slideIn(motion.gentleSpatial) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
+                                    fadeOut() + slideOut(motion.gentleSpatial) { IntOffset(it.width, 0) }
                                 )
                             },
 
                             predictivePopTransitionSpec = {
-                                if(useRail) {
+                                if (useRail || motion.reduceMotion) {
                                     return@NavDisplay ContentTransform(
-                                        fadeIn(spring(stiffness = Spring.StiffnessHigh)),
-                                        fadeOut(spring(stiffness = Spring.StiffnessHigh))
+                                        fadeIn(motion.fade),
+                                        fadeOut(motion.fade)
                                     )
                                 }
-                                
+
                                 ContentTransform(
-                                    fadeIn() + slideIn(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
-                                    fadeOut() + slideOut(spring(stiffness = Spring.StiffnessHigh)) { IntOffset(it.width, 0) }
+                                    fadeIn() + slideIn(motion.spatial) { IntOffset(-it.width, 0) } + scaleIn(initialScale = 0.95f),
+                                    fadeOut() + slideOut(motion.spatial) { IntOffset(it.width, 0) }
                                 )
                             },
 
@@ -735,7 +779,7 @@ fun App() {
                     ShortcutCheatSheetDialog(onDismiss = { showShortcuts = false })
                 }
 
-                SnackbarHost(
+                AppNoticeHost(
                     hostState = snackbarHostState,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )

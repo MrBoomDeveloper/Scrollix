@@ -100,6 +100,8 @@ internal fun HomeScreen(
     onOpenSettingsScreen: () -> Unit,
     onOpenDraftsScreen: () -> Unit,
     onScanQr: () -> Unit,
+    onOpenNotifications: () -> Unit = {},
+    onOpenStorageCenter: () -> Unit = {},
     onOpenDialog: (AccountDialogEntry) -> Unit,
     selectedDialogAccountId: String? = null,
     selectedDialogProviderDialogId: String? = null,
@@ -442,7 +444,7 @@ internal fun HomeScreen(
                             Icon(
                                 tint = MaterialTheme.colorScheme.secondary,
                                 imageVector = more_vertical_icon,
-                                contentDescription = null
+                                contentDescription = "More options"
                             )
                         }
 
@@ -453,6 +455,8 @@ internal fun HomeScreen(
                                 onOpenDrafts = onOpenDraftsScreen,
                                 onOpenSettings = onOpenSettingsScreen,
                                 onScanQr = onScanQr,
+                                onOpenNotifications = onOpenNotifications,
+                                onOpenStorage = onOpenStorageCenter,
                                 extra = buildList {
                                     add(
                                         AppMenuItem(

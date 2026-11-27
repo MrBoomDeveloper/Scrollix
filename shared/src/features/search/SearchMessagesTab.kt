@@ -26,6 +26,10 @@ import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.EmptyState
+import com.mrboomdev.scrollix.ui.components.ErrorState
+import com.mrboomdev.scrollix.ui.components.SkeletonList
+import com.mrboomdev.scrollix.ui.icons.search_icon
 
 /**
  * Everything the global message tab renders, so the panel stays a plain shell.
@@ -68,37 +72,37 @@ internal fun MessageSearchTab(
             }
         }
 
-        state.error?.let { message ->
-            Text(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
         when {
-            state.isSearching && state.results.isEmpty() -> Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-
-            !state.hasSearched && state.results.isEmpty() -> EmptySearchState(
-                text = if (query.isBlank()) {
-                    "Type a query and tap Search messages"
-                } else {
-                    "Tap Search messages to search every account"
-                },
-                modifier = Modifier.fillMaxSize()
+            state.isSearching && state.results.isEmpty() -> SkeletonList(
+                modifier = Modifier.fillMaxSize().padding(vertical = 12.dp),
+                rows = 8
             )
 
-            state.results.isEmpty() -> EmptySearchState(
-                text = "No messages found",
-                modifier = Modifier.fillMaxSize()
+            state.error != null && state.results.isEmpty() -> ErrorState(
+                modifier = Modifier.fillMaxSize(),
+                title = "Search failed",
+                message = state.error,
+                onRetry = onSearch
+            )
+
+            !state.hasSearched && state.results.isEmpty() -> EmptyState(
+                modifier = Modifier.fillMaxSize(),
+                title = "Search messages",
+                message = if (query.isBlank()) {
+                    "Type a query and tap Search messages."
+                } else {
+                    "Tap Search messages to search every account."
+                },
+                icon = search_icon
+            )
+
+            state.results.isEmpty() -> EmptyState(
+                modifier = Modifier.fillMaxSize(),
+                title = "No messages found",
+                message = "Try a different word or widen the filters.",
+                icon = search_icon
             )
 
             else -> MessageResultRows(

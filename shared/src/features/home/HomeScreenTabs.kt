@@ -8,7 +8,9 @@ import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.features.settings.icon
 import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.LoadingContent
+import com.mrboomdev.scrollix.ui.components.EmptyState
+import com.mrboomdev.scrollix.ui.components.SkeletonList
+import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -109,16 +111,27 @@ internal fun DialogList(
         if (entries.isEmpty()) {
             item {
                 if (isDialogsLoading) {
-                    LoadingContent(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        text = "Loading dialogs..."
+                    SkeletonList(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        rows = 8
+                    )
+                } else if (hasAccounts) {
+                    EmptyState(
+                        title = "No dialogs yet",
+                        message = "Dialogs appear here once the accounts finish " +
+                            "loading. Try again if this stays empty.",
+                        icon = chat_bubble_icon,
+                        actionLabel = "Manage accounts",
+                        onAction = onOpenAccountsScreen
                     )
                 } else {
                     EmptyState(
-                        hasAccounts = hasAccounts,
-                        onOpenAccountsScreen = onOpenAccountsScreen
+                        title = "No accounts yet",
+                        message = "Add a Telegram, MAX or VK account to see its " +
+                            "dialogs here.",
+                        icon = chat_bubble_icon,
+                        actionLabel = "Add account",
+                        onAction = onOpenAccountsScreen
                     )
                 }
             }

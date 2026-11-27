@@ -133,7 +133,7 @@ private fun FullscreenMediaFrame(
             Icon(
                 tint = Color.White,
                 imageVector = close_icon,
-                contentDescription = null
+                contentDescription = "Close"
             )
         }
     }
@@ -584,7 +584,7 @@ fun FullscreenGalleryViewer(
                 Icon(
                     tint = Color.White,
                     imageVector = close_icon,
-                    contentDescription = null
+                    contentDescription = "Close"
                 )
             }
         }

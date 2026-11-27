@@ -19,6 +19,7 @@ import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.getPlatform
 import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.notice.NoticeCenter
 import com.mrboomdev.scrollix.ui.icons.bug_report_icon
 
 import androidx.compose.foundation.background
@@ -268,10 +269,23 @@ internal fun DiagnosticsScreen(
             confirmLabel = confirmLabel,
             onConfirm = {
                 when (action) {
-                    DiagnosticsDeleteAction.ClearLog -> viewModel.clearLog()
+                    // The in-memory and persisted logs are the only destructive
+                    // debug actions that can still be called off, so they get
+                    // the undo window; a committed report delete cannot.
+                    DiagnosticsDeleteAction.ClearLog -> NoticeCenter.undo(
+                        message = "Log cleared",
+                        undo = {},
+                        commit = { viewModel.clearLog() }
+                    )
+
+                    DiagnosticsDeleteAction.ClearSavedLog -> NoticeCenter.undo(
+                        message = "Saved log cleared",
+                        undo = {},
+                        commit = { viewModel.clearSavedLog() }
+                    )
+
                     DiagnosticsDeleteAction.DeleteCrash -> viewModel.deleteCrash()
                     DiagnosticsDeleteAction.DeleteNonFatal -> viewModel.deleteNonFatal()
-                    DiagnosticsDeleteAction.ClearSavedLog -> viewModel.clearSavedLog()
                 }
             },
             onDismiss = { pendingAction = null }

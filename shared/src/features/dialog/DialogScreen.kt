@@ -551,7 +551,7 @@ private fun DialogHeader(
                 Icon(
                     tint = MaterialTheme.colorScheme.secondary,
                     imageVector = more_vertical_icon,
-                    contentDescription = null
+                    contentDescription = "Chat options"
                 )
             }
 

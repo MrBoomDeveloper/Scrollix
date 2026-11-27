@@ -172,22 +172,6 @@ alongside; performance, accessibility and release work never stop.
 - Battery/Doze policy for long-poll and WebSocket providers.
 - Foreground-service policy for long uploads if background limits require it.
 
-**Shared**
-
-- Empty, skeleton and error states for every screen and settings section.
-- A global error/toast host so failures do not disappear with a recomposition,
-  plus a notification center for mentions, reactions, replies.
-- Undo for destructive actions: delete, leave, clear history.
-- Motion design pass on top of `reduceMotion`.
-- Accessibility: semantics, focus order, screen-reader labels for every
-  icon-only control, keyboard focus rings.
-- Onboarding: provider chooser, permission explanations, a non-blocking first
-  run.
-- Saved Messages as a bookmark surface with tags and "saved from".
-- Data and storage center: usage by chat, clear cache per chat, per-network
-  policy.
-- Diagnostics entry points from errors: "copy debug info", "open logs".
-
 ## Engineering
 
 **Testing**

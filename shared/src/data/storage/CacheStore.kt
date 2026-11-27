@@ -217,6 +217,54 @@ object CacheStore {
     }
 
     /**
+     * Cached data grouped by chat: the stored message window plus the media
+     * files those messages reference. Only chats with a cached window are
+     * listed, so the storage center never invents a chat that was never opened.
+     */
+    suspend fun chatUsage(): List<ChatCacheUsage> {
+        return runCatching {
+            val sizes = dao.messageSizes()
+            val mediaEntries = mediaEntries().associateBy { entry -> entry.relativePath }
+
+            sizes.map { row ->
+                val messages = loadMessages(row.accountId, row.providerDialogId)
+                val account = safeName(row.accountId)
+                val mediaBytes = mediaUniqueIds(messages).sumOf { uniqueId ->
+                    mediaEntries["$account/${hexName(uniqueId)}"]?.sizeBytes ?: 0L
+                }
+
+                ChatCacheUsage(
+                    accountId = row.accountId,
+                    providerDialogId = row.providerDialogId,
+                    messageBytes = row.sizeBytes,
+                    mediaBytes = mediaBytes
+                )
+            }.sortedByDescending { usage -> usage.totalBytes }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Removes the cached window of one chat and the media only that window
+     * references. The chat itself, its server history and queued sends stay.
+     */
+    suspend fun clearChatCache(accountId: String, providerDialogId: String) {
+        runCatching {
+            val messages = loadMessages(accountId, providerDialogId)
+            val account = safeName(accountId)
+            val paths = mediaUniqueIds(messages)
+                .map { uniqueId -> "$account/${hexName(uniqueId)}" }
+                .toSet()
+
+            paths.forEach { relativePath ->
+                runCatching { storage.delete("$MediaDirectory/$relativePath") }
+            }
+
+            protectedMedia.update { current -> current - paths }
+            dao.deleteMessages(accountId, providerDialogId)
+        }
+    }
+
+    /**
      * Deletes the oldest cached media until the directory fits [limitBytes].
      * Returns the number of bytes freed. A non-positive limit means unlimited.
      */
@@ -345,6 +393,16 @@ object CacheStore {
     private fun safeName(value: String): String {
         return value.replace(Regex("[^A-Za-z0-9._-]"), "_")
     }
+}
+
+/** Cached bytes of one chat: its message window and referenced media. */
+data class ChatCacheUsage(
+    val accountId: String,
+    val providerDialogId: String,
+    val messageBytes: Long,
+    val mediaBytes: Long
+) {
+    val totalBytes: Long get() = messageBytes + mediaBytes
 }
 
 /** One cached media file considered by the budget manager. */

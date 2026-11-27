@@ -1,8 +1,10 @@
 package com.mrboomdev.scrollix.ui.components
 
 import com.mrboomdev.scrollix.ui.icons.draft_icon
+import com.mrboomdev.scrollix.ui.icons.notifications_icon
 import com.mrboomdev.scrollix.ui.icons.qr_code_scanner_icon
 import com.mrboomdev.scrollix.ui.icons.settings_icon
+import com.mrboomdev.scrollix.ui.icons.storage_icon
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -34,12 +36,29 @@ internal fun appMenuItems(
     onOpenDrafts: () -> Unit,
     onOpenSettings: () -> Unit,
     onScanQr: () -> Unit,
+    onOpenNotifications: (() -> Unit)? = null,
+    onOpenStorage: (() -> Unit)? = null,
     extra: List<AppMenuItem> = emptyList()
-): List<AppMenuItem> = listOf(
-    AppMenuItem(title = "Drafts", icon = draft_icon, onClick = onOpenDrafts),
-    AppMenuItem(title = "Settings", icon = settings_icon, onClick = onOpenSettings),
-    AppMenuItem(title = "Scan QR", icon = qr_code_scanner_icon, onClick = onScanQr)
-) + extra
+): List<AppMenuItem> = buildList {
+    add(AppMenuItem(title = "Drafts", icon = draft_icon, onClick = onOpenDrafts))
+
+    if (onOpenNotifications != null) {
+        add(
+            AppMenuItem(
+                title = "Notifications",
+                icon = notifications_icon,
+                onClick = onOpenNotifications
+            )
+        )
+    }
+
+    if (onOpenStorage != null) {
+        add(AppMenuItem(title = "Storage", icon = storage_icon, onClick = onOpenStorage))
+    }
+
+    add(AppMenuItem(title = "Settings", icon = settings_icon, onClick = onOpenSettings))
+    add(AppMenuItem(title = "Scan QR", icon = qr_code_scanner_icon, onClick = onScanQr))
+} + extra
 
 /** Renders [items]; the caller owns the expanded state of its own menu. */
 @Composable

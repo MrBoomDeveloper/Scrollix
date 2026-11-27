@@ -23,6 +23,8 @@ internal data class ChatEntry(
     val positions: List<ChatPosition>,
     val permissions: ChatPermissions,
     val unreadCount: Int,
+    val unreadMentionCount: Int = 0,
+    val unreadReactionCount: Int = 0,
     val lastReadOutboxMessageId: Long,
     val isMarkedAsUnread: Boolean,
     val typingText: String? = null,
@@ -46,6 +48,8 @@ internal data class ChatEntry(
                 },
                 permissions = chat.permissions,
                 unreadCount = chat.unreadCount,
+                unreadMentionCount = chat.unreadMentionCount,
+                unreadReactionCount = chat.unreadReactionCount,
                 lastReadOutboxMessageId = chat.lastReadOutboxMessageId,
                 isMarkedAsUnread = chat.isMarkedAsUnread,
                 draftText = (chat.draftMessage?.content as? DraftMessageContentText)

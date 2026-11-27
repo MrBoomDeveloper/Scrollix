@@ -10,7 +10,9 @@ import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.EmptyState
 import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
+import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
@@ -145,24 +147,13 @@ internal fun AccountsScreen(
 
             if (accountState.accounts.isEmpty()) {
                 item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "No accounts yet",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-
-                        Text(
-                            text = "Add a Telegram account to see its dialogs here.",
-                            color = MaterialTheme.colorScheme.secondary,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
+                    EmptyState(
+                        modifier = Modifier.fillMaxWidth(),
+                        title = "No accounts yet",
+                        message = "Add a Telegram, MAX or VK account to see its " +
+                            "dialogs here.",
+                        icon = account_circle_icon
+                    )
                 }
             }
 

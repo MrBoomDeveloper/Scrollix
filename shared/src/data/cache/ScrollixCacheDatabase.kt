@@ -31,6 +31,13 @@ internal data class CachedMessagesEntity(
     val updatedAt: Long
 )
 
+/** One cached chat window and the size of its serialized payload. */
+internal data class CachedMessageSize(
+    val accountId: String,
+    val providerDialogId: String,
+    val sizeBytes: Long
+)
+
 @Dao
 internal interface CacheDao {
     @Query("SELECT payload FROM cached_dialogs WHERE accountId = :accountId")
@@ -68,6 +75,12 @@ internal interface CacheDao {
 
     @Query("SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM cached_messages")
     suspend fun messagesSize(): Long
+
+    @Query(
+        "SELECT accountId, providerDialogId, LENGTH(payload) AS sizeBytes " +
+            "FROM cached_messages"
+    )
+    suspend fun messageSizes(): List<CachedMessageSize>
 
     @Query("DELETE FROM cached_messages")
     suspend fun clearMessages()

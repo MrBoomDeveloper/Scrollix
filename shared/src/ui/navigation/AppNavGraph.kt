@@ -3,6 +3,10 @@ package com.mrboomdev.scrollix.ui.navigation
 import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.features.notifications.NotificationCenterScreen
+import com.mrboomdev.scrollix.features.onboarding.OnboardingScreen
+import com.mrboomdev.scrollix.features.storage.StorageCenterScreen
 import com.mrboomdev.scrollix.features.accounts.AccountManageScreen
 import com.mrboomdev.scrollix.features.accounts.AccountsScreen
 import com.mrboomdev.scrollix.features.diagnostics.DiagnosticsScreen
@@ -77,6 +81,12 @@ fun rememberAppEntryProvider(
                     }
                 },
                 onScanQr = onScanQr,
+                onOpenNotifications = {
+                    backStack += Route.Notifications
+                },
+                onOpenStorageCenter = {
+                    backStack += Route.StorageCenter
+                },
                 onOpenDialog = { entry ->
                     backStack.openDialog(
                         Route.Dialog(
@@ -238,6 +248,44 @@ fun rememberAppEntryProvider(
                     }
                 }
             )
+        }
+
+        entry<Route.Onboarding> {
+            OnboardingScreen(
+                onSkip = {
+                    AppSettingsStore.update { settings ->
+                        settings.copy(onboardingCompleted = true)
+                    }
+
+                    backStack.removeLastOrNull()
+                },
+                onAccountCreated = { accountId ->
+                    AppSettingsStore.update { settings ->
+                        settings.copy(onboardingCompleted = true)
+                    }
+
+                    backStack.removeLastOrNull()
+                    backStack += Route.Login(accountId)
+                }
+            )
+        }
+
+        entry<Route.Notifications> {
+            NotificationCenterScreen(
+                onBack = { backStack.removeLastOrNull() },
+                onOpenDialog = { entry ->
+                    backStack.openDialog(
+                        Route.Dialog(
+                            accountId = entry.account.id,
+                            providerDialogId = entry.dialog.providerDialogId
+                        )
+                    )
+                }
+            )
+        }
+
+        entry<Route.StorageCenter> {
+            StorageCenterScreen(onBack = { backStack.removeLastOrNull() })
         }
 
         entry<Route.Settings> {

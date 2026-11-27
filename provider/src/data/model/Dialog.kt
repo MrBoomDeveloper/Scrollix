@@ -73,6 +73,10 @@ data class Dialog(
     val lastMessageIsRead: Boolean = false,
     val timestamp: Long,
     val unreadCount: Int = 0,
+    /** Provider-reported unread mentions of this account in the chat. */
+    val unreadMentionCount: Int = 0,
+    /** Provider-reported unread reactions to this account's messages. */
+    val unreadReactionCount: Int = 0,
     val memberCount: Int? = null,
     val pinnedMessageId: Long? = null,
     val canSendMessages: Boolean = true,

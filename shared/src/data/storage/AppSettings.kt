@@ -102,7 +102,12 @@ data class AppSettings(
      * [keepMediaKey]. Only media referenced by the chat's cached messages is
      * protected; pages that are no longer cached can still be evicted.
      */
-    val keepMediaDialogIds: Set<String> = emptySet()
+    val keepMediaDialogIds: Set<String> = emptySet(),
+    /**
+     * The first-run screen was shown and dismissed. Existing installs never see
+     * it: they already have accounts, so the screen is skipped regardless.
+     */
+    val onboardingCompleted: Boolean = false
 )
 
 /** Stable settings key for a chat's keep-media flag. */
