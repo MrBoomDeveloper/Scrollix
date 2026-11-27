@@ -15,6 +15,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -202,11 +204,15 @@ fun ChatVideoPreview(
                     Modifier.size(RoundVideoNoteSize)
                 } else {
                     Modifier
-                        .width(260.dp)
-                        .aspectRatio(aspectRatio.coerceIn(0.75f, 1.8f))
+                        // Telegram previews a video at the bubble width and
+                        // caps the height, so a portrait clip is not taller
+                        // than a third of the screen.
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .aspectRatio(aspectRatio.coerceIn(0.6f, 2.5f))
                 }
             )
-            .clip(if (isRound) CircleShape else RoundedCornerShape(8.dp))
+            .clip(if (isRound) CircleShape else RoundedCornerShape(MediaCornerRadius))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable {
                 if (!revealed) {

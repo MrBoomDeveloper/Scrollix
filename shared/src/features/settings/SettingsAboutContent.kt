@@ -276,6 +276,7 @@ internal fun LicensesDialog(onDismiss: () -> Unit) {
     val uriHandler = LocalUriHandler.current
 
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text("Third-party licenses") },
         text = {

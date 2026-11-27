@@ -40,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -104,6 +106,15 @@ fun PollCreateDialog(
     var attachmentTarget by remember { mutableStateOf<Int?>(null) }
     var emojiData by remember { mutableStateOf<Map<Long, ByteArray>>(emptyMap()) }
     var emojiAdaptive by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    fun openEmoji(target: PollEmojiTarget) {
+        // The picker takes the keyboard's place, never both at once.
+        keyboardController?.hide()
+        focusManager.clearFocus()
+        emojiTarget = target
+    }
 
     // Custom emoji picked into the question or an option are drawn as stickers,
     // so their assets have to be loaded before the field can render them.
@@ -269,7 +280,7 @@ fun PollCreateDialog(
 
                 TextButton(
                     enabled = session != null,
-                    onClick = { emojiTarget = PollEmojiTarget.Question }
+                    onClick = { openEmoji(PollEmojiTarget.Question) }
                 ) {
                     Text("😀")
                 }
@@ -298,7 +309,7 @@ fun PollCreateDialog(
 
                         TextButton(
                             enabled = session != null,
-                            onClick = { emojiTarget = PollEmojiTarget.Option(index) }
+                            onClick = { openEmoji(PollEmojiTarget.Option(index)) }
                         ) {
                             Text("😀")
                         }
@@ -438,6 +449,7 @@ fun PollCreateDialog(
 
     if (isMobile) {
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = onDismiss,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -471,6 +483,7 @@ fun PollCreateDialog(
         }
     } else {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = onDismiss,
             title = { Text("Create poll") },
             text = form,
@@ -508,6 +521,7 @@ fun PollCreateDialog(
             )
         } else {
             AlertDialog(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 onDismissRequest = { emojiTarget = null },
                 text = { Text("Sign in to use custom emoji") },
                 confirmButton = {

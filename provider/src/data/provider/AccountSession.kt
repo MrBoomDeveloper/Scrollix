@@ -250,9 +250,21 @@ interface AccountSession {
         UnsupportedOperationException("Message threads are not supported")
     )
 
+    /** True when the provider can deliver a message without a notification. */
+    open val supportsSilentSend: Boolean get() = false
+
+    /**
+     * True when this account can approve a QR login shown by another device.
+     * Telegram has the flow; MAX and VK do not, so the QR dialog offers only
+     * the accounts that can actually finish it.
+     */
+    open val supportsQrLogin: Boolean get() = false
+
     /**
      * Sends text. [formatting] carries the rich text ranges of [text]; providers
      * without entity support may deliver the plain text instead.
+     * [sendSilently] asks the provider to skip the recipient's notification;
+     * providers without [supportsSilentSend] ignore it.
      */
     suspend fun sendMessage(
         providerDialogId: String,
@@ -260,7 +272,8 @@ interface AccountSession {
         replyToMessageId: Long? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
-        scheduling: MessageScheduling? = null
+        scheduling: MessageScheduling? = null,
+        sendSilently: Boolean = false
     ): Result<Unit>
     suspend fun sendFile(
         providerDialogId: String,
@@ -276,7 +289,8 @@ interface AccountSession {
         replyToMessageId: Long? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
-        scheduling: MessageScheduling? = null
+        scheduling: MessageScheduling? = null,
+        sendSilently: Boolean = false
     ): Result<Unit>
     /** Sends a recorded voice note (server-side Telegram voice message). */
     suspend fun sendVoiceNote(
@@ -337,16 +351,25 @@ interface AccountSession {
 
     suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray)
 
-    /** Restores the server-side draft of a chat, if it has one. */
-    suspend fun loadDraft(providerDialogId: String): Result<MessageDraft> =
-        Result.success(MessageDraft())
+    /**
+     * Restores the server-side draft of a chat, if it has one. [threadId] is
+     * the provider's topic/thread id, or 0 for the chat itself.
+     */
+    suspend fun loadDraft(
+        providerDialogId: String,
+        threadId: Long = 0L
+    ): Result<MessageDraft> = Result.success(MessageDraft())
 
-    /** Stores the composer text as a server-side draft so other devices see it. */
+    /**
+     * Stores the composer text as a server-side draft so other devices see it.
+     * [threadId] scopes it to a topic/thread, or 0 for the chat itself.
+     */
     suspend fun saveDraft(
         providerDialogId: String,
         text: String,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
-        formatting: List<MessageTextFormat> = emptyList()
+        formatting: List<MessageTextFormat> = emptyList(),
+        threadId: Long = 0L
     ): Result<Unit> = Result.success(Unit)
 
     /** Whether this account can change a chat's auto-delete timer. */
@@ -536,10 +559,20 @@ interface AccountSession {
         )
     )
 
+    /** Whether [searchMessages] can return pages older than the first one. */
+    val supportsMessageSearchPaging: Boolean
+        get() = false
+
+    /**
+     * Searches inside one chat. [fromMessageId] is the newest message the page
+     * may return (the cursor of the previous page); null starts at the newest
+     * match. Providers that cannot page ignore it and always return one page.
+     */
     suspend fun searchMessages(
         providerDialogId: String,
         query: String,
-        limit: Int = 50
+        limit: Int = 50,
+        fromMessageId: Long? = null
     ): Result<List<ChatMessage>>
     suspend fun searchGlobalMessages(
         query: String,

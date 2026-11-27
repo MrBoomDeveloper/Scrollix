@@ -50,18 +50,38 @@ actual fun showDesktopNotification(
 // notifications are a mobile concern.
 actual fun isAppInForeground(): Boolean = true
 
-actual suspend fun currentLocation(): Pair<Double, Double>? {
+// A desktop has no system location switch, so nothing can be "off" there.
+// Desktop has no location hardware, but the network lookup below works
+// wherever the machine has internet access.
+actual fun isLocationSupported(): Boolean = true
+
+actual fun isLocationEnabled(): Boolean = true
+
+// Nothing to open: geolocation on Linux comes from the network lookup below.
+actual fun openLocationSettings() = Unit
+
+// There is no `geo:` handler on the JVM, so the card always falls back to the
+// browser map.
+actual fun openMapApplication(
+    latitude: Double,
+    longitude: Double,
+    label: String
+): Boolean = false
+
+actual suspend fun currentLocation(): LocationFix {
     // Linux has no desktop geolocation service. The public IP gives a city
     // level approximation, which is enough for a location picker and does not
     // require any permissions.
-    val text = fetchUrlBytes("https://ipapi.co/json/")?.decodeToString() ?: return null
+    val text = fetchUrlBytes("https://ipapi.co/json/")?.decodeToString()
+        ?: return LocationFix.Unavailable
+
     val latitude = Regex("\"latitude\"\\s*:\\s*(-?[0-9.]+)")
         .find(text)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
     val longitude = Regex("\"longitude\"\\s*:\\s*(-?[0-9.]+)")
         .find(text)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
 
-    if (latitude == null || longitude == null) return null
-    return latitude to longitude
+    if (latitude == null || longitude == null) return LocationFix.Unavailable
+    return LocationFix.Position(latitude, longitude)
 }
 
 actual suspend fun fetchUrlBytes(url: String): ByteArray? = withContext(Dispatchers.IO) {

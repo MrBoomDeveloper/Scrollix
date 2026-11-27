@@ -106,7 +106,7 @@ fun MessageThreadDialog(
                     .fillMaxHeight(0.9f)
                     .padding(16.dp),
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(

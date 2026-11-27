@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
+import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.icons.delete_icon
 
 import androidx.compose.foundation.clickable
@@ -85,7 +86,7 @@ internal fun ScheduleMessageDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         title = { Text(title) },
         text = {
             Column(
@@ -218,6 +219,7 @@ internal fun ScheduledMessagesDialog(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var rescheduling by remember { mutableStateOf<ChatMessage?>(null) }
+    var deleting by remember { mutableStateOf<ChatMessage?>(null) }
 
     fun reload() {
         scope.launch {
@@ -274,7 +276,7 @@ internal fun ScheduledMessagesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         title = { Text("Scheduled messages") },
         text = {
             Column(
@@ -316,7 +318,7 @@ internal fun ScheduledMessagesDialog(
                                 enabled = !busy,
                                 onSendNow = { reschedule(message, null) },
                                 onReschedule = { rescheduling = message },
-                                onDelete = { delete(message) }
+                                onDelete = { deleting = message }
                             )
 
                             HorizontalDivider()
@@ -331,6 +333,20 @@ internal fun ScheduledMessagesDialog(
             }
         }
     )
+
+    deleting?.let { message ->
+        ConfirmDeleteDialog(
+            title = "Delete the scheduled message?",
+            message = "It is removed before it is sent, so the other side never " +
+                "sees it. This cannot be undone.",
+            confirmLabel = "Delete",
+            onConfirm = {
+                deleting = null
+                delete(message)
+            },
+            onDismiss = { deleting = null }
+        )
+    }
 
     rescheduling?.let { message ->
         ScheduleMessageDialog(

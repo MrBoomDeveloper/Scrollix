@@ -28,14 +28,12 @@ import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
-import com.mrboomdev.scrollix.ui.navigation.LocalSharedTransitionScope
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
 import com.mrboomdev.scrollix.ui.theme.appTypography
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandIn
@@ -488,6 +486,8 @@ fun App() {
 
             AppNavTab(
                 isActive = currentRoute is Route.Accounts ||
+                        currentRoute is Route.AccountManage ||
+                        currentRoute is Route.OwnProfile ||
                         currentRoute is Route.Login,
                 icon = account_circle_icon,
                 title = "Accounts",
@@ -592,12 +592,8 @@ fun App() {
                     }
 
                     Column(Modifier.fillMaxSize()) {
-                        SharedTransitionLayout(modifier = Modifier.weight(1f)) {
-                            CompositionLocalProvider(
-                                LocalSharedTransitionScope provides this
-                            ) {
                         NavDisplay(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.weight(1f),
                             backStack = backStack,
                             sceneStrategies = listOf(listDetailStrategy),
 
@@ -659,8 +655,6 @@ fun App() {
                                 rememberSaveableStateHolderNavEntryDecorator()
                             )
                         )
-                            }
-                        }
 
                         AnimatedVisibility(showNavigation && !useRail) {
                             ShortNavigationBar(
@@ -722,14 +716,17 @@ fun App() {
                 }
 
                 if (showQrScanner) {
-                    val activeSession = remember(accountState.accounts) {
-                        accountState.accounts.firstOrNull()?.let { account ->
-                            ApiManager.session(account.id)
-                        }
+                    // Only accounts that can actually approve a QR login are
+                    // offered; a MAX session used to be picked first and the
+                    // scan failed there even though a Telegram account existed.
+                    val qrSessions = remember(accountState.accounts) {
+                        accountState.accounts
+                            .mapNotNull { account -> ApiManager.session(account.id) }
+                            .filter { session -> session.supportsQrLogin }
                     }
 
                     QrScannerDialog(
-                        session = activeSession,
+                        sessions = qrSessions,
                         onDismiss = { showQrScanner = false }
                     )
                 }

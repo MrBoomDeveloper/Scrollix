@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.home
 
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.api.ConnectionRetry
+import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.ui.icons.wifi_off_icon
@@ -67,10 +68,15 @@ fun ConnectionBanner(modifier: Modifier = Modifier) {
     val queued by OutboxManager.entries.collectAsState()
     val remainingMillis by ConnectionRetry.remainingMillis.collectAsState()
 
-    // An account without a live session is still signing in, not offline.
+    // Only a signed in account that actually failed to reach the server is
+    // offline: a missing session means signing in, and a provider that is
+    // still syncing reports itself as connected.
     val offlineNames = accountState.accounts
         .filter { account ->
-            sessions[account.id] != null && connections[account.id] == false
+            val session = sessions[account.id] ?: return@filter false
+
+            session.authState.value is AuthState.Ready &&
+                connections[account.id] == false
         }
         .map { account -> account.displayName }
 

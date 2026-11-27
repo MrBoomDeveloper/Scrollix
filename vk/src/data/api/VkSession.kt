@@ -432,7 +432,8 @@ class VkSession(
         replyToMessageId: Long?,
         customEmojis: List<CustomEmojiSpan>,
         formatting: List<MessageTextFormat>,
-        scheduling: MessageScheduling?
+        scheduling: MessageScheduling?,
+        sendSilently: Boolean
     ): Result<Unit> = runCatchingApi {
         val peerId = parsePeerId(providerDialogId)
             ?: throw SessionException(SessionErrorCode.InvalidRequest, "Invalid VK peer id")
@@ -466,7 +467,8 @@ class VkSession(
         replyToMessageId: Long?,
         customEmojis: List<CustomEmojiSpan>,
         formatting: List<MessageTextFormat>,
-        scheduling: MessageScheduling?
+        scheduling: MessageScheduling?,
+        sendSilently: Boolean
     ): Result<Unit> = runCatchingApi {
         if (attachments.isEmpty()) return@runCatchingApi
 
@@ -728,7 +730,8 @@ class VkSession(
     override suspend fun searchMessages(
         providerDialogId: String,
         query: String,
-        limit: Int
+        limit: Int,
+        fromMessageId: Long?
     ): Result<List<ChatMessage>> {
         val peerId = parsePeerId(providerDialogId)
             ?: return Result.failure(SessionException(SessionErrorCode.InvalidRequest, "Invalid VK peer id"))

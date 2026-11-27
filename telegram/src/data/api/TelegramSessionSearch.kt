@@ -15,7 +15,7 @@ import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
 
-internal suspend fun TelegramSession.searchMessagesImpl(providerDialogId: String, query: String, limit: Int): Result<List<ChatMessage>> {
+internal suspend fun TelegramSession.searchMessagesImpl(providerDialogId: String, query: String, limit: Int, fromMessageId: Long?): Result<List<ChatMessage>> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
@@ -26,7 +26,7 @@ internal suspend fun TelegramSession.searchMessagesImpl(providerDialogId: String
         when (val result = client.searchChatMessages(
             chatId = chatId,
             query = trimmed,
-            fromMessageId = 0,
+            fromMessageId = fromMessageId ?: 0,
             offset = 0,
             limit = limit.coerceIn(1, 100),
             filter = SearchMessagesFilterEmpty()

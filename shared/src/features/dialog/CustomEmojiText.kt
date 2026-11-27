@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,7 +66,9 @@ internal fun CustomEmojiMessageText(
     onMentionClick: ((String) -> Unit)? = null,
     onPhoneClick: ((String) -> Unit)? = null,
     onHashtagClick: ((String) -> Unit)? = null,
-    mentionAvatars: Map<String, Avatar> = emptyMap()
+    mentionAvatars: Map<String, Avatar> = emptyMap(),
+    /** Query of the active in-chat search; its matches are marked. */
+    highlightQuery: String? = null
 ) {
     val spans = emojis
         .filter { span ->
@@ -83,7 +86,8 @@ internal fun CustomEmojiMessageText(
         onMentionClick == null &&
         onPhoneClick == null &&
         onHashtagClick == null &&
-        mentionAvatars.isEmpty()
+        mentionAvatars.isEmpty() &&
+        highlightQuery.isNullOrBlank()
     ) {
         Text(
             modifier = modifier,
@@ -150,6 +154,20 @@ internal fun CustomEmojiMessageText(
                 alternateText = TrailingContentAlternateText,
                 id = TrailingContentId
             )
+        }
+
+        // Marks are added before the formatting spans so a hidden spoiler keeps
+        // its own background instead of being revealed by the highlight.
+        val highlightRanges = searchHighlightRanges(text, highlightQuery.orEmpty())
+
+        if (highlightRanges.isNotEmpty()) {
+            val highlightStyle = SpanStyle(
+                background = MaterialTheme.colorScheme.tertiaryContainer
+            )
+
+            highlightRanges.forEach { range ->
+                addStyle(highlightStyle, start = range.first, end = range.last + 1)
+            }
         }
 
         formatting.forEach { format ->

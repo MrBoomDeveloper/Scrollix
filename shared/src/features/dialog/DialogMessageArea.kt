@@ -48,7 +48,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
@@ -89,9 +88,12 @@ internal fun ColumnScope.DialogMessageArea(
     composer: @Composable BoxScope.() -> Unit = {},
 ) = with(ui) {
     val clipboard = LocalClipboardManager.current
-    // Translation follows the device language; the provider gets the bare
-    // language code, not the full locale tag.
-    val translationLanguage = translationLanguageCode(Locale.current.language)
+
+    // Search results and the history share the bubbles; the query is only
+    // marked while the search list is on screen.
+    val highlightQuery = searchQuery.text.toString()
+        .trim()
+        .takeIf { query -> query.isNotEmpty() }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -181,7 +183,9 @@ internal fun ColumnScope.DialogMessageArea(
                                     start = 8.dp,
                                     top = 8.dp,
                                     end = 8.dp,
-                                    bottom = composerInset
+                                    // A small gap after the newest message keeps
+                                    // it from touching the floating composer.
+                                    bottom = composerInset + 8.dp
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
@@ -372,8 +376,7 @@ internal fun ColumnScope.DialogMessageArea(
                                                         when (item.kind) {
                                                             MessageMediaKind.Photo -> MessageImagePreview(
                                                                 media = item,
-                                                                session = session,
-                                                                fillWidth = false
+                                                                session = session
                                                             ) {
                                                                 MediaViewer.showImage(item, session, caption = message.text)
                                                             }
@@ -431,8 +434,7 @@ internal fun ColumnScope.DialogMessageArea(
                                             {
                                                 MessageImagePreview(
                                                     media = media,
-                                                    session = session,
-                                                    fillWidth = message.text.isNotBlank()
+                                                    session = session
                                                 ) {
                                                     MediaViewer.showImage(
                                                         media = media,
@@ -722,10 +724,12 @@ internal fun ColumnScope.DialogMessageArea(
                                                 message.text.isNotBlank() &&
                                                 !message.isService
                                             ) {
-                                                { toggleTranslation(message, translationLanguage) }
+                                                { toggleTranslation(message) }
                                             } else {
                                                 null
                                             },
+
+                                            highlightQuery = highlightQuery,
 
                                             connection = run {
                                                 val previousSameSender =

@@ -23,13 +23,17 @@ internal fun MessageScheduling?.toTdlibSchedulingState(): MessageSchedulingState
     }
 }
 
-/** Null when the message should be sent right away, as TDLib expects. */
-internal fun MessageScheduling?.sendOptions(): MessageSendOptions? {
-    val state = toTdlibSchedulingState() ?: return null
+/**
+ * Null when the message should be sent right away with a notification, as
+ * TDLib expects. Options are needed for a scheduled send and for a silent one.
+ */
+internal fun MessageScheduling?.sendOptions(silent: Boolean = false): MessageSendOptions? {
+    val state = toTdlibSchedulingState()
+    if (state == null && !silent) return null
 
     return MessageSendOptions(
         suggestedPostInfo = null,
-        disableNotification = false,
+        disableNotification = silent,
         fromBackground = false,
         protectContent = false,
         allowPaidBroadcast = false,

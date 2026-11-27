@@ -229,6 +229,7 @@ internal fun StickerSetDialog(
 
     if (showRemoveConfirmation) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = { showRemoveConfirmation = false },
             title = { Text("Remove pack?") },
             text = {

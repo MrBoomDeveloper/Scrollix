@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -114,7 +115,7 @@ internal fun DialogChatOverlays(
     forwardingMessageIds?.let { messageIds ->
         AlertDialog(
             onDismissRequest = { forwardingMessageIds = null },
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             title = { Text("Forward to") },
             confirmButton = {
                 TextButton(onClick = { forwardingMessageIds = null }) {
@@ -238,7 +239,7 @@ internal fun DialogChatOverlays(
     deleteConfirmationIds?.let { messageIds ->
         AlertDialog(
             onDismissRequest = { deleteConfirmationIds = null },
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             title = {
                 Text(
                     if (messageIds.size == 1) {
@@ -287,7 +288,7 @@ internal fun DialogChatOverlays(
     if (showUnpinConfirmation) {
         AlertDialog(
             onDismissRequest = { showUnpinConfirmation = false },
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             text = { Text("Unpin this message?") },
             confirmButton = {
                 TextButton(
@@ -416,12 +417,28 @@ internal fun DialogChatOverlays(
         }
     }
 
+    if (showTranslationLanguage) {
+        TranslationLanguageDialog(
+            currentCode = normalizeTranslationLanguage(settings.translationLanguage),
+            deviceLanguage = translationLanguageCode(Locale.current.language),
+            onSelect = { code ->
+                showTranslationLanguage = false
+                setTranslationLanguage(code)
+                translateLoadedMessages()
+            },
+            onDismiss = { showTranslationLanguage = false }
+        )
+    }
+
     // Attachments are reviewed in a blocking modal: the chat stays dimmed and
     // the composer can't be used until the message is sent or discarded.
     if (pendingAttachments.isNotEmpty()) {
         AttachmentReviewDialog(
             attachments = pendingAttachments,
             caption = input,
+            captionCustomEmojis = inputCustomEmojis,
+            captionEmojiData = inputEmojiData,
+            captionEmojiAdaptive = inputEmojiAdaptive,
             isSending = isSending,
             isMobile = isMobileLayout,
             session = session,
@@ -440,7 +457,20 @@ internal fun DialogChatOverlays(
                 clearComposer()
                 showAttachmentMenu = false
             },
-            onSend = onSend
+            onSend = onSend,
+            onSchedule = if (
+                dialog?.isSavedMessages != true &&
+                session?.supportsScheduling == true
+            ) {
+                { showSchedulePicker = true }
+            } else {
+                null
+            },
+            onSendSilently = if (session?.supportsSilentSend == true) {
+                { sendMessage(keyboardController = null, silent = true) }
+            } else {
+                null
+            }
         )
     }
 }

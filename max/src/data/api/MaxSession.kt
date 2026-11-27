@@ -468,7 +468,8 @@ class MaxSession(
     override suspend fun searchMessages(
         providerDialogId: String,
         query: String,
-        limit: Int
+        limit: Int,
+        fromMessageId: Long?
     ): Result<List<ChatMessage>> {
         val chatId = providerDialogId.toLongOrNull()
             ?: return Result.failure(maxInvalidChatId())
@@ -708,7 +709,8 @@ class MaxSession(
         replyToMessageId: Long?,
         customEmojis: List<CustomEmojiSpan>,
         formatting: List<MessageTextFormat>,
-        scheduling: MessageScheduling?
+        scheduling: MessageScheduling?,
+        sendSilently: Boolean
     ): Result<Unit> {
         return Result.failure(
             UnsupportedOperationException("MAX file uploads are not implemented yet")
@@ -918,7 +920,7 @@ class MaxSession(
 
     internal fun MaxChat.peerUser(): MaxUser? = peerUserId()?.let(users::get)
 
-    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?) : Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting)
+    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean) : Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting)
     override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray, forEveryone: Boolean) : Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds, forEveryone)
 
     override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean) : Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId)

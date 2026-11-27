@@ -177,12 +177,6 @@ internal val DialogScreenViewModel.canDeleteSelection: Boolean
 internal val DialogScreenViewModel.selectionCopyText: String
     get() = selectedMessageText(selectedMessages)
 
-/** Only loaded rows can be selected: history is paged, so "all" means the list. */
-internal val DialogScreenViewModel.allLoadedSelected: Boolean
-    get() = displayMessages.isNotEmpty() && displayMessages.all { message ->
-        message.allMessageIds.all { id -> id in selectedMessageIds }
-    }
-
 /** The live location this account is still sharing, shown above the chat. */
 internal val DialogScreenViewModel.activeLiveLocation: ChatMessage?
     get() = displayMessages.lastOrNull { message ->

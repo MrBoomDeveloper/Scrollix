@@ -203,6 +203,9 @@ class TelegramSession(
     internal val loadingFolderChats = mutableSetOf<Int>()
     internal val _isConnected = MutableStateFlow(true)
     override val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+    override val supportsSilentSend: Boolean get() = true
+
+    override val supportsQrLogin: Boolean get() = true
     internal val _chats = MutableStateFlow<Map<Long, ChatEntry>>(emptyMap())
     internal val _users = MutableStateFlow<Map<Long, User>>(emptyMap())
     internal val _userStatuses = MutableStateFlow<Map<Long, UserStatus>>(emptyMap())
@@ -715,14 +718,14 @@ class TelegramSession(
     override suspend fun loadFileIfUnique(fileId: Int, uniqueId: String): Result<ByteArray> = loadFileIfUniqueImpl(fileId, uniqueId)
     override suspend fun loadMessageThread(providerDialogId: String, messageId: Long, limit: Int): Result<com.mrboomdev.scrollix.data.model.ChatMessageThread> = loadMessageThreadImpl(providerDialogId, messageId, limit)
     override suspend fun sendMessageToThread(threadChatId: String, rootMessageId: Long, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> = sendMessageToThreadImpl(threadChatId, rootMessageId, text, customEmojis, formatting)
-    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?): Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting, scheduling)
+    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean): Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting, scheduling, sendSilently)
     override suspend fun sendFile(providerDialogId: String, path: String, asPhoto: Boolean): Result<Unit> = sendFileImpl(providerDialogId, path, asPhoto)
     override suspend fun sendVoiceNote(providerDialogId: String, path: String, durationSeconds: Int): Result<Unit> = sendVoiceNoteImpl(providerDialogId, path, durationSeconds)
     override suspend fun sendVideoNote(providerDialogId: String, path: String, durationSeconds: Int): Result<Unit> = sendVideoNoteImpl(providerDialogId, path, durationSeconds)
     override suspend fun sendPoll(providerDialogId: String, question: String, options: List<String>, isAnonymous: Boolean, allowsMultipleAnswers: Boolean, allowsRevoting: Boolean, questionCustomEmojis: List<CustomEmojiSpan>, optionCustomEmojis: List<List<CustomEmojiSpan>>, optionMediaPaths: List<String?>, isQuiz: Boolean, correctOptionIndex: Int?, explanation: String): Result<Unit> = sendPollImpl(providerDialogId, question, options, isAnonymous, allowsMultipleAnswers, allowsRevoting, questionCustomEmojis, optionCustomEmojis, optionMediaPaths, isQuiz, correctOptionIndex, explanation)
     override suspend fun sendLocation(providerDialogId: String, latitude: Double, longitude: Double, livePeriodSeconds: Int): Result<Long> = sendLocationImpl(providerDialogId, latitude, longitude, livePeriodSeconds)
     override suspend fun stopLiveLocation(providerDialogId: String, messageId: Long): Result<Unit> = stopLiveLocationImpl(providerDialogId, messageId)
-    override suspend fun sendFiles(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?): Result<Unit> = sendFilesImpl(providerDialogId, attachments, caption, replyToMessageId, customEmojis, formatting, scheduling)
+    override suspend fun sendFiles(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean): Result<Unit> = sendFilesImpl(providerDialogId, attachments, caption, replyToMessageId, customEmojis, formatting, scheduling, sendSilently)
 
     override val supportsScheduling: Boolean get() = true
 
@@ -764,12 +767,13 @@ class TelegramSession(
     override suspend fun stopPoll(providerDialogId: String, messageId: Long): Result<Unit> = stopPollImpl(providerDialogId, messageId)
     override val supportsTranslation: Boolean get() = true
     override suspend fun translateText(text: String, languageCode: String?): Result<String> = translateTextImpl(text, languageCode)
+    override val supportsMessageSearchPaging: Boolean get() = true
     override suspend fun loadMessage(providerDialogId: String, messageId: Long): Result<ChatMessage?> = loadMessageImpl(providerDialogId, messageId)
     override suspend fun markMessagesRead(providerDialogId: String, messageIds: LongArray) = markMessagesReadImpl(providerDialogId, messageIds)
-    override suspend fun loadDraft(providerDialogId: String): Result<MessageDraft> = loadDraftImpl(providerDialogId)
-    override suspend fun saveDraft(providerDialogId: String, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> = saveDraftImpl(providerDialogId, text, customEmojis, formatting)
+    override suspend fun loadDraft(providerDialogId: String, threadId: Long): Result<MessageDraft> = loadDraftImpl(providerDialogId, threadId)
+    override suspend fun saveDraft(providerDialogId: String, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, threadId: Long): Result<Unit> = saveDraftImpl(providerDialogId, text, customEmojis, formatting, threadId)
 
-    override suspend fun searchMessages(providerDialogId: String, query: String, limit: Int): Result<List<ChatMessage>> = searchMessagesImpl(providerDialogId, query, limit)
+    override suspend fun searchMessages(providerDialogId: String, query: String, limit: Int, fromMessageId: Long?): Result<List<ChatMessage>> = searchMessagesImpl(providerDialogId, query, limit, fromMessageId)
     override suspend fun searchGlobalMessages(query: String, limit: Int): Result<List<ChatMessage>> = searchGlobalMessagesImpl(query, limit)
     override suspend fun searchChats(query: String, limit: Int): Result<List<Dialog>> = searchChatsImpl(query, limit)
     override suspend fun searchPublicChats(query: String, limit: Int, kind: PublicChatSearchKind): Result<List<Dialog>> = searchPublicChatsImpl(query, limit, kind)

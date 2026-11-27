@@ -49,6 +49,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -137,7 +139,7 @@ fun ForumTopicsDialog(
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.85f),
             shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             val topic = selected
 
@@ -504,6 +506,12 @@ private fun TopicMessages(
     var error by remember(topic.id) { mutableStateOf<String?>(null) }
     var input by remember(topic.id) { mutableStateOf("") }
     var isSending by remember(topic.id) { mutableStateOf(false) }
+    // The topic has its own draft on the server. It is restored once on open,
+    // and the debounced save only runs after that so an empty composer never
+    // clears a draft that is still loading.
+    var draftLoaded by remember(topic.id) { mutableStateOf(false) }
+    var hadDraft by remember(topic.id) { mutableStateOf(false) }
+    var draftJob by remember(topic.id) { mutableStateOf<Job?>(null) }
 
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -523,8 +531,45 @@ private fun TopicMessages(
         isLoading = false
     }
 
+    fun saveDraftSoon() {
+        if (!draftLoaded) return
+        if (input.isEmpty() && !hadDraft) return
+
+        draftJob?.cancel()
+        draftJob = scope.launch {
+            delay(600)
+
+            session.saveDraft(
+                providerDialogId = providerDialogId,
+                text = input,
+                threadId = topic.id
+            )
+
+            hadDraft = input.isNotEmpty()
+        }
+    }
+
     LaunchedEffect(topic.id) {
         load()
+
+        session.loadDraft(providerDialogId, threadId = topic.id).onSuccess { draft ->
+            hadDraft = draft.text.isNotEmpty() ||
+                draft.customEmojis.isNotEmpty() ||
+                draft.formatting.isNotEmpty()
+
+            // Text typed before the draft arrived stays: the local edit wins.
+            if (input.isEmpty()) {
+                input = draft.text
+            }
+
+            draftLoaded = true
+
+            // Text entered while the draft was loading is stored too.
+            if (input.isNotEmpty()) saveDraftSoon()
+        }.onFailure {
+            draftLoaded = true
+            if (input.isNotEmpty()) saveDraftSoon()
+        }
     }
 
     fun send() {
@@ -537,6 +582,9 @@ private fun TopicMessages(
             session.sendTopicMessage(providerDialogId, topic.id, text)
                 .onSuccess {
                     input = ""
+                    hadDraft = false
+                    draftJob?.cancel()
+                    draftJob = null
                     load()
                 }
                 .onFailure { failure ->
@@ -646,7 +694,10 @@ private fun TopicMessages(
             OutlinedTextField(
                 modifier = Modifier.weight(1f),
                 value = input,
-                onValueChange = { value -> input = value },
+                onValueChange = { value ->
+                    input = value
+                    saveDraftSoon()
+                },
                 placeholder = { Text("Message") },
                 maxLines = 4
             )
@@ -673,6 +724,7 @@ private fun TopicTitleDialog(
     onDismiss: () -> Unit
 ) {
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

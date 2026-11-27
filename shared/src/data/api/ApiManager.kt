@@ -95,6 +95,15 @@ object ApiManager {
     private val _dialogsLoading = MutableStateFlow<Set<String>>(emptySet())
     val dialogsLoading: StateFlow<Set<String>> = _dialogsLoading.asStateFlow()
 
+    private val _initialDialogsReady = MutableStateFlow(false)
+
+    /**
+     * True once the cached dialog list has been restored, or turned out to be
+     * absent. The Android splash screen waits for this instead of the network,
+     * so a cold start never flashes an empty chat list.
+     */
+    val initialDialogsReady: StateFlow<Boolean> = _initialDialogsReady.asStateFlow()
+
     private val _downloads = MutableStateFlow<List<AccountDownloadedFile>>(emptyList())
     val downloads: StateFlow<List<AccountDownloadedFile>> = _downloads.asStateFlow()
 
@@ -199,6 +208,7 @@ object ApiManager {
         // on the first frame instead of an empty list plus a spinner.
         appScope.launch {
             restoreCachedDialogs()
+            _initialDialogsReady.value = true
             startAccounts()
         }
     }

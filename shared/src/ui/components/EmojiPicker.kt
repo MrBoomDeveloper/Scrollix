@@ -129,11 +129,15 @@ internal fun EmojiPickerDialog(
     }
 
     if (isMobile) {
-        ModalBottomSheet(onDismissRequest = onDismiss) {
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ) {
             content()
         }
     } else {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = onDismiss,
             text = { content() },
             confirmButton = {
@@ -252,6 +256,7 @@ private fun EmojiTab(
 
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
+    var clearRecents by remember { mutableStateOf(false) }
 
     LaunchedEffect(session, settings.emojiPackOrders[session.accountId]) {
         val loadedPacks = orderedStickerPacks(
@@ -351,7 +356,7 @@ private fun EmojiTab(
                 when (val entry = entries[index]) {
                     EmojiEntry.RecentsHeader -> SectionHeader(
                         title = "Recent",
-                        onClear = { EmojiRecentsStore.clear() }
+                        onClear = { clearRecents = true }
                     )
 
                     is EmojiEntry.Recent -> EmojiCell(
@@ -399,6 +404,17 @@ private fun EmojiTab(
                     }
                 }
             }
+        }
+
+        if (clearRecents) {
+            ConfirmDeleteDialog(
+                title = "Clear recent emoji?",
+                message = "The list of recently used emoji is emptied. It is only " +
+                    "a shortcut: nothing else is deleted.",
+                confirmLabel = "Clear",
+                onConfirm = { EmojiRecentsStore.clear() },
+                onDismiss = { clearRecents = false }
+            )
         }
     }
 }

@@ -231,6 +231,7 @@ private fun KeepMediaPickerDialog(
     val loaded = chats
 
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text("Keep media") },
         text = {

@@ -89,6 +89,11 @@ internal fun settingsChanges(current: AppSettings, imported: AppSettings): List<
         imported.pinnedCustomReactions.size
     )
     compare("Double-tap reaction", current.doubleTapReaction, imported.doubleTapReaction)
+    compare(
+        "Translation language",
+        current.translationLanguage ?: "Device",
+        imported.translationLanguage ?: "Device"
+    )
     compareCount("Folder order entries", current.folderOrder.size, imported.folderOrder.size)
     compareCount("Sticker pack orders", current.stickerPackOrders.size, imported.stickerPackOrders.size)
     compareCount("Emoji pack orders", current.emojiPackOrders.size, imported.emojiPackOrders.size)

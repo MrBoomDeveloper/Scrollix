@@ -272,6 +272,7 @@ internal fun DialogScreenViewModel.restoreDraft() {
             hadServerDraft = draft.text.isNotEmpty() ||
                 draft.customEmojis.isNotEmpty() ||
                 draft.formatting.isNotEmpty()
+            serverDraftText = draft.text
 
             if (input.isEmpty() && editingMessage == null) {
                 input = draft.text
@@ -307,24 +308,74 @@ internal fun DialogScreenViewModel.scheduleDraftSave() {
         delay(600.milliseconds)
 
         val currentSession = session ?: return@launch
+        // The text that is actually stored, so a keystroke that lands while the
+        // request is in flight is not mistaken for the saved draft later.
+        val draftText = input
+
         currentSession.saveDraft(
             providerDialogId = providerDialogId,
-            text = input,
+            text = draftText,
             customEmojis = inputCustomEmojis,
             formatting = inputFormatting
         ).onSuccess {
+            serverDraftText = draftText
+
             // The chat list does not receive a draft update from the provider
             // for a locally saved draft, so the cached dialog is patched here.
             com.mrboomdev.scrollix.data.api.ApiManager.setDraftText(
                 accountId = accountId,
                 providerDialogId = providerDialogId,
-                text = input
+                text = draftText
             )
         }
 
-        hadServerDraft = input.isNotEmpty() ||
+        hadServerDraft = draftText.isNotEmpty() ||
             inputCustomEmojis.isNotEmpty() ||
             inputFormatting.isNotEmpty()
+    }
+}
+
+/**
+ * Reconciles a draft edited on another device. The remote text replaces this
+ * composer only while it still matches the last server draft this device saw;
+ * any local edit keeps the local text and the debounced save overwrites the
+ * remote one.
+ */
+internal fun DialogScreenViewModel.reconcileRemoteDraft() {
+    if (!draftRestored || editingMessage != null) return
+
+    val remote = dialog?.draftText ?: return
+    if (!shouldApplyRemoteDraft(
+            localText = input,
+            knownServerText = serverDraftText,
+            remoteText = remote
+        )
+    ) {
+        // Local changes win; remember the remote text so the same update does
+        // not trigger this branch again.
+        serverDraftText = remote
+        return
+    }
+
+    serverDraftText = remote
+
+    val currentSession = session ?: return
+
+    viewModelScope.launch {
+        currentSession.loadDraft(providerDialogId).onSuccess { draft ->
+            // A draft only replaces an empty composer: text typed while the
+            // request was in flight must not be lost.
+            if (input.isNotEmpty() || editingMessage != null) return@onSuccess
+
+            input = draft.text
+            inputCustomEmojis = draft.customEmojis
+            inputFormatting = draft.formatting
+            inputSelection = TextRange(draft.text.length)
+            hadServerDraft = draft.text.isNotEmpty() ||
+                draft.customEmojis.isNotEmpty() ||
+                draft.formatting.isNotEmpty()
+            ensureInputEmojiLoaded()
+        }
     }
 }
 

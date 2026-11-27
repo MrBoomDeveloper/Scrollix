@@ -14,6 +14,9 @@ sealed interface Route: NavKey {
     data object Accounts : Route
 
     @Serializable
+    data class AccountManage(val accountId: String) : Route
+
+    @Serializable
     data object Settings : Route
 
     @Serializable

@@ -46,7 +46,9 @@ internal fun RichMessageContent(
     onMentionClick: ((String) -> Unit)? = null,
     onPhoneClick: ((String) -> Unit)? = null,
     onHashtagClick: ((String) -> Unit)? = null,
-    media: (@Composable (MessageMedia) -> Unit)? = null
+    media: (@Composable (MessageMedia) -> Unit)? = null,
+    /** Query of the active in-chat search; its matches are marked. */
+    highlightQuery: String? = null
 ) {
     Column(
         modifier = modifier,
@@ -59,7 +61,8 @@ internal fun RichMessageContent(
                     isOutgoing = isOutgoing,
                     onMentionClick = onMentionClick,
                     onPhoneClick = onPhoneClick,
-                    onHashtagClick = onHashtagClick
+                    onHashtagClick = onHashtagClick,
+                    highlightQuery = highlightQuery
                 )
 
                 is MessageRichBlock.Media -> Column(
@@ -93,7 +96,8 @@ private fun RichBlockText(
     isOutgoing: Boolean,
     onMentionClick: ((String) -> Unit)?,
     onPhoneClick: ((String) -> Unit)?,
-    onHashtagClick: ((String) -> Unit)?
+    onHashtagClick: ((String) -> Unit)?,
+    highlightQuery: String?
 ) {
     val accent = accentColor(isOutgoing)
     val contentColor = if (isOutgoing) {
@@ -102,8 +106,26 @@ private fun RichBlockText(
         MaterialTheme.colorScheme.onSurface
     }
 
-    val annotated = remember(block, accent, onMentionClick, onPhoneClick, onHashtagClick) {
-        buildRichBlockText(block, accent, onMentionClick, onPhoneClick, onHashtagClick)
+    val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
+
+    val annotated = remember(
+        block,
+        accent,
+        onMentionClick,
+        onPhoneClick,
+        onHashtagClick,
+        highlightQuery,
+        highlightColor
+    ) {
+        buildRichBlockText(
+            block = block,
+            accent = accent,
+            onMentionClick = onMentionClick,
+            onPhoneClick = onPhoneClick,
+            onHashtagClick = onHashtagClick,
+            highlightQuery = highlightQuery,
+            highlightColor = highlightColor
+        )
     }
 
     val style = when (block.style) {
@@ -181,7 +203,9 @@ private fun buildRichBlockText(
     accent: Color,
     onMentionClick: ((String) -> Unit)?,
     onPhoneClick: ((String) -> Unit)?,
-    onHashtagClick: ((String) -> Unit)?
+    onHashtagClick: ((String) -> Unit)?,
+    highlightQuery: String?,
+    highlightColor: Color
 ): AnnotatedString = buildAnnotatedString {
     val offset = block.bullet?.let { bullet ->
         append(bullet)
@@ -190,6 +214,17 @@ private fun buildRichBlockText(
     } ?: 0
 
     appendTextWithLinks(block.text, onMentionClick, onPhoneClick, onHashtagClick)
+
+    // Search marks sit under the block's own styles, and the bullet prefix
+    // shifts every range the same way it shifts the link spans below.
+    searchHighlightRanges(block.text, highlightQuery.orEmpty()).forEach { range ->
+        val start = (range.first + offset).coerceIn(0, length)
+        val end = (range.last + 1 + offset).coerceIn(start, length)
+
+        if (start < end) {
+            addStyle(SpanStyle(background = highlightColor), start = start, end = end)
+        }
+    }
 
     block.spans.forEach { span ->
         val start = (span.start + offset).coerceIn(0, length)

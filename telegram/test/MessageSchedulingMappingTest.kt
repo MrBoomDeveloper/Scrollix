@@ -46,4 +46,12 @@ class MessageSchedulingMappingTest {
 
         assertTrue(online is MessageSchedulingStateSendWhenOnline)
     }
+
+    @Test
+    fun `a silent send keeps options without scheduling`() {
+        val options = (null as MessageScheduling?).sendOptions(silent = true)
+
+        assertEquals(true, options?.disableNotification)
+        assertNull(options?.schedulingState)
+    }
 }

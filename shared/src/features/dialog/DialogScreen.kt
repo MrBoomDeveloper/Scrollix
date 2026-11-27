@@ -18,9 +18,7 @@ import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
 import com.mrboomdev.scrollix.ui.icons.close_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
-import com.mrboomdev.scrollix.ui.icons.select_check_box_icon
 import com.mrboomdev.scrollix.ui.icons.verified_icon
-import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -263,6 +261,29 @@ internal fun DialogScreen(
 
             DialogSearchBar(ui = viewModel)
 
+            // Translating a chat fans out into one request per message; the
+            // row shows how far it got and lets the user stop early.
+            translationProgress?.takeIf { isTranslatingChat }?.let { progress ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        modifier = Modifier.weight(1f),
+                        text = "Translating ${progress.done} of ${progress.total}…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+
+                    TextButton(onClick = { cancelChatTranslation() }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -317,27 +338,6 @@ internal fun DialogScreen(
                                 ) {
                                     Text("Delete")
                                 }
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    selectedMessageIds = if (allLoadedSelected) {
-                                        emptySet()
-                                    } else {
-                                        displayMessages
-                                            .flatMap { message -> message.allMessageIds }
-                                            .toSet()
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = select_check_box_icon,
-                                    contentDescription = if (allLoadedSelected) {
-                                        "Clear selection"
-                                    } else {
-                                        "Select all loaded messages"
-                                    }
-                                )
                             }
 
                             IconButton(onClick = { selectedMessageIds = emptySet() }) {
@@ -442,14 +442,12 @@ private fun DialogHeader(
         if (dialog?.isSavedMessages == true) {
             SavedMessagesAvatar(size = 40.dp)
         } else {
-            SharedProfileElement(key = "profile:$accountId:$providerDialogId") {
-                AvatarImage(
-                    avatar = dialog?.avatar ?: com.mrboomdev.scrollix.data.model.Avatar.fromName(
-                        dialog?.title ?: "Dialog"
-                    ),
-                    size = 40.dp
-                )
-            }
+            AvatarImage(
+                avatar = dialog?.avatar ?: com.mrboomdev.scrollix.data.model.Avatar.fromName(
+                    dialog?.title ?: "Dialog"
+                ),
+                size = 40.dp
+            )
         }
 
         Column(
@@ -458,18 +456,14 @@ private fun DialogHeader(
                 .padding(horizontal = 12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SharedProfileElement(
-                    key = "profile-name:$accountId:$providerDialogId",
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    Text(
-                        text = dialog?.title ?: "Dialog",
-                        style = MaterialTheme.typography.titleMedium,
-                        lineHeight = MaterialTheme.typography.titleMedium.fontSize,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(
+                    modifier = Modifier.weight(1f, fill = false),
+                    text = dialog?.title ?: "Dialog",
+                    style = MaterialTheme.typography.titleMedium,
+                    lineHeight = MaterialTheme.typography.titleMedium.fontSize,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
                 if (dialog?.isVerified == true) {
                     Icon(
@@ -535,8 +529,11 @@ private fun DialogHeader(
 
         val callNumber = dialog?.phoneNumber
 
+        // Saved Messages carries the user's own number, but it is not a chat
+        // that can be called.
         if (
             isMobileLayout &&
+            dialog?.isSavedMessages != true &&
             dialog?.kind == com.mrboomdev.scrollix.data.model.DialogKind.Direct &&
             !callNumber.isNullOrBlank()
         ) {
@@ -604,6 +601,34 @@ private fun DialogHeader(
                         onClick = {
                             showMoreMenu = false
                             showAutoDeleteTime = true
+                        }
+                    )
+                }
+
+                if (session?.supportsTranslation == true) {
+                    DropdownMenuItem(
+                        text = { Text("Translate chat") },
+                        onClick = {
+                            showMoreMenu = false
+                            showTranslationLanguage = true
+                        }
+                    )
+                }
+
+                if (hasTranslations) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (allTranslationsHidden) {
+                                    "Show translations"
+                                } else {
+                                    "Hide translations"
+                                }
+                            )
+                        },
+                        onClick = {
+                            showMoreMenu = false
+                            setTranslationsVisible(allTranslationsHidden)
                         }
                     )
                 }

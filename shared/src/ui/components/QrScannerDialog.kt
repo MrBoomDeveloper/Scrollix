@@ -2,11 +2,13 @@ package com.mrboomdev.scrollix.ui.components
 
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.ProviderRegistry
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,12 +41,22 @@ import kotlinx.coroutines.launch
  * Lets the user approve a login on another device by scanning the QR code that
  * device shows. The camera implementation is platform specific; a manual link
  * field covers devices without one.
+ *
+ * Only accounts whose provider implements the confirmation are listed. With
+ * several of them the account is picked here, so a MAX session is never the
+ * one the scan is sent to.
  */
 @Composable
 fun QrScannerDialog(
-    session: AccountSession?,
+    sessions: List<AccountSession>,
     onDismiss: () -> Unit
 ) {
+    var pickedAccountId by remember(sessions) {
+        mutableStateOf(sessions.firstOrNull()?.accountId)
+    }
+    val session = sessions.firstOrNull { it.accountId == pickedAccountId }
+        ?: sessions.firstOrNull()
+
     var status by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var isConfirming by remember { mutableStateOf(false) }
@@ -77,7 +89,7 @@ fun QrScannerDialog(
     LaunchedEffect(session) {
         if (session == null) {
             isError = true
-            status = "Sign in to an account first, then scan the QR code with it."
+            status = "Sign in to a Telegram account first, then scan the QR code with it."
         }
     }
 
@@ -106,6 +118,32 @@ fun QrScannerDialog(
                     color = MaterialTheme.colorScheme.secondary
                 )
 
+                // One chip per account that can approve the login. The scan is
+                // always sent to the picked account, never to a provider that
+                // has no such flow.
+                if (sessions.size > 1) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        sessions.forEach { candidate ->
+                            if (candidate.accountId == session?.accountId) {
+                                Button(onClick = {}) {
+                                    Text(accountLabel(candidate))
+                                }
+                            } else {
+                                TextButton(onClick = {
+                                    pickedAccountId = candidate.accountId
+                                    status = null
+                                    isError = false
+                                }) {
+                                    Text(accountLabel(candidate))
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -117,7 +155,7 @@ fun QrScannerDialog(
                     if (session == null) {
                         Text(
                             modifier = Modifier.padding(16.dp),
-                            text = "Log in to an account to authorize other devices.",
+                            text = "Log in to a Telegram account to authorize other devices.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.secondary
                         )
@@ -194,6 +232,12 @@ fun QrScannerDialog(
             }
         }
     }
+}
+
+/** A short label for the account chip: the provider the scan goes to. */
+private fun accountLabel(session: AccountSession): String {
+    return ProviderRegistry.get(session.providerId)?.displayName
+        ?: session.providerId.replaceFirstChar(Char::uppercase)
 }
 
 /** Camera preview that reports the first QR code it recognizes. */

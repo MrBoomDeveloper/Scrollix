@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.features.settings
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
+import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,14 +41,18 @@ import kotlinx.coroutines.launch
  * action, and there is a bulk "all other sessions" action behind a confirmation.
  */
 @Composable
-fun SettingsSessionsContent() {
+fun SettingsSessionsContent(accountId: String? = null) {
     val accountState by ApiManager.accountState.collectAsState()
-    val accounts = accountState.accounts
+    // When opened from a single account's management screen the list is
+    // scoped to it and the account switcher disappears.
+    val accounts = accountState.accounts.filter { account ->
+        accountId == null || account.id == accountId
+    }
     val scope = rememberCoroutineScope()
     var pickedAccountId by remember { mutableStateOf<String?>(null) }
 
-    val selectedAccountId = pickedAccountId
-        ?.takeIf { id -> accounts.any { it.id == id } }
+    val selectedAccountId = accountId
+        ?: pickedAccountId?.takeIf { id -> accounts.any { it.id == id } }
         ?: accountState.activeAccountId?.takeIf { id -> accounts.any { it.id == id } }
         ?: accounts.firstOrNull()?.id
 
@@ -58,6 +63,7 @@ fun SettingsSessionsContent() {
     var refreshKey by remember(selectedAccountId) { mutableStateOf(0) }
     var busyId by remember(selectedAccountId) { mutableStateOf<Long?>(null) }
     var confirmTerminateAll by remember { mutableStateOf(false) }
+    var pendingTerminateId by remember(selectedAccountId) { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(selectedAccountId, refreshKey) {
         val accountId = selectedAccountId
@@ -197,7 +203,7 @@ fun SettingsSessionsContent() {
                 SessionCard(
                     session = info,
                     busy = busyId != null,
-                    onTerminate = { terminate(info.id) }
+                    onTerminate = { pendingTerminateId = info.id }
                 )
             }
         }
@@ -225,8 +231,20 @@ fun SettingsSessionsContent() {
         }
     }
 
+    pendingTerminateId?.let { sessionId ->
+        ConfirmDeleteDialog(
+            title = "Terminate this session?",
+            message = "That device is signed out of the account everywhere. You " +
+                "can sign it back in later.",
+            confirmLabel = "Terminate",
+            onConfirm = { terminate(sessionId) },
+            onDismiss = { pendingTerminateId = null }
+        )
+    }
+
     if (confirmTerminateAll) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = { confirmTerminateAll = false },
             title = { Text("Terminate other sessions?") },
             text = {

@@ -55,6 +55,7 @@ fun ReorderDialog(
     }
 
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

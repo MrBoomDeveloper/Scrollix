@@ -6,6 +6,7 @@ import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
 import com.mrboomdev.scrollix.features.home.key
+import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.icons.bug_report_icon
 import com.mrboomdev.scrollix.ui.icons.folder_icon
 import com.mrboomdev.scrollix.ui.icons.history_icon
@@ -106,16 +107,29 @@ internal fun SettingsCategoryContent(
                     color = MaterialTheme.colorScheme.secondary
                 )
 
+                var confirmRemoveWallpaper by remember { mutableStateOf(false) }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onPickWallpaper) {
                         Text("Pick wallpaper")
                     }
 
                     if (settings.hasCustomWallpaper) {
-                        Button(onClick = { AppSettingsStore.removeWallpaper() }) {
+                        Button(onClick = { confirmRemoveWallpaper = true }) {
                             Text("Remove")
                         }
                     }
+                }
+
+                if (confirmRemoveWallpaper) {
+                    ConfirmDeleteDialog(
+                        title = "Remove the wallpaper?",
+                        message = "Chats without their own wallpaper go back to the " +
+                            "default one. The image file is deleted from this device.",
+                        confirmLabel = "Remove",
+                        onConfirm = { AppSettingsStore.removeWallpaper() },
+                        onDismiss = { confirmRemoveWallpaper = false }
+                    )
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
@@ -424,8 +438,7 @@ internal fun SettingsCategoryContent(
                 SettingsSwitch(
                     icon = touch_app_icon,
                     title = "Reduce motion",
-                    description = "New messages appear without sliding in and profile " +
-                        "avatars stop flying between screens.",
+                    description = "New messages appear without sliding in.",
                     checked = settings.reduceMotion,
                     onCheckedChange = { enabled ->
                         AppSettingsStore.update { current ->
@@ -435,17 +448,9 @@ internal fun SettingsCategoryContent(
                 )
             }
 
-            SettingsCategory.Notifications -> SettingsNotificationsContent()
-
             SettingsCategory.Backup -> SettingsBackupContent()
 
             SettingsCategory.Storage -> SettingsStorageContent()
-
-            SettingsCategory.Privacy -> SettingsPrivacyContent()
-
-            SettingsCategory.Sessions -> SettingsSessionsContent()
-
-            SettingsCategory.DataUsage -> SettingsDataUsageContent()
 
             SettingsCategory.Diagnostics -> {
                 Text(

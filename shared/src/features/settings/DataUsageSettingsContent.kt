@@ -37,15 +37,17 @@ import androidx.compose.ui.unit.dp
  * provider: an install decides on its own what it loads without a tap.
  */
 @Composable
-fun SettingsDataUsageContent() {
+fun SettingsDataUsageContent(accountId: String? = null) {
     val accountState by ApiManager.accountState.collectAsState()
-    val accounts = accountState.accounts
+    val accounts = accountState.accounts.filter { account ->
+        accountId == null || account.id == accountId
+    }
     val usage by DataUsageStore.state.collectAsState()
     val settings by AppSettingsStore.state.collectAsState()
     var pickedAccountId by remember { mutableStateOf<String?>(null) }
 
-    val selectedAccountId = pickedAccountId
-        ?.takeIf { id -> accounts.any { it.id == id } }
+    val selectedAccountId = accountId
+        ?: pickedAccountId?.takeIf { id -> accounts.any { it.id == id } }
         ?: accountState.activeAccountId?.takeIf { id -> accounts.any { it.id == id } }
         ?: accounts.firstOrNull()?.id
 

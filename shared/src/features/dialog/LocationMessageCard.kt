@@ -1,11 +1,13 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
+import com.mrboomdev.scrollix.openMapApplication
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,8 +22,10 @@ import kotlin.math.abs
 import kotlin.math.round
 
 /**
- * Renders a shared static or live location inside a message bubble.
- * The card opens the point in OpenStreetMap; it never loads message media.
+ * Renders a shared static or live location inside a message bubble: an
+ * OpenStreetMap preview of the point plus its coordinates. Tapping it opens the
+ * device's map application with that point; when no application accepts it,
+ * Google Maps opens in the browser instead. It never loads message media.
  */
 @Composable
 internal fun LocationMessageCard(
@@ -48,8 +52,7 @@ internal fun LocationMessageCard(
 
     val coordinates = "${formatLocationCoordinate(location.latitude)}, " +
         formatLocationCoordinate(location.longitude)
-    val url = "https://www.openstreetmap.org/?mlat=${location.latitude}" +
-        "&mlon=${location.longitude}#map=16/${location.latitude}/${location.longitude}"
+    val label = if (location.isLive) "Live location" else "Location"
 
     Column(
         modifier = modifier
@@ -57,31 +60,58 @@ internal fun LocationMessageCard(
             .clip(RoundedCornerShape(12.dp))
             .background(cardColor)
             .clickable {
-                runCatching { uriHandler.openUri(url) }
+                // A map application first (`geo:` on Android), the browser
+                // fallback keeps the point reachable when none is installed.
+                val opened = openMapApplication(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    label = label
+                )
+
+                if (!opened) {
+                    runCatching {
+                        uriHandler.openUri(
+                            "https://www.google.com/maps/search/?api=1&query=" +
+                                "${location.latitude},${location.longitude}"
+                        )
+                    }
+                }
             }
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = if (location.isLive) "Live location" else "Location",
-            style = MaterialTheme.typography.titleSmall,
-            color = titleColor
+        OsmMapTile(
+            latitude = location.latitude,
+            longitude = location.longitude,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
         )
 
-        Text(
-            text = coordinates,
-            style = MaterialTheme.typography.bodySmall,
-            color = secondaryColor
-        )
-
-        if (location.isLive && location.expiresInSeconds > 0) {
-            val minutes = (location.expiresInSeconds + 59) / 60
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                color = titleColor
+            )
 
             Text(
-                text = "Expires in about $minutes min",
-                style = MaterialTheme.typography.labelSmall,
+                text = coordinates,
+                style = MaterialTheme.typography.bodySmall,
                 color = secondaryColor
             )
+
+            if (location.isLive && location.expiresInSeconds > 0) {
+                val minutes = (location.expiresInSeconds + 59) / 60
+
+                Text(
+                    text = "Expires in about $minutes min",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = secondaryColor
+                )
+            }
         }
     }
 }

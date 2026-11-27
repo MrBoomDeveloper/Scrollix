@@ -40,6 +40,12 @@ data class AppSettings(
     val pinnedCustomReactions: List<ReactionPreference> = emptyList(),
     /** Reaction sent by double tapping a message; null means the first pinned one. */
     val doubleTapReaction: ReactionPreference? = null,
+    /**
+     * Target language of the chat translator as a bare code ("ru"). Null
+     * follows the device language, so a stale choice never survives a system
+     * language change.
+     */
+    val translationLanguage: String? = null,
     val defaultHomeTab: String = "direct",
     /** Settings schema version, used to apply one-time default changes. */
     val settingsVersion: Int = 0,

@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.intl.Locale
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.Job
 
@@ -155,6 +156,8 @@ internal class DialogScreenViewModel(
     var composerHeightPx by mutableStateOf(0)
     var draftRestored by mutableStateOf(false)
     var hadServerDraft by mutableStateOf(false)
+    /** Draft text the server last acknowledged; remote edits are diffed against it. */
+    var serverDraftText by mutableStateOf("")
     var forwardingMessageIds by mutableStateOf<LongArray?>(null)
     var deleteConfirmationIds by mutableStateOf<LongArray?>(null)
     var showUnpinConfirmation by mutableStateOf(false)
@@ -176,6 +179,27 @@ internal class DialogScreenViewModel(
     var translations by mutableStateOf<Map<Long, String>>(emptyMap())
     var hiddenTranslations by mutableStateOf<Set<Long>>(emptySet())
     var translatingMessageIds by mutableStateOf<Set<Long>>(emptySet())
+
+    /** Language translations target: the saved choice or the device one. */
+    val translationLanguage: String
+        get() = translationTargetLanguage(settings.translationLanguage, Locale.current.language)
+
+    /** True while every translated bubble hides its translation. */
+    val allTranslationsHidden: Boolean
+        get() = translations.isNotEmpty() &&
+            translations.keys.all { messageId -> messageId in hiddenTranslations }
+
+    /** True when at least one translation is loaded on this screen. */
+    val hasTranslations: Boolean
+        get() = translations.isNotEmpty()
+
+    var showTranslationLanguage by mutableStateOf(false)
+    var isTranslatingChat by mutableStateOf(false)
+    var translationProgress by mutableStateOf<TranslationProgress?>(null)
+
+    /** True while messages paged in later are translated as they load. */
+    var isChatTranslationEnabled by mutableStateOf(false)
+        internal set
     var isSearchPending by mutableStateOf(false)
     var customEmojiData by mutableStateOf<Map<Long, ByteArray>>(emptyMap())
     var customEmojiAdaptive by mutableStateOf<Set<Long>>(emptySet())
@@ -189,7 +213,18 @@ internal class DialogScreenViewModel(
     var rawSearchResults by mutableStateOf<List<ChatMessage>>(emptyList())
         internal set
 
+    var isLoadingMoreSearch by mutableStateOf(false)
+        internal set
+
+    /** True once an older page came back empty, so paging stops asking. */
+    var searchReachedEnd by mutableStateOf(false)
+        internal set
+
     var searchFilter by mutableStateOf(DialogSearchFilter.All)
+        internal set
+
+    /** Date window applied to the loaded in-chat search page. */
+    var searchDateFilter by mutableStateOf(SearchDateFilter.AnyTime)
         internal set
 
     var headerStatus by mutableStateOf<DialogHeaderStatus?>(null)
@@ -219,6 +254,7 @@ internal class DialogScreenViewModel(
 
     internal var activeRecorder: MediaRecordingController? = null
     internal var draftJob: Job? = null
+    internal var translationJob: Job? = null
     internal var wallpaperJob: Job? = null
     internal var lastMarkedReadId: Long? = null
     internal val inFlightEmojiIds = mutableSetOf<Long>()
@@ -229,6 +265,7 @@ internal class DialogScreenViewModel(
 
     override fun onCleared() {
         draftJob?.cancel()
+        translationJob?.cancel()
         wallpaperJob?.cancel()
         DialogRecordingState.setRecording(false)
     }

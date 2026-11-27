@@ -77,7 +77,7 @@ internal fun AutoDeleteTimeDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         title = { Text("Auto-delete messages") },
         text = {
             Column(

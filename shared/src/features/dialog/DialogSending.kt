@@ -51,7 +51,8 @@ internal fun DialogScreenViewModel.applyMessageReaction(
 
 internal fun DialogScreenViewModel.sendMessage(
     keyboardController: SoftwareKeyboardController?,
-    scheduling: MessageScheduling? = null
+    scheduling: MessageScheduling? = null,
+    silent: Boolean = false
 ) {
     val text = input.trim()
     val attachments = pendingAttachments
@@ -63,9 +64,9 @@ internal fun DialogScreenViewModel.sendMessage(
 
     if (text.isEmpty() && attachments.isEmpty() && !editingCaption) return
     if (editingMessage != null && attachments.isNotEmpty()) return
-    // Edits keep their own flow; a scheduled edit would target a message that
-    // does not exist yet.
-    if (editingMessage != null && scheduling != null) return
+    // Edits keep their own flow; a scheduled or silent edit would target a
+    // message that does not exist yet on the schedule path anyway.
+    if (editingMessage != null && (scheduling != null || silent)) return
 
     keyboardController?.hide()
 
@@ -134,7 +135,8 @@ internal fun DialogScreenViewModel.sendMessage(
                 replyToMessageId = replyToMessageId,
                 customEmojis = spans,
                 formatting = formatting,
-                scheduling = scheduling
+                scheduling = scheduling,
+                silent = silent
             )
 
             OutboxManager.sendNow(entry.id).onFailure { failure ->
@@ -172,7 +174,8 @@ internal fun DialogScreenViewModel.sendMessage(
             replyToMessageId = replyToMessageId,
             customEmojis = spans,
             formatting = formatting,
-            scheduling = scheduling
+            scheduling = scheduling,
+            silent = silent
         )
 
         OutboxManager.sendNow(entry.id).onFailure { failure ->

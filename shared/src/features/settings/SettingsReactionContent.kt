@@ -55,6 +55,7 @@ internal fun SystemEmojiDialog(
     onDismiss: () -> Unit
 ) {
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text("System emoji") },
         text = {
@@ -124,6 +125,7 @@ internal fun QuickReactionsDialog(
     onDismiss: () -> Unit
 ) {
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text("Quick reactions") },
         text = {
@@ -352,6 +354,7 @@ internal fun DoubleTapReactionEditor() {
 
     if (emojiPickerOpen) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = { emojiPickerOpen = false },
             title = { Text("Double-tap reaction") },
             text = {

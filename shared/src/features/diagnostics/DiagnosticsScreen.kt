@@ -17,6 +17,7 @@ import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.getPlatform
+import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.ui.icons.bug_report_icon
 
@@ -90,6 +91,7 @@ internal fun DiagnosticsScreen(
     val savedLog = viewModel.savedLog
     val savedLogCopied = viewModel.savedLogCopied
     val protocolDumps = viewModel.protocolDumps
+    var pendingAction by remember { mutableStateOf<DiagnosticsDeleteAction?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -116,7 +118,7 @@ internal fun DiagnosticsScreen(
                 )
 
                 TextButton(
-                    onClick = { viewModel.clearLog() }
+                    onClick = { pendingAction = DiagnosticsDeleteAction.ClearLog }
                 ) {
                     Text("Clear")
                 }
@@ -170,7 +172,7 @@ internal fun DiagnosticsScreen(
                             clipboard.setText(AnnotatedString(report))
                             viewModel.markNonFatalCopied()
                         },
-                        onDelete = { viewModel.deleteNonFatal() }
+                        onDelete = { pendingAction = DiagnosticsDeleteAction.DeleteNonFatal }
                     )
                 }
 
@@ -182,7 +184,7 @@ internal fun DiagnosticsScreen(
                             clipboard.setText(AnnotatedString(report))
                             viewModel.markCrashCopied()
                         },
-                        onDelete = { viewModel.deleteCrash() }
+                        onDelete = { pendingAction = DiagnosticsDeleteAction.DeleteCrash }
                     )
                 }
 
@@ -194,7 +196,7 @@ internal fun DiagnosticsScreen(
                             clipboard.setText(AnnotatedString(log))
                             viewModel.markSavedLogCopied()
                         },
-                        onClear = { viewModel.clearSavedLog() }
+                        onClear = { pendingAction = DiagnosticsDeleteAction.ClearSavedLog }
                     )
                 }
             }
@@ -230,6 +232,58 @@ internal fun DiagnosticsScreen(
             }
         }
     }
+
+    // Every destructive action on this screen asks first; a clear hit on
+    // "Clear" used to wipe the log with no way back.
+    pendingAction?.let { action ->
+        val (title, message, confirmLabel) = when (action) {
+            DiagnosticsDeleteAction.ClearLog -> Triple(
+                "Clear the log?",
+                "In-memory entries and the saved copy are deleted from this device.",
+                "Clear"
+            )
+
+            DiagnosticsDeleteAction.DeleteCrash -> Triple(
+                "Delete the crash report?",
+                "The last crash report is removed from this device.",
+                "Delete"
+            )
+
+            DiagnosticsDeleteAction.DeleteNonFatal -> Triple(
+                "Delete the error report?",
+                "The last handled error report is removed from this device.",
+                "Delete"
+            )
+
+            DiagnosticsDeleteAction.ClearSavedLog -> Triple(
+                "Clear the saved log?",
+                "The rotating log file on this device is deleted.",
+                "Clear"
+            )
+        }
+
+        ConfirmDeleteDialog(
+            title = title,
+            message = message,
+            confirmLabel = confirmLabel,
+            onConfirm = {
+                when (action) {
+                    DiagnosticsDeleteAction.ClearLog -> viewModel.clearLog()
+                    DiagnosticsDeleteAction.DeleteCrash -> viewModel.deleteCrash()
+                    DiagnosticsDeleteAction.DeleteNonFatal -> viewModel.deleteNonFatal()
+                    DiagnosticsDeleteAction.ClearSavedLog -> viewModel.clearSavedLog()
+                }
+            },
+            onDismiss = { pendingAction = null }
+        )
+    }
+}
+
+private enum class DiagnosticsDeleteAction {
+    ClearLog,
+    DeleteCrash,
+    DeleteNonFatal,
+    ClearSavedLog
 }
 
 @Composable
@@ -382,6 +436,7 @@ private fun StorageHealthCard() {
     val scope = rememberCoroutineScope()
     var copies by remember { mutableStateOf<List<QuarantinedCopy>?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
+    var confirmDeleteCopies by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshKey) {
         copies = withContext(Dispatchers.IO) {
@@ -452,18 +507,29 @@ private fun StorageHealthCard() {
                     }
 
                     TextButton(
-                        onClick = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    runCatching {
-                                        StorageIntegrity.deleteCopies(createPlatformStorage())
-                                    }
-                                }
-                                refreshKey++
-                            }
-                        }
+                        onClick = { confirmDeleteCopies = true }
                     ) {
                         Text("Delete copies")
+                    }
+
+                    if (confirmDeleteCopies) {
+                        ConfirmDeleteDialog(
+                            title = "Delete the kept copies?",
+                            message = "The unreadable files are deleted for good. The " +
+                                "app already started from defaults, so nothing else changes.",
+                            confirmLabel = "Delete",
+                            onConfirm = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            StorageIntegrity.deleteCopies(createPlatformStorage())
+                                        }
+                                    }
+                                    refreshKey++
+                                }
+                            },
+                            onDismiss = { confirmDeleteCopies = false }
+                        )
                     }
                 }
             }

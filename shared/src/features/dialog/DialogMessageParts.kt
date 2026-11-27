@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -78,7 +79,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Corner radius of photos, videos and GIFs, matching Telegram's bubble. */
+internal val MediaCornerRadius = 16.dp
+
 /** Centered date-pill styling for informational service messages. */
+
 @Composable
 internal fun ServiceMessagePill(text: String) {
     if (text.isBlank()) return
@@ -329,7 +334,6 @@ internal fun ReplyImageThumbnail(
 internal fun MessageImagePreview(
     media: MessageMedia,
     session: AccountSession?,
-    fillWidth: Boolean,
     onClick: () -> Unit
 ) {
     var image by remember(media.previewFileId, media.minithumbnail, session) {
@@ -370,7 +374,7 @@ internal fun MessageImagePreview(
     // the bubble after it decodes. The dimensions that come with the message
     // are stable, which keeps the list from shifting under the user.
     val aspectRatio = if (media.width > 0 && media.height > 0) {
-        (media.width.toFloat() / media.height).coerceIn(0.5f, 2f)
+        (media.width.toFloat() / media.height).coerceIn(0.6f, 2.5f)
     } else {
         // A decoded preview can be cropped, so its ratio is not a stable
         // layout input. Keep one fixed fallback for this message forever.
@@ -379,15 +383,14 @@ internal fun MessageImagePreview(
 
     Box(
         modifier = Modifier
-            .then(
-                if (fillWidth) {
-                    Modifier.fillMaxWidth()
-                } else {
-                    Modifier.width(260.dp)
-                }
-            )
+            // Telegram sizes a photo from the bubble width, caps the height
+            // at about a third of the screen and crops what does not fit
+            // (`ChatMessageCell` caps the photo at `displaySize.y / 3` and
+            // keeps the width), so no photo is ever letterboxed.
+            .fillMaxWidth()
+            .heightIn(min = 60.dp, max = 320.dp)
             .aspectRatio(aspectRatio)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(MediaCornerRadius))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable(enabled = bitmap != null) {
                 if (!revealed) revealed = true else onClick()
@@ -402,7 +405,7 @@ internal fun MessageImagePreview(
                     .fillMaxSize()
                     .loadingBlur(isLoading)
                     .mediaSpoilerBlur(!revealed, radius = 26.dp),
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.Crop
             )
         }
 
@@ -432,8 +435,7 @@ internal fun RichBlockMediaPreview(
     when (media.kind) {
         MessageMediaKind.Photo -> MessageImagePreview(
             media = media,
-            session = session,
-            fillWidth = false
+            session = session
         ) {
             MediaViewer.showImage(media, session)
         }

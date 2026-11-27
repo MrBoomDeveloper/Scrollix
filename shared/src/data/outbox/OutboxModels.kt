@@ -79,6 +79,8 @@ data class OutboxEntry(
     val formatting: List<MessageTextFormat> = emptyList(),
     /** Non-null when the queued send itself is scheduled for later. */
     val scheduling: MessageScheduling? = null,
+    /** True when the send must not notify the recipient. */
+    val silent: Boolean = false,
     /**
      * True when an [OutboxEntryKind.Edit] replaces a media caption instead of
      * plain text, which providers edit through a different call.

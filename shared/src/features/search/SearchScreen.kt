@@ -14,10 +14,13 @@ import com.mrboomdev.scrollix.features.dialog.DialogSearchFilter
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.isTwoPaneLayout
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
+import com.mrboomdev.scrollix.ui.icons.filter_list_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -111,14 +114,19 @@ internal fun SearchScreen(
 
     val messageSearchState = MessageSearchState(
         results = viewModel.visibleMessageResults,
-        filter = viewModel.messageFilter,
         accountOptions = accountOptions,
-        accountId = viewModel.messageAccountId,
-        savedSearches = viewModel.savedSearches,
         hasSearched = viewModel.messageSearched,
         isSearching = viewModel.isSearchingMessages,
         error = viewModel.messageError
     )
+
+    // The filters dialog is opened from the search bar and applies to the
+    // Messages tab only, so its button appears while that tab is selected.
+    var showFilters by remember { mutableStateOf(false) }
+
+    val filtersActive = viewModel.messageFilter != DialogSearchFilter.All ||
+        viewModel.messageDateRange.isActive ||
+        viewModel.messageAccountId != null
 
     LaunchedEffect(Unit) {
         viewModel.initialize(initialQuery)
@@ -187,12 +195,10 @@ internal fun SearchScreen(
             isSearchingPosts = isSearchingPosts,
             postError = postError,
             messages = messageSearchState,
+            showMessageFilterAction = selectedTab == SearchTab.Messages,
+            isMessageFiltersActive = filtersActive,
+            onOpenMessageFilters = { showFilters = true },
             onSearchMessages = { viewModel.searchMessages() },
-            onSetMessageFilter = { filter -> viewModel.applyMessageFilter(filter) },
-            onSetMessageAccount = { accountId -> viewModel.setMessageAccountFilter(accountId) },
-            onSaveQuery = { viewModel.saveCurrentSearch() },
-            onDeleteQuery = { saved -> viewModel.forgetSavedSearch(saved) },
-            onRunQuery = { saved -> viewModel.runSavedSearch(saved) },
             onSearchPosts = { viewModel.searchPosts(false) },
             onLoadMorePosts = { viewModel.searchPosts(true) },
             onOpenEntry = { entry ->
@@ -207,11 +213,25 @@ internal fun SearchScreen(
             }
         )
 
+        MessageFilters(
+            viewModel = viewModel,
+            accountOptions = accountOptions,
+            show = showFilters,
+            onDismiss = { showFilters = false }
+        )
+
         return
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val listWidth = (maxWidth * 0.38f).coerceIn(300.dp, 400.dp)
+
+        MessageFilters(
+            viewModel = viewModel,
+            accountOptions = accountOptions,
+            show = showFilters,
+            onDismiss = { showFilters = false }
+        )
 
         Row(modifier = Modifier.fillMaxSize()) {
             SearchPanel(
@@ -239,14 +259,10 @@ internal fun SearchScreen(
                 isSearchingPosts = isSearchingPosts,
                 postError = postError,
                 messages = messageSearchState,
+                showMessageFilterAction = selectedTab == SearchTab.Messages,
+                isMessageFiltersActive = filtersActive,
+                onOpenMessageFilters = { showFilters = true },
                 onSearchMessages = { viewModel.searchMessages() },
-                onSetMessageFilter = { filter -> viewModel.applyMessageFilter(filter) },
-                onSetMessageAccount = { accountId ->
-                    viewModel.setMessageAccountFilter(accountId)
-                },
-                onSaveQuery = { viewModel.saveCurrentSearch() },
-                onDeleteQuery = { saved -> viewModel.forgetSavedSearch(saved) },
-                onRunQuery = { saved -> viewModel.runSavedSearch(saved) },
                 onSearchPosts = { viewModel.searchPosts(false) },
                 onLoadMorePosts = { viewModel.searchPosts(true) },
                 onOpenEntry = { entry ->
@@ -351,12 +367,10 @@ private fun SearchPanel(
     isSearchingPosts: Boolean,
     postError: String?,
     messages: MessageSearchState,
+    showMessageFilterAction: Boolean,
+    isMessageFiltersActive: Boolean,
+    onOpenMessageFilters: () -> Unit,
     onSearchMessages: () -> Unit,
-    onSetMessageFilter: (DialogSearchFilter) -> Unit,
-    onSetMessageAccount: (String?) -> Unit,
-    onSaveQuery: () -> Unit,
-    onDeleteQuery: (String) -> Unit,
-    onRunQuery: (String) -> Unit,
     onSearchPosts: () -> Unit,
     onLoadMorePosts: () -> Unit,
     onOpenEntry: (AccountDialogEntry) -> Unit,
@@ -404,6 +418,21 @@ private fun SearchPanel(
                     
                     placeholder = { 
                         Text("Search") 
+                    },
+                    trailingIcon = {
+                        if (showMessageFilterAction) {
+                            IconButton(onClick = onOpenMessageFilters) {
+                                Icon(
+                                    tint = if (isMessageFiltersActive) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.secondary
+                                    },
+                                    imageVector = filter_list_icon,
+                                    contentDescription = "Search filters"
+                                )
+                            }
+                        }
                     }
                 )
             }
@@ -439,82 +468,135 @@ private fun SearchPanel(
 
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
 
-        when (selectedTab) {
-            SearchTab.Chats -> DialogResults(
-                entries = entries,
-                remoteEntries = remoteEntries,
-                query = trimmedQuery,
-                kinds = ChatKinds,
-                isSearching = isSearchingChats,
-                onOpen = onOpenEntry
-            )
+        // Tabs are pages, like the folder pager of the home screen: swiping
+        // moves the selection and tapping a tab scrolls to its page.
+        val tabs = SearchTab.entries
+        val pagerState = rememberPagerState(initialPage = selectedTab.ordinal) {
+            tabs.size
+        }
 
-            SearchTab.Channels -> DialogResults(
-                entries = entries,
-                remoteEntries = remoteEntries,
-                query = trimmedQuery,
-                kinds = ChannelKinds,
-                isSearching = isSearchingChats,
-                onOpen = onOpenEntry
-            )
+        LaunchedEffect(selectedTab) {
+            val page = selectedTab.ordinal
 
-            SearchTab.Bots -> DialogResults(
-                entries = entries,
-                remoteEntries = remoteEntries,
-                query = trimmedQuery,
-                kinds = BotKinds,
-                isSearching = isSearchingChats,
-                onOpen = onOpenEntry
-            )
+            if (pagerState.currentPage != page) {
+                pagerState.animateScrollToPage(page)
+            }
+        }
 
-            SearchTab.Messages -> MessageSearchTab(
-                modifier = Modifier.fillMaxSize(),
-                state = messages,
-                query = trimmedQuery,
-                entries = entries,
-                onSearch = onSearchMessages,
-                onSetFilter = onSetMessageFilter,
-                onSetAccount = onSetMessageAccount,
-                onSaveQuery = onSaveQuery,
-                onDeleteQuery = onDeleteQuery,
-                onRunQuery = onRunQuery,
-                onOpen = onOpenPost
-            )
+        LaunchedEffect(pagerState.settledPage) {
+            tabs.getOrNull(pagerState.settledPage)?.let { tab ->
+                if (tab != selectedTab) {
+                    onSelectTab(tab)
+                }
+            }
+        }
 
-            SearchTab.Posts -> Column(modifier = Modifier.fillMaxSize()) {
-                PostSearchToolbar(
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) { pageIndex ->
+            when (tabs[pageIndex]) {
+                SearchTab.Chats -> DialogResults(
+                    entries = entries,
+                    remoteEntries = remoteEntries,
                     query = trimmedQuery,
-                    quota = postQuota,
-                    limitsExceeded = postLimitsExceeded,
-                    isSearching = isSearchingPosts,
-                    error = postError,
-                    onSearch = onSearchPosts
+                    kinds = ChatKinds,
+                    isSearching = isSearchingChats,
+                    onOpen = onOpenEntry
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
-
-                PostResults(
-                    modifier = Modifier.weight(1f),
-                    posts = posts,
+                SearchTab.Channels -> DialogResults(
                     entries = entries,
-                    resultDialogs = postDialogs,
-                    query = postSearchQuery ?: trimmedQuery,
-                    hasSearched = postSearched,
-                    isSearching = isSearchingPosts,
-                    hasMore = postNextOffset.isNotBlank() && !postLimitsExceeded,
-                    onOpen = onOpenPost,
-                    onLoadMore = onLoadMorePosts
+                    remoteEntries = remoteEntries,
+                    query = trimmedQuery,
+                    kinds = ChannelKinds,
+                    isSearching = isSearchingChats,
+                    onOpen = onOpenEntry
+                )
+
+                SearchTab.Bots -> DialogResults(
+                    entries = entries,
+                    remoteEntries = remoteEntries,
+                    query = trimmedQuery,
+                    kinds = BotKinds,
+                    isSearching = isSearchingChats,
+                    onOpen = onOpenEntry
+                )
+
+                SearchTab.Messages -> MessageSearchTab(
+                    modifier = Modifier.fillMaxSize(),
+                    state = messages,
+                    query = trimmedQuery,
+                    entries = entries,
+                    onSearch = onSearchMessages,
+                    onOpen = onOpenPost
+                )
+
+                SearchTab.Posts -> Column(modifier = Modifier.fillMaxSize()) {
+                    PostSearchToolbar(
+                        query = trimmedQuery,
+                        quota = postQuota,
+                        limitsExceeded = postLimitsExceeded,
+                        isSearching = isSearchingPosts,
+                        error = postError,
+                        onSearch = onSearchPosts
+                    )
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+                    PostResults(
+                        modifier = Modifier.weight(1f),
+                        posts = posts,
+                        entries = entries,
+                        resultDialogs = postDialogs,
+                        query = postSearchQuery ?: trimmedQuery,
+                        hasSearched = postSearched,
+                        isSearching = isSearchingPosts,
+                        hasMore = postNextOffset.isNotBlank() && !postLimitsExceeded,
+                        onOpen = onOpenPost,
+                        onLoadMore = onLoadMorePosts
+                    )
+                }
+
+                SearchTab.Downloads -> DownloadResults(
+                    deviceDownloads = deviceDownloads,
+                    directory = downloadsDirectory,
+                    query = trimmedQuery,
+                    isSearching = isSearchingDownloads
                 )
             }
-
-            SearchTab.Downloads -> DownloadResults(
-                deviceDownloads = deviceDownloads,
-                directory = downloadsDirectory,
-                query = trimmedQuery,
-                isSearching = isSearchingDownloads
-            )
         }
     }
+}
+
+/**
+ * The filters dialog of the global message search. Applying it narrows the
+ * loaded page; changing the account invalidates the page, so the next Search
+ * tap queries the narrowed scope.
+ */
+@Composable
+private fun MessageFilters(
+    viewModel: SearchScreenViewModel,
+    accountOptions: List<Pair<String, String>>,
+    show: Boolean,
+    onDismiss: () -> Unit
+) {
+    if (!show) return
+
+    SearchFiltersDialog(
+        filter = viewModel.messageFilter,
+        range = viewModel.messageDateRange,
+        accounts = accountOptions,
+        accountId = viewModel.messageAccountId,
+        onDismiss = onDismiss,
+        onApply = { filter, range, account ->
+            onDismiss()
+            viewModel.setMessageAccountFilter(account)
+            viewModel.applyMessageFilters(filter, range)
+        }
+    )
 }
 
 internal fun ChatMessage.postSnippet(): String {

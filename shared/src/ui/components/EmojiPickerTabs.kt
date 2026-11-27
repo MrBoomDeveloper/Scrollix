@@ -85,6 +85,7 @@ internal fun StickerTab(
     }
     var isLoading by remember(session) { mutableStateOf(true) }
     var pendingRemoveSticker by remember(session) { mutableStateOf<MessageMedia?>(null) }
+    var clearRecents by remember(session) { mutableStateOf(false) }
 
     val gridState = rememberLazyStaggeredGridState()
     val scope = rememberCoroutineScope()
@@ -265,13 +266,7 @@ internal fun StickerTab(
                 when (val entry = entries[index]) {
                     StickerEntry.RecentsHeader -> SectionHeader(
                         title = "Recent",
-                        onClear = {
-                            scope.launch {
-                                session.clearRecentStickers().onSuccess {
-                                    recents = emptyList()
-                                }
-                            }
-                        }
+                        onClear = { clearRecents = true }
                     )
 
                     is StickerEntry.Recent -> {
@@ -350,8 +345,26 @@ internal fun StickerTab(
         }
     }
 
+    if (clearRecents) {
+        ConfirmDeleteDialog(
+            title = "Clear recent stickers?",
+            message = "The recent sticker list is emptied on the server, so other " +
+                "clients see it empty too. Installed packs stay.",
+            confirmLabel = "Clear",
+            onConfirm = {
+                scope.launch {
+                    session.clearRecentStickers().onSuccess {
+                        recents = emptyList()
+                    }
+                }
+            },
+            onDismiss = { clearRecents = false }
+        )
+    }
+
     pendingRemoveSticker?.let { sticker ->
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = { pendingRemoveSticker = null },
             title = { Text("Remove sticker?") },
             text = { Text("Remove this sticker from the recent stickers?") },
@@ -394,6 +407,7 @@ internal fun GifTab(
 
     var gifs by remember(sources) { mutableStateOf<List<SavedGif>>(emptyList()) }
     var isLoading by remember(sources) { mutableStateOf(true) }
+    var pendingRemoveGif by remember(sources) { mutableStateOf<SavedGif?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(sources) {
@@ -411,23 +425,8 @@ internal fun GifTab(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        SectionHeader(
-            title = "Saved GIFs",
-            onClear = if (gifs.isNotEmpty()) {
-                {
-                    scope.launch {
-                        session.clearSavedAnimations().onSuccess {
-                            gifs = gifs.filterNot { gif ->
-                                gif.source.accountId == session.accountId
-                            }
-                        }
-                    }
-                }
-            } else {
-                null
-            }
-        )
-
+        // No header or "Clear" action: the grid is the whole tab, and a saved
+        // GIF is removed by long-pressing it.
         if (isLoading) {
             Box(
                 modifier = Modifier
@@ -479,16 +478,27 @@ internal fun GifTab(
                     },
                     onRemove = {
                         if (gif.source.accountId != session.accountId) return@PickerAnimation
-
-                        scope.launch {
-                            gif.source.removeSavedAnimation(gif.media).onSuccess {
-                                gifs = gifs.filterNot { entry -> entry === gif }
-                            }
-                        }
+                        pendingRemoveGif = gif
                     }
                 )
             }
         }
+    }
+
+    pendingRemoveGif?.let { gif ->
+        ConfirmDeleteDialog(
+            title = "Delete this GIF?",
+            message = "It is removed from the saved GIFs on the server, so other " +
+                "clients lose it too.",
+            onConfirm = {
+                scope.launch {
+                    gif.source.removeSavedAnimation(gif.media).onSuccess {
+                        gifs = gifs.filterNot { entry -> entry === gif }
+                    }
+                }
+            },
+            onDismiss = { pendingRemoveGif = null }
+        )
     }
 }
 

@@ -148,7 +148,7 @@ internal suspend fun TelegramSession.sendMessageToThreadImpl(threadChatId: Strin
     )
 }
 
-internal suspend fun TelegramSession.sendMessageImpl(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling? = null): Result<Unit> {
+internal suspend fun TelegramSession.sendMessageImpl(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling? = null, silent: Boolean = false): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
@@ -174,7 +174,7 @@ internal suspend fun TelegramSession.sendMessageImpl(providerDialogId: String, t
                     pollOptionId = ""
                 )
             },
-            options = scheduling.sendOptions(),
+            options = scheduling.sendOptions(silent = silent),
             inputMessageContent = InputMessageText(
                 text = FormattedText(
                     text = trimmed,
@@ -461,7 +461,7 @@ internal suspend fun TelegramSession.stopLiveLocationImpl(providerDialogId: Stri
     }
 }
 
-internal suspend fun TelegramSession.sendFilesImpl(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling? = null): Result<Unit> {
+internal suspend fun TelegramSession.sendFilesImpl(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling? = null, silent: Boolean = false): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
@@ -532,7 +532,7 @@ internal suspend fun TelegramSession.sendFilesImpl(providerDialogId: String, att
             when (val result = client.sendMessage(
                 chatId = chatId,
                 replyTo = replyTo,
-                options = scheduling.sendOptions(),
+                options = scheduling.sendOptions(silent = silent),
                 inputMessageContent = contents.single()
             )) {
                 is TdlResult.Success -> {
@@ -546,7 +546,7 @@ internal suspend fun TelegramSession.sendFilesImpl(providerDialogId: String, att
             when (val result = client.sendMessageAlbum(
                 chatId = chatId,
                 replyTo = replyTo,
-                options = scheduling.sendOptions(),
+                options = scheduling.sendOptions(silent = silent),
                 inputMessageContents = contents.toTypedArray()
             )) {
                 is TdlResult.Success -> {
@@ -876,17 +876,32 @@ internal suspend fun TelegramSession.markMessagesReadImpl(providerDialogId: Stri
     }
 }
 
-internal suspend fun TelegramSession.loadDraftImpl(providerDialogId: String): Result<MessageDraft> {
+internal suspend fun TelegramSession.loadDraftImpl(
+    providerDialogId: String,
+    threadId: Long = 0L
+): Result<MessageDraft> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
     return try {
-        val chat = when (val result = client.getChat(chatId)) {
-            is TdlResult.Success -> result.result
-            is TdlResult.Failure -> return Result.failure(result.toSessionException())
+        // A forum topic keeps its own draft on the server, so the topic id is
+        // read instead of the chat-level draft.
+        val draft = if (threadId > 0L) {
+            when (val result = client.getForumTopic(
+                chatId = chatId,
+                forumTopicId = threadId.toInt()
+            )) {
+                is TdlResult.Success -> result.result.draftMessage
+                is TdlResult.Failure -> return Result.failure(result.toSessionException())
+            }
+        } else {
+            when (val result = client.getChat(chatId)) {
+                is TdlResult.Success -> result.result.draftMessage
+                is TdlResult.Failure -> return Result.failure(result.toSessionException())
+            }
         }
 
-        val content = chat.draftMessage?.content as? DraftMessageContentText
+        val content = draft?.content as? DraftMessageContentText
             ?: return Result.success(MessageDraft())
 
         Result.success(
@@ -903,7 +918,13 @@ internal suspend fun TelegramSession.loadDraftImpl(providerDialogId: String): Re
     }
 }
 
-internal suspend fun TelegramSession.saveDraftImpl(providerDialogId: String, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> {
+internal suspend fun TelegramSession.saveDraftImpl(
+    providerDialogId: String,
+    text: String,
+    customEmojis: List<CustomEmojiSpan>,
+    formatting: List<MessageTextFormat>,
+    threadId: Long = 0L
+): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
@@ -918,9 +939,18 @@ internal suspend fun TelegramSession.saveDraftImpl(providerDialogId: String, tex
             linkPreviewOptions = null
         )
 
+        // The topic identifies the thread the draft belongs to; null is the
+        // chat-level draft.
+        val topic = if (threadId > 0L) {
+            MessageTopicForum(forumTopicId = threadId.toInt())
+        } else {
+            null
+        }
+
         when (val result = client.setChatDraftMessage(
-            chatId = chatId,
-            draftMessage = DraftMessage(
+            chatId,
+            topic,
+            DraftMessage(
                 date = 0,
                 replyTo = null,
                 content = content,

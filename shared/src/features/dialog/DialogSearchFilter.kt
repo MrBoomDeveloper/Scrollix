@@ -53,6 +53,5 @@ internal fun DialogScreenViewModel.setSearchFilter(filter: DialogSearchFilter) {
     if (searchFilter == filter) return
 
     searchFilter = filter
-    searchResults = filterSearchMessages(rawSearchResults, filter)
-    recomputeDerived()
+    applySearchFilters()
 }

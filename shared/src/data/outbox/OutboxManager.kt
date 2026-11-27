@@ -80,7 +80,8 @@ object OutboxManager {
         replyToMessageId: Long? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
-        scheduling: MessageScheduling? = null
+        scheduling: MessageScheduling? = null,
+        silent: Boolean = false
     ): OutboxEntry = enqueueText(
         providerId = providerId,
         accountId = accountId,
@@ -89,7 +90,8 @@ object OutboxManager {
         replyToMessageId = replyToMessageId,
         customEmojis = customEmojis,
         formatting = formatting,
-        scheduling = scheduling
+        scheduling = scheduling,
+        silent = silent
     )
 
     suspend fun enqueueText(
@@ -100,7 +102,8 @@ object OutboxManager {
         replyToMessageId: Long? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
-        scheduling: MessageScheduling? = null
+        scheduling: MessageScheduling? = null,
+        silent: Boolean = false
     ): OutboxEntry = enqueueEntry(
         providerId = providerId,
         accountId = accountId,
@@ -110,7 +113,8 @@ object OutboxManager {
         replyToMessageId = replyToMessageId,
         customEmojis = customEmojis,
         formatting = formatting,
-        scheduling = scheduling
+        scheduling = scheduling,
+        silent = silent
     )
 
     /** Queues one or more files with an optional caption. */
@@ -123,7 +127,8 @@ object OutboxManager {
         replyToMessageId: Long? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
-        scheduling: MessageScheduling? = null
+        scheduling: MessageScheduling? = null,
+        silent: Boolean = false
     ): OutboxEntry = enqueueEntry(
         providerId = providerId,
         accountId = accountId,
@@ -134,7 +139,8 @@ object OutboxManager {
         replyToMessageId = replyToMessageId,
         customEmojis = customEmojis,
         formatting = formatting,
-        scheduling = scheduling
+        scheduling = scheduling,
+        silent = silent
     )
 
     /** Queues an edit of an already delivered message. */
@@ -207,7 +213,8 @@ object OutboxManager {
                 replyToMessageId = entry.replyToMessageId,
                 customEmojis = entry.customEmojis,
                 formatting = entry.formatting,
-                scheduling = entry.scheduling
+                scheduling = entry.scheduling,
+                sendSilently = entry.silent
             )
 
             OutboxEntryKind.Files -> session.sendFiles(
@@ -222,7 +229,8 @@ object OutboxManager {
                 replyToMessageId = entry.replyToMessageId,
                 customEmojis = entry.customEmojis,
                 formatting = entry.formatting,
-                scheduling = entry.scheduling
+                scheduling = entry.scheduling,
+                sendSilently = entry.silent
             )
 
             OutboxEntryKind.Edit -> {
@@ -419,6 +427,7 @@ object OutboxManager {
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
         scheduling: MessageScheduling? = null,
+        silent: Boolean = false,
         isCaptionEdit: Boolean = false
     ): OutboxEntry {
         val entry = OutboxEntry(
@@ -435,6 +444,7 @@ object OutboxManager {
             customEmojis = customEmojis,
             formatting = formatting,
             scheduling = scheduling,
+            silent = silent,
             isCaptionEdit = isCaptionEdit,
             createdAt = currentTimeMillis()
         )

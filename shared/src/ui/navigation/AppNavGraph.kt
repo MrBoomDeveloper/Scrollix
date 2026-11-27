@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.ui.navigation
 import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.features.accounts.AccountManageScreen
 import com.mrboomdev.scrollix.features.accounts.AccountsScreen
 import com.mrboomdev.scrollix.features.diagnostics.DiagnosticsScreen
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
@@ -96,6 +97,21 @@ fun rememberAppEntryProvider(
                 },
                 onOpenLogin = { accountId ->
                     backStack += Route.Login(accountId)
+                },
+                onOpenOwnProfile = { accountId ->
+                    backStack += Route.OwnProfile(accountId)
+                },
+                onManageAccount = { accountId ->
+                    backStack += Route.AccountManage(accountId)
+                }
+            )
+        }
+
+        entry<Route.AccountManage> { route ->
+            AccountManageScreen(
+                accountId = route.accountId,
+                onBack = {
+                    backStack.removeLastOrNull()
                 },
                 onOpenOwnProfile = { accountId ->
                     backStack += Route.OwnProfile(accountId)

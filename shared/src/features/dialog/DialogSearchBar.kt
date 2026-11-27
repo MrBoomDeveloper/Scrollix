@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,6 +91,45 @@ internal fun DialogSearchBar(ui: DialogScreenViewModel) = with(ui) {
                             label = { Text(filter.label, maxLines = 1) }
                         )
                     }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    SearchDateFilter.entries.forEach { dateFilter ->
+                        FilterChip(
+                            selected = searchDateFilter == dateFilter,
+                            onClick = { setSearchDateFilter(dateFilter) },
+                            label = { Text(dateFilter.label, maxLines = 1) }
+                        )
+                    }
+                }
+            }
+
+            // Only providers that can page past the first page offer the
+            // action; the others keep returning the same page.
+            if (
+                searchQuery.text.isNotBlank() &&
+                session?.supportsMessageSearchPaging == true &&
+                rawSearchResults.isNotEmpty()
+            ) {
+                TextButton(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    enabled = !isSearchPending && !isLoadingMoreSearch && !searchReachedEnd,
+                    onClick = { loadMoreSearchResults() }
+                ) {
+                    Text(
+                        text = when {
+                            searchReachedEnd -> "End of results"
+                            isLoadingMoreSearch -> "Loading more…"
+                            else -> "Load more results"
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }

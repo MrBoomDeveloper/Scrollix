@@ -11,7 +11,7 @@ import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
-import com.mrboomdev.scrollix.data.storage.SavedSearchStore
+import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.deviceDownloadsDirectory
 import com.mrboomdev.scrollix.data.storage.listDeviceDownloads
 import com.mrboomdev.scrollix.features.dialog.DialogSearchFilter
@@ -86,16 +86,21 @@ internal class SearchScreenViewModel : ViewModel() {
     var messageFilter by mutableStateOf(DialogSearchFilter.All)
         private set
 
+    /** Date window applied to the loaded message page. */
+    var messageDateRange by mutableStateOf(MessageDateRange())
+        private set
+
     /** Account the message search is narrowed to; null searches every account. */
     var messageAccountId by mutableStateOf<String?>(null)
         private set
 
-    var savedSearches by mutableStateOf(SavedSearchStore.queries.value)
-        private set
-
-    /** Results after the media filter; the provider is not queried again. */
+    /** Results after the media and date filters; the provider is not queried again. */
     val visibleMessageResults: List<ChatMessage>
-        get() = filterSearchMessages(messageResults, messageFilter)
+        get() = filterMessagesByRange(
+            messages = filterSearchMessages(messageResults, messageFilter),
+            range = messageDateRange,
+            nowMillis = currentTimeMillis()
+        )
 
     var deviceDownloads by mutableStateOf<List<DeviceDownloadedFile>>(emptyList())
         private set
@@ -170,8 +175,9 @@ internal class SearchScreenViewModel : ViewModel() {
         }
     }
 
-    fun applyMessageFilter(filter: DialogSearchFilter) {
+    fun applyMessageFilters(filter: DialogSearchFilter, range: MessageDateRange) {
         messageFilter = filter
+        messageDateRange = range
     }
 
     /** Narrows the next search to one account; null searches every account. */
@@ -185,23 +191,6 @@ internal class SearchScreenViewModel : ViewModel() {
         messageSearchQuery = null
         messageSearched = false
         messageError = null
-    }
-
-    fun saveCurrentSearch() {
-        SavedSearchStore.save(trimmedQuery)
-        savedSearches = SavedSearchStore.queries.value
-    }
-
-    fun forgetSavedSearch(savedQuery: String) {
-        SavedSearchStore.forget(savedQuery)
-        savedSearches = SavedSearchStore.queries.value
-    }
-
-    /** Runs a pinned query through the same path as a typed one. */
-    fun runSavedSearch(savedQuery: String) {
-        updateQuery(savedQuery)
-        selectedTab = SearchTab.Messages
-        searchMessages()
     }
 
     fun selectTab(tab: SearchTab) {

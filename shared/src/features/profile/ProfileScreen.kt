@@ -10,10 +10,10 @@ import com.mrboomdev.scrollix.features.home.EmojiStatusIcon
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.isWideLayout
 import com.mrboomdev.scrollix.ui.components.AvatarImage
+import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.ui.icons.verified_icon
-import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -109,6 +109,23 @@ internal fun ProfileScreen(
     }
     var contactFirstName by remember(accountId, providerDialogId) { mutableStateOf("") }
     var contactLastName by remember(accountId, providerDialogId) { mutableStateOf("") }
+    var confirmRemoveContact by remember(accountId, providerDialogId) {
+        mutableStateOf(false)
+    }
+
+    if (confirmRemoveContact) {
+        ConfirmDeleteDialog(
+            title = "Remove contact?",
+            message = "${details?.displayName ?: "This user"} is removed from your " +
+                "contacts on the provider. The chat stays in your list.",
+            confirmLabel = "Remove",
+            onConfirm = {
+                confirmRemoveContact = false
+                viewModel.removeContact()
+            },
+            onDismiss = { confirmRemoveContact = false }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -174,11 +191,6 @@ internal fun ProfileScreen(
                 .padding(24.dp)
         ) {
             val displayName = profile?.displayName ?: dialog?.title ?: "Profile"
-            val sharedProfileKey = if (ownAccount) {
-                "own-profile:$accountId"
-            } else {
-                "profile:$accountId:${userId ?: providerDialogId}"
-            }
             val avatar = profile?.avatar
                 ?: dialog?.avatar
                 ?: Avatar.fromName(displayName)
@@ -224,8 +236,7 @@ internal fun ProfileScreen(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    SharedProfileElement(key = sharedProfileKey) {
-                        AvatarImage(
+                    AvatarImage(
                             modifier = if (accentBrush != null) {
                                 Modifier.border(
                                     width = 2.dp,
@@ -244,7 +255,6 @@ internal fun ProfileScreen(
                             avatar = avatar,
                             size = 96.dp
                         )
-                    }
 
                     AnimatedVisibility(isWide && !ownAccount) {
                         ProfileScreenActions(
@@ -263,7 +273,7 @@ internal fun ProfileScreen(
                             isContact = details?.isContact == true,
                             stretch = false,
                             onEditContact = openContactEditor,
-                            onRemoveContact = viewModel::removeContact,
+                            onRemoveContact = { confirmRemoveContact = true },
                             onMessage = {
                                 onMessage(details?.discussionChatId ?: providerDialogId)
                             },
@@ -293,14 +303,12 @@ internal fun ProfileScreen(
                         size = 18.dp
                     )
 
-                    SharedProfileElement(key = "$sharedProfileKey:name") {
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
 
                     if (profile?.isVerified == true || dialog?.isVerified == true) {
                         Icon(
@@ -347,7 +355,7 @@ internal fun ProfileScreen(
                     isContact = details?.isContact == true,
                     stretch = true,
                     onEditContact = openContactEditor,
-                    onRemoveContact = viewModel::removeContact,
+                    onRemoveContact = { confirmRemoveContact = true },
                     onMessage = {
                         onMessage(details?.discussionChatId ?: providerDialogId)
                     },
@@ -448,6 +456,7 @@ internal fun ProfileScreen(
 
             if (showContactEditor) {
                 AlertDialog(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
                     onDismissRequest = { showContactEditor = false },
                     title = {
                         Text(if (details?.isContact == true) "Edit contact" else "Add contact")

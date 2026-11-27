@@ -168,7 +168,7 @@ fun ProfileAvatarGalleryDialog(
                 .fillMaxSize()
                 .padding(16.dp),
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(

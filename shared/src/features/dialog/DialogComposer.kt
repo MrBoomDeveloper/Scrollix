@@ -3,6 +3,7 @@ package com.mrboomdev.scrollix.features.dialog
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.isDesktopPlatform
+import com.mrboomdev.scrollix.isLocationSupported
 import com.mrboomdev.scrollix.platform.files.FilePicker
 import com.mrboomdev.scrollix.platform.files.PickedFile
 import com.mrboomdev.scrollix.platform.files.readClipboardImages
@@ -435,10 +436,22 @@ internal fun BoxScope.DialogComposer(
                     onPickImages = { filePicker.pickImages() },
                     onPickFiles = { filePicker.pickFiles() },
                     onAddPoll = { showPollDialog = true },
-                    onAddLocation = { showLocationDialog = true },
+                    // Hidden entirely when the device has no location source,
+                    // since there would be nothing to offer or to turn on.
+                    onAddLocation = if (isLocationSupported()) {
+                        { showLocationDialog = true }
+                    } else {
+                        null
+                    },
                     onEmojiAnchorChanged = { anchor -> emojiPickerAnchor.value = anchor },
                     onToggleEmojiPicker = {
                         showEmojiPicker = !showEmojiPicker
+                    },
+                    onEditorFocused = {
+                        // Typing takes the keyboard's place, so the picker
+                        // closes instead of stacking above the keyboard.
+                        showEmojiPicker = false
+                        showHoverPicker.value = false
                     },
                     onInputChange = { value, selection ->
                         updateInput(value, selection)
@@ -464,6 +477,14 @@ internal fun BoxScope.DialogComposer(
                         session?.supportsScheduling == true
                     ) {
                         { showSchedulePicker = true }
+                    } else {
+                        null
+                    },
+                    onSendSilently = if (
+                        editingMessage == null &&
+                        session?.supportsSilentSend == true
+                    ) {
+                        { sendMessage(keyboardController = null, silent = true) }
                     } else {
                         null
                     },

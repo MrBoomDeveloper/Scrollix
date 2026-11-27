@@ -14,7 +14,6 @@ import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
-import com.mrboomdev.scrollix.ui.navigation.SharedProfileElement
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +61,7 @@ internal fun AccountsScreen(
     onBack: () -> Unit,
     onOpenLogin: (String) -> Unit,
     onOpenOwnProfile: (String) -> Unit = {},
+    onManageAccount: (String) -> Unit = {},
     viewModel: AccountsScreenViewModel = viewModel { AccountsScreenViewModel() }
 ) {
     val accountState by ApiManager.accountState.collectAsState()
@@ -77,7 +77,6 @@ internal fun AccountsScreen(
     val confirmDiscard = viewModel.confirmDiscard
     val error = viewModel.error
     val isAdding = viewModel.isAdding
-    val removingIds = viewModel.removingIds
     val providerPickerOpen = viewModel.providerPickerOpen
 
     Scaffold(
@@ -136,12 +135,11 @@ internal fun AccountsScreen(
                     account = account,
                     authState = sessionStates[account.id],
                     isConnected = connectionStates[account.id],
-                    isRemoving = account.id in removingIds,
                     isActivating = false,
                     isDialogsLoading = account.id in dialogsLoading,
                     onOpenLogin = onOpenLogin,
                     onOpenOwnProfile = { onOpenOwnProfile(account.id) },
-                    onRemove = { viewModel.removeAccount(account.id) }
+                    onManage = { onManageAccount(account.id) }
                 )
             }
 
@@ -181,6 +179,7 @@ internal fun AccountsScreen(
 
     if (providerPickerOpen) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = { viewModel.closeProviderPicker() },
             title = { Text("Add account") },
             
@@ -222,6 +221,7 @@ internal fun AccountsScreen(
 
     if (confirmDiscard) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             onDismissRequest = { viewModel.dismissDiscardAll() },
             title = { Text("Discard the queue?") },
             text = {
@@ -251,19 +251,18 @@ private fun AccountRow(
     account: AccountRecord,
     authState: AuthState?,
     isConnected: Boolean?,
-    isRemoving: Boolean,
     isActivating: Boolean,
     isDialogsLoading: Boolean,
     onOpenLogin: (String) -> Unit,
     onOpenOwnProfile: () -> Unit,
-    onRemove: () -> Unit
+    onManage: () -> Unit
 ) {
     val layoutInfo = currentAdaptiveLayoutInfo()
     val actionsBottom = layoutInfo.size < AdaptiveLayoutSize.MEDIUM
     
     val providerName = ProviderRegistry.get(account.providerId)?.displayName
         ?: account.providerId
-    val isBusy = isRemoving || isActivating
+    val isBusy = isActivating
     
     @Composable
     fun actions() {
@@ -286,9 +285,9 @@ private fun AccountRow(
             OutlinedButton(
                 modifier = actionModifier,
                 enabled = !isBusy,
-                onClick = onRemove
-            ) { 
-                Text("Remove")
+                onClick = onManage
+            ) {
+                Text("Manage")
             }
         }
     }
@@ -314,26 +313,20 @@ private fun AccountRow(
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SharedProfileElement(
-                    key = "own-profile:${account.id}"
-                ) {
-                    AvatarImage(
-                        avatar = account.avatar ?: Avatar.fromName(account.displayName),
-                        size = 48.dp
-                    )
-                }
+                AvatarImage(
+                    avatar = account.avatar ?: Avatar.fromName(account.displayName),
+                    size = 48.dp
+                )
 
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 12.dp)
                 ) {
-                    SharedProfileElement(key = "own-profile:${account.id}:name") {
-                        Text(
-                            text = account.displayName,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
+                    Text(
+                        text = account.displayName,
+                        style = MaterialTheme.typography.titleMedium
+                    )
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

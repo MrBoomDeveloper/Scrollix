@@ -37,11 +37,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun SettingsNotificationsContent() {
+internal fun SettingsNotificationsContent(accountId: String? = null) {
     val accountState by ApiManager.accountState.collectAsState()
     val sessionStates by ApiManager.sessionStates.collectAsState()
     val accounts = accountState.accounts.filter { account ->
-        sessionStates[account.id] is AuthState.Ready
+        (accountId == null || account.id == accountId) &&
+            sessionStates[account.id] is AuthState.Ready
     }
 
     Text(

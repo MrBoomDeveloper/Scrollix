@@ -13,6 +13,7 @@ import com.mrboomdev.scrollix.data.outbox.OutboxEntryKind
 import com.mrboomdev.scrollix.data.outbox.OutboxEntryState
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 
 import androidx.compose.runtime.snapshotFlow
@@ -52,6 +53,7 @@ internal fun DialogScreenViewModel.observe() {
 
         currentSession.dialogs.collect { loaded ->
             dialogs = loaded
+            reconcileRemoteDraft()
             captureUnreadBoundary()
             resolvePinnedMessage()
             refreshHeaderStatus()
@@ -135,6 +137,7 @@ internal fun DialogScreenViewModel.applyHistory(loaded: MessageHistory) {
     captureUnreadBoundary()
     resolvePinnedMessage()
     markNewestRead()
+    translateNewMessages()
 }
 
 /**
@@ -392,20 +395,34 @@ internal fun DialogScreenViewModel.runSearch(query: String) {
         rawSearchResults = emptyList()
         searchResults = emptyList()
         isSearchPending = false
+        isLoadingMoreSearch = false
+        searchReachedEnd = false
         recomputeDerived()
         return
     }
 
     isSearchPending = true
+    searchReachedEnd = false
 
     viewModelScope.launch {
         delay(300.milliseconds)
 
-        rawSearchResults = session?.searchMessages(providerDialogId, trimmed)
+        // A newer keystroke owns the results now; this page is stale.
+        if (searchQuery.text.toString().trim() != trimmed) return@launch
+
+        val page = session?.searchMessages(providerDialogId, trimmed, SearchPageSize)
             ?.getOrDefault(emptyList())
             ?: emptyList()
 
-        searchResults = filterSearchMessages(rawSearchResults, searchFilter)
+        if (searchQuery.text.toString().trim() != trimmed) return@launch
+
+        rawSearchResults = page
+        searchResults = filteredSearchResults(
+            raw = rawSearchResults,
+            mediaFilter = searchFilter,
+            dateFilter = searchDateFilter,
+            nowMillis = currentTimeMillis()
+        )
 
         isSearchPending = false
         recomputeDerived()

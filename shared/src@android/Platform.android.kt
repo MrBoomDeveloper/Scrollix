@@ -10,12 +10,20 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class AndroidPlatform : Platform {
     override val name: String = "Android ${Build.VERSION.SDK_INT}"
@@ -29,10 +37,150 @@ actual fun tdlibDeviceModel(): String = Build.MODEL ?: "Android"
 
 actual fun tdlibSystemVersion(): String = "SDK ${Build.VERSION.SDK_INT}"
 
-// Android's location APIs require runtime permissions and a location client
-// that this build does not ship, so the picker falls back to typed or dragged
-// coordinates there.
-actual suspend fun currentLocation(): Pair<Double, Double>? = null
+/**
+ * Set by the Android activity so the picker can raise the system permission
+ * prompt. Null while no activity is attached.
+ */
+var requestLocationPermission: (suspend () -> Boolean)? = null
+
+private fun hasLocationPermission(): Boolean {
+    val context = AndroidAppContext.context
+
+    return context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED ||
+        context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+}
+
+actual fun isLocationSupported(): Boolean {
+    val context = AndroidAppContext.context
+
+    if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_LOCATION)) {
+        return false
+    }
+
+    // A device without any provider (rare, but possible on stripped builds)
+    // cannot be asked to turn location on, so the entry point is hidden.
+    val manager = context.getSystemService(LocationManager::class.java) ?: return false
+    return manager.allProviders.isNotEmpty()
+}
+
+actual fun isLocationEnabled(): Boolean {
+    val manager = AndroidAppContext.context
+        .getSystemService(LocationManager::class.java)
+        ?: return false
+
+    return manager.isLocationEnabled
+}
+
+actual fun openMapApplication(
+    latitude: Double,
+    longitude: Double,
+    label: String
+): Boolean {
+    val point = "$latitude,$longitude"
+    val uri = Uri.parse("geo:$point?q=$point(${Uri.encode(label)})")
+
+    val intent = Intent(Intent.ACTION_VIEW, uri)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    // No map application is a normal case (a bare emulator), not an error:
+    // the caller opens Google Maps in the browser instead.
+    return runCatching { AndroidAppContext.context.startActivity(intent) }.isSuccess
+}
+
+actual fun openLocationSettings() {
+    val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    runCatching { AndroidAppContext.context.startActivity(intent) }
+}
+
+/**
+ * Reads the last known fix, then waits briefly for a fresh one. The picker
+ * calls this once when it opens, so no location updates stay registered.
+ */
+actual suspend fun currentLocation(): LocationFix {
+    if (!hasLocationPermission()) {
+        val granted = withContext(Dispatchers.Main) {
+            requestLocationPermission?.invoke() ?: false
+        }
+
+        if (!granted) return LocationFix.PermissionDenied
+    }
+
+    if (!isLocationEnabled()) return LocationFix.Disabled
+
+    val context = AndroidAppContext.context
+    val manager = context.getSystemService(LocationManager::class.java)
+        ?: return LocationFix.Unavailable
+
+    // GPS needs the fine permission; with only the approximate grant the
+    // network provider is the one that may be read.
+    val fineGranted = context.checkSelfPermission(
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val providers = if (fineGranted) {
+        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+    } else {
+        listOf(LocationManager.NETWORK_PROVIDER)
+    }
+
+    val provider = providers.firstOrNull { candidate ->
+        manager.isProviderEnabled(candidate)
+    } ?: return LocationFix.Disabled
+
+    val cached = runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
+    if (cached != null) return LocationFix.Position(cached.latitude, cached.longitude)
+
+    // A provider can still refuse the read (a revoked grant, a disabled
+    // radio), so the picker gets "no position" instead of a crash.
+    val fresh = runCatching {
+        withTimeoutOrNull(8_000L) {
+            awaitSingleLocation(manager, provider)
+        }
+    }.getOrNull()
+
+    return fresh?.let { location ->
+        LocationFix.Position(location.latitude, location.longitude)
+    } ?: LocationFix.Unavailable
+}
+
+private suspend fun awaitSingleLocation(
+    manager: LocationManager,
+    provider: String
+): Location = suspendCancellableCoroutine { continuation ->
+    val listener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            runCatching { manager.removeUpdates(this) }
+
+            if (continuation.isActive) {
+                continuation.resume(location)
+            }
+        }
+
+        override fun onProviderDisabled(provider: String) = Unit
+    }
+
+    continuation.invokeOnCancellation {
+        runCatching { manager.removeUpdates(listener) }
+    }
+
+    runCatching {
+        manager.requestLocationUpdates(
+            provider,
+            0L,
+            0f,
+            AndroidAppContext.context.mainExecutor,
+            listener
+        )
+    }.onFailure { failure ->
+        if (continuation.isActive) {
+            continuation.resumeWithException(failure)
+        }
+    }
+}
 
 actual fun openDialer(phoneNumber: String) {
     val intent = Intent(

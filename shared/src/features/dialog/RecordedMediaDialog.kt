@@ -70,7 +70,7 @@ fun RecordedMediaDialog(
                     .fillMaxWidth()
                     .padding(24.dp),
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
                     modifier = Modifier.padding(20.dp),

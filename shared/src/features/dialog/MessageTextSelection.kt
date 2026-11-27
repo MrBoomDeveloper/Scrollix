@@ -26,7 +26,7 @@ internal fun MessageTextSelectionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         title = { Text("Select text") },
         text = {
             Column(

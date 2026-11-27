@@ -6,18 +6,20 @@ import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.platform.media.MediaRecordingKind
 import com.mrboomdev.scrollix.ui.icons.add_icon
 import com.mrboomdev.scrollix.ui.icons.mood_icon
-import com.mrboomdev.scrollix.ui.icons.schedule_icon
 import com.mrboomdev.scrollix.ui.icons.send_icon
 import com.mrboomdev.scrollix.ui.icons.videocam_icon
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -30,12 +32,11 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,12 +44,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -62,11 +69,13 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.mrboomdev.scrollix.ui.icons.microphone_icon
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -97,16 +106,24 @@ fun ComposerInputRow(
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
     onAddPoll: () -> Unit,
-    onAddLocation: () -> Unit,
+    /** Null hides the entry: the platform cannot produce a location. */
+    onAddLocation: (() -> Unit)?,
     onEmojiAnchorChanged: (Rect) -> Unit,
     onToggleEmojiPicker: () -> Unit,
+    /** Tapping the field closes the picker, so only the keyboard shows. */
+    onEditorFocused: () -> Unit = {},
     onInputChange: (String, TextRange) -> Unit,
     onPasteImages: () -> Boolean,
     onToggleVideoMessageMode: () -> Unit,
     onBeginRecording: (MediaRecordingKind) -> Unit,
     onSend: () -> Unit,
-    /** Null hides the schedule button, for example while editing a message. */
+    /**
+     * Opens the schedule picker. It is offered from the send button's long
+     * press and context menu; null disables both, for example while editing.
+     */
     onSchedule: (() -> Unit)? = null,
+    /** Sends without a notification; null hides that menu entry. */
+    onSendSilently: (() -> Unit)? = null,
     /** Null disables the undo shortcut and its menu entry. */
     canUndo: Boolean = false,
     canRedo: Boolean = false,
@@ -116,6 +133,9 @@ fun ComposerInputRow(
     focusRequester: FocusRequester? = null,
     autoFocus: Boolean = false
 ) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     // Desktop requests focus after the row exists, so a freshly opened chat
     // accepts typing without a click. Mobile waits for a tap instead.
     LaunchedEffect(autoFocus, focusRequester) {
@@ -194,13 +214,15 @@ fun ComposerInputRow(
                         }
                     )
 
-                    DropdownMenuItem(
-                        text = { Text("Location") },
-                        onClick = {
-                            onAttachmentMenuChange(false)
-                            onAddLocation()
-                        }
-                    )
+                    if (onAddLocation != null) {
+                        DropdownMenuItem(
+                            text = { Text("Location") },
+                            onClick = {
+                                onAttachmentMenuChange(false)
+                                onAddLocation()
+                            }
+                        )
+                    }
 
                     // Undo lives here as well as on Ctrl+Z, because a phone
                     // has no keyboard to reach the shortcut with.
@@ -236,6 +258,9 @@ fun ComposerInputRow(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 35.dp)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) onEditorFocused()
+                    }
                     .then(
                         focusRequester?.let { requester ->
                             Modifier.focusRequester(requester)
@@ -353,7 +378,16 @@ fun ComposerInputRow(
                         onEmojiAnchorChanged(coordinates.boundsInWindow())
                     }
                     .hoverable(emojiButtonInteraction),
-                onClick = onToggleEmojiPicker
+                onClick = {
+                    // The picker takes the keyboard's place: showing both at
+                    // once would squeeze the picker to a sliver.
+                    if (!showEmojiPicker) {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    }
+
+                    onToggleEmojiPicker()
+                }
             ) {
                 Icon(
                     tint = if (showEmojiPicker) {
@@ -367,12 +401,26 @@ fun ComposerInputRow(
             }
 
             AnimatedVisibility(input.isEmpty() && !hasAttachments) {
+                val recordInteraction = remember { MutableInteractionSource() }
+                // The gesture scope is restricted, so the ripple interactions
+                // are emitted from the composable's own scope.
+                val recordScope = rememberCoroutineScope()
+
                 Box(
                     modifier = Modifier
                         .size(48.dp)
+                        .clip(CircleShape)
+                        // The gesture is hand-rolled, so the ripple is driven
+                        // by the press interactions emitted below.
+                        .indication(
+                            interactionSource = recordInteraction,
+                            indication = LocalIndication.current
+                        )
                         .pointerInput(videoMessageMode, isRecording) {
                             awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false)
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val press = PressInteraction.Press(down.position)
+                                recordScope.launch { recordInteraction.emit(press) }
 
                                 // A tap switches the button between voice notes
                                 // and circle video notes; holding it starts a
@@ -383,6 +431,10 @@ fun ComposerInputRow(
                                 }
 
                                 if (releasedEarly != null) {
+                                    recordScope.launch {
+                                        recordInteraction.emit(PressInteraction.Release(press))
+                                    }
+
                                     if (!isRecording) {
                                         onToggleVideoMessageMode()
                                     }
@@ -398,7 +450,17 @@ fun ComposerInputRow(
                                     }
                                 )
 
-                                waitForUpOrCancellation()
+                                val up = waitForUpOrCancellation()
+
+                                recordScope.launch {
+                                    recordInteraction.emit(
+                                        if (up != null) {
+                                            PressInteraction.Release(press)
+                                        } else {
+                                            PressInteraction.Cancel(press)
+                                        }
+                                    )
+                                }
                             }
                         },
                     contentAlignment = Alignment.Center
@@ -421,39 +483,14 @@ fun ComposerInputRow(
         }
 
         AnimatedVisibility(input.isNotEmpty() || hasAttachments) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                onSchedule?.let { schedule ->
-                    IconButton(
-                        enabled = !isSending,
-                        onClick = schedule
-                    ) {
-                        Icon(
-                            tint = MaterialTheme.colorScheme.secondary,
-                            imageVector = schedule_icon,
-                            contentDescription = "Schedule message"
-                        )
-                    }
-                }
-
-                FilledIconButton(
-                    enabled = (input.isNotBlank() || hasAttachments) && !isSending,
-                    onClick = onSend
-                ) {
-                    if (isSending) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
-                        )
-
-                        return@FilledIconButton
-                    }
-
-                    Icon(
-                        imageVector = send_icon,
-                        contentDescription = null
-                    )
-                }
-            }
+            SendButton(
+                enabled = (input.isNotBlank() || hasAttachments) && !isSending,
+                isSending = isSending,
+                onSend = onSend,
+                onSchedule = onSchedule,
+                onSendSilently = onSendSilently
+            )
         }
     }
 }
+

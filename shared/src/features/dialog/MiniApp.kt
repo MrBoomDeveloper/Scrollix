@@ -222,7 +222,7 @@ private fun MiniAppHost(
                 .fillMaxSize()
                 .padding(8.dp),
             shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             Column {
                 Row(

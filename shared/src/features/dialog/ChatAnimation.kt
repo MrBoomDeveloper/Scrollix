@@ -14,6 +14,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,9 +114,12 @@ fun ChatAnimationPreview(
 
     Box(
         modifier = Modifier
-            .width(AnimationPreviewWidth)
-            .aspectRatio(aspectRatio.coerceIn(0.75f, 1.8f))
-            .clip(RoundedCornerShape(8.dp))
+            // Same sizing rule as photos and videos: the bubble's width,
+            // capped height, rounded media corners.
+            .fillMaxWidth()
+            .heightIn(max = 320.dp)
+            .aspectRatio(aspectRatio.coerceIn(0.6f, 2.5f))
+            .clip(RoundedCornerShape(MediaCornerRadius))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable {
                 if (!revealed) revealed = true else onClick()

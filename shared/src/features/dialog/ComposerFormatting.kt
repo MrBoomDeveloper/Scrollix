@@ -432,7 +432,7 @@ internal fun ComposerLinkDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         title = { Text("Link") },
         text = {
             Column(Modifier.width(360.dp)) {

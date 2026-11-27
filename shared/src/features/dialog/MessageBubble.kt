@@ -127,7 +127,9 @@ fun MessageBubble(
     isTranslationHidden: Boolean = false,
     isTranslating: Boolean = false,
     /** Requests a translation or switches between the original and translated text. */
-    onTranslate: (() -> Unit)? = null
+    onTranslate: (() -> Unit)? = null,
+    /** Query of the active in-chat search, marked inside the message text. */
+    highlightQuery: String? = null
 ) {
     val layoutInfo = currentAdaptiveLayoutInfo()
     val clipboard = LocalClipboardManager.current
@@ -135,7 +137,7 @@ fun MessageBubble(
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
     var readTimestamp by remember(message.messageId) { mutableStateOf<Long?>(null) }
     var usedEmojiPacks by remember(message.messageId) {
-        mutableStateOf<List<StickerPack>>(emptyList())
+        mutableStateOf<List<EmojiPackEntry>>(emptyList())
     }
 
     // Mention avatars are resolved live through the session: cached message
@@ -166,10 +168,14 @@ fun MessageBubble(
 
         usedEmojiPacks = setIds.mapNotNull { setId ->
             session.loadStickerSet(setId).getOrNull()?.let { set ->
-                StickerPack(
-                    id = setId,
-                    title = set.title,
-                    isInstalled = set.isInstalled
+                EmojiPackEntry(
+                    pack = StickerPack(
+                        id = setId,
+                        title = set.title,
+                        isInstalled = set.isInstalled
+                    ),
+                    // The pack's featured emoji is what the menu row shows.
+                    preview = set.stickers.firstOrNull()
                 )
             }
         }
@@ -233,7 +239,9 @@ fun MessageBubble(
         message.richBlocks.isEmpty()
 
     BoxWithConstraints(modifier = modifier) {
-        val maxBubbleWidth = maxWidth * if(layoutInfo.size < AdaptiveLayoutSize.EXPANDED && isMediaOnly) 1f else 0.75f
+        // Telegram keeps every message, media included, inside about three
+        // quarters of the chat width instead of letting a photo span the list.
+        val maxBubbleWidth = maxWidth * 0.75f
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -270,7 +278,9 @@ fun MessageBubble(
                 modifier = Modifier.widthIn(max = maxBubbleWidth)
             ) {
                 val connectedCornerRadius = 4.dp
-                val cornerRadius = 24.dp
+                // Media messages use the tighter media radius of Telegram;
+                // text bubbles keep the roomier one.
+                val cornerRadius = if (primaryMedia != null) 16.dp else 24.dp
                 
                 Surface(
                     modifier = Modifier
@@ -528,7 +538,8 @@ fun MessageBubble(
                                         onMentionClick = onMentionClick,
                                         onPhoneClick = onPhoneClick,
                                         onHashtagClick = onHashtagClick,
-                                        media = richMedia
+                                        media = richMedia,
+                                        highlightQuery = highlightQuery
                                     )
                                 }
                             } else if (message.text.isNotBlank()) {
@@ -545,6 +556,7 @@ fun MessageBubble(
                                         onPhoneClick = onPhoneClick,
                                         onHashtagClick = onHashtagClick,
                                         mentionAvatars = mentionAvatars,
+                                        highlightQuery = highlightQuery,
                                         trailingContent = if (isFooterInline) {
                                             {
                                                 MessageStatusRow(
@@ -936,22 +948,11 @@ fun MessageBubble(
                     }
                     
                     if (usedEmojiPacks.isNotEmpty() && onOpenStickerSet != null) {
-                        HorizontalDivider()
-
-                        Text(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                            text = "Emoji packs used",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.secondary
+                        EmojiPacksMenuSection(
+                            entries = usedEmojiPacks,
+                            session = session,
+                            onOpen = { setId -> onOpenStickerSet.invoke(setId) }
                         )
-
-                        usedEmojiPacks.forEach { pack ->
-                            action(
-                                text = pack.title,
-                                icon = select_check_box_icon,
-                                onClick = { onOpenStickerSet.invoke(pack.id) }
-                            )
-                        }
                     }
 
                     if(readTimestamp != null) {

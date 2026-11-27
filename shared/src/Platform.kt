@@ -45,12 +45,47 @@ expect fun showDesktopNotification(
 /** Whether a visible application surface is in front of the user. */
 expect fun isAppInForeground(): Boolean
 
+/** Result of a one-shot location lookup for the location picker. */
+sealed interface LocationFix {
+    data class Position(val latitude: Double, val longitude: Double) : LocationFix
+
+    /** The user has not granted location access. */
+    data object PermissionDenied : LocationFix
+
+    /** Location services are switched off on the device. */
+    data object Disabled : LocationFix
+
+    /** No position could be obtained. */
+    data object Unavailable : LocationFix
+}
+
 /**
- * Best-effort current position for the location picker. Desktop Linux has no
- * system geolocation API, so its implementation derives an approximate point
- * from the public IP address. Returns null when no position is available.
+ * Whether this device can produce a location at all: it has a location
+ * provider, or a network lookup can stand in for one. When false, the location
+ * entry point is hidden instead of opening a picker that can never work.
  */
-expect suspend fun currentLocation(): Pair<Double, Double>?
+expect fun isLocationSupported(): Boolean
+
+/** Whether system location services are switched on right now. */
+expect fun isLocationEnabled(): Boolean
+
+/** Opens the system screen where location services can be turned on. */
+expect fun openLocationSettings()
+
+/**
+ * Best-effort current position for the location picker. Android asks for the
+ * runtime permission on first use and reads the GPS/network provider. Desktop
+ * Linux has no cross-desktop geolocation service, so it derives an approximate
+ * point from the public IP address.
+ */
+expect suspend fun currentLocation(): LocationFix
+
+/**
+ * Hands a point to the device's map application (a `geo:` intent on Android).
+ * Returns false when nothing accepts it, so the caller can fall back to a
+ * browser map instead.
+ */
+expect fun openMapApplication(latitude: Double, longitude: Double, label: String): Boolean
 
 /**
  * Fetches [url] into memory, with a client User-Agent and a timeout.

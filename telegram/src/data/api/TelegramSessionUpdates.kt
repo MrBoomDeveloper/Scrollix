@@ -18,7 +18,10 @@ internal suspend fun TelegramSession.handleUpdate(update: Update) {
         is UpdateAuthorizationState -> handleAuthorizationState(update.authorizationState)
 
         is UpdateConnectionState -> {
-            _isConnected.value = update.state is ConnectionStateReady
+            // "Updating" means TDLib is still fetching chats, not that the
+            // network is gone; only a state that cannot reach the server at
+            // all counts as a connection failure.
+            _isConnected.value = update.state !is ConnectionStateWaitingForNetwork
         }
 
         is UpdateNewChat -> {

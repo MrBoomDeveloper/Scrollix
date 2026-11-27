@@ -11,7 +11,6 @@ import com.mrboomdev.scrollix.ui.icons.bug_report_icon
 import com.mrboomdev.scrollix.ui.icons.campaign_icon
 import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
 import com.mrboomdev.scrollix.ui.icons.close_icon
-import com.mrboomdev.scrollix.ui.icons.data_usage_icon
 import com.mrboomdev.scrollix.ui.icons.devices_icon
 import com.mrboomdev.scrollix.ui.icons.visibility_icon
 import com.mrboomdev.scrollix.ui.icons.group_icon
@@ -88,31 +87,13 @@ internal enum class SettingsCategory(
         "Cached data and disk usage",
         listOf("cache", "media cache limit", "clear cache", "keep media", "disk usage")
     ),
-    DataUsage(
-        "Data and network",
-        "Traffic, data saver and auto-download",
-        listOf("traffic", "reset statistics", "auto-download", "network", "roaming", "data saver")
-    ),
     Backup(
         "Backup",
         "Export or import your settings",
         listOf("export", "import", "restore", "settings file")
     ),
-    Notifications(
-        "Notifications",
-        "Mutes, alerts and double-tap reaction",
-        listOf("mute", "muted scopes", "exceptions", "alerts")
-    ),
-    Privacy(
-        "Privacy",
-        "Who can see your activity",
-        listOf("last seen", "online", "presence", "visibility", "privacy")
-    ),
-    Sessions(
-        "Sessions",
-        "Devices signed in to your account",
-        listOf("devices", "terminate", "sign out", "active sessions")
-    ),
+    // Sessions, privacy, notifications and per-account data live on the
+    // account's own management screen (Accounts → Manage), not here.
     About(
         "About",
         "Application information",
@@ -160,18 +141,6 @@ internal val SettingsEntries: List<SettingsEntry> = listOf(
         listOf("animation", "transition", "motion", "accessibility")
     ),
 
-    // Notifications
-    SettingsEntry(SettingsCategory.Notifications, "Account notifications", listOf("mute", "alerts", "account")),
-    SettingsEntry(SettingsCategory.Notifications, "Muted scopes", listOf("private chats", "groups", "channels", "mute")),
-    SettingsEntry(SettingsCategory.Notifications, "Notification exceptions", listOf("exceptions", "muted chats")),
-
-    // Privacy
-    SettingsEntry(
-        SettingsCategory.Privacy,
-        "Last seen",
-        listOf("online", "presence", "visibility", "who can see", "privacy")
-    ),
-
     // Backup
     SettingsEntry(SettingsCategory.Backup, "Export settings", listOf("backup", "save", "file")),
     SettingsEntry(SettingsCategory.Backup, "Import settings", listOf("restore", "backup", "file")),
@@ -181,16 +150,6 @@ internal val SettingsEntries: List<SettingsEntry> = listOf(
     SettingsEntry(SettingsCategory.Storage, "Keep media", listOf("keep media", "kept chats", "protection")),
     SettingsEntry(SettingsCategory.Storage, "Clear cache", listOf("clear", "delete", "disk usage")),
     SettingsEntry(SettingsCategory.Storage, "Clear all", listOf("clear", "delete", "everything")),
-
-    // Sessions
-    SettingsEntry(SettingsCategory.Sessions, "Active sessions", listOf("devices", "sign out", "terminate")),
-    SettingsEntry(SettingsCategory.Sessions, "Terminate sessions", listOf("sign out", "devices")),
-
-    // Data and network
-    SettingsEntry(SettingsCategory.DataUsage, "Traffic statistics", listOf("data usage", "sent", "received")),
-    SettingsEntry(SettingsCategory.DataUsage, "Reset statistics", listOf("traffic", "reset")),
-    SettingsEntry(SettingsCategory.DataUsage, "Data saver presets", listOf("auto-download", "low", "medium", "high")),
-    SettingsEntry(SettingsCategory.DataUsage, "Auto-play media", listOf("animations", "gifs", "video notes", "data saver")),
 
     // Diagnostics
     SettingsEntry(SettingsCategory.Diagnostics, "Save crash reports", listOf("crash", "report", "errors")),
@@ -513,12 +472,8 @@ internal val SettingsCategory.icon: ImageVector
     get() = when (this) {
         SettingsCategory.ChatList -> chat_bubble_icon
         SettingsCategory.Accessibility -> touch_app_icon
-        SettingsCategory.Notifications -> notifications_icon
         SettingsCategory.Backup -> backup_icon
         SettingsCategory.Storage -> storage_icon
-        SettingsCategory.Sessions -> devices_icon
-        SettingsCategory.Privacy -> visibility_icon
-        SettingsCategory.DataUsage -> data_usage_icon
         SettingsCategory.Diagnostics -> bug_report_icon
         SettingsCategory.About -> info_icon
     }

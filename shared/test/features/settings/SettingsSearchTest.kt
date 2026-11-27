@@ -34,9 +34,6 @@ class SettingsSearchTest {
             "Double-tap reaction",
             searchSettings("double tap reaction").first().title
         )
-        assertTrue(
-            searchSettings("auto-download").any { it.category == SettingsCategory.DataUsage }
-        )
     }
 
     @Test
@@ -53,8 +50,9 @@ class SettingsSearchTest {
 
     @Test
     fun `search is case and whitespace insensitive`() {
-        assertTrue(
-            searchSettings("  AUTO-DOWNLOAD ").any { it.category == SettingsCategory.DataUsage }
+        assertEquals(
+            listOf("Media cache limit"),
+            searchSettings("  MEDIA CACHE LIMIT ").map { entry -> entry.title }
         )
     }
 
@@ -75,6 +73,9 @@ class SettingsSearchTest {
 
         assertFalse("Accounts" in names)
         assertFalse("Offline" in names)
+        // Per-account data usage lives on Accounts → Manage too.
+        assertFalse("DataUsage" in names)
+        assertTrue(searchSettings("auto-download").isEmpty())
         assertTrue(searchSettings("log out").isEmpty())
     }
 

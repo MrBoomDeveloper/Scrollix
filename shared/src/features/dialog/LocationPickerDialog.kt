@@ -1,9 +1,10 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.LocationFix
 import com.mrboomdev.scrollix.currentLocation
-import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.fetchUrlBytes
-import com.mrboomdev.scrollix.moved
+import com.mrboomdev.scrollix.isLocationEnabled
+import com.mrboomdev.scrollix.openLocationSettings
 import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 
 import androidx.compose.foundation.Image
@@ -29,7 +30,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,7 +38,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,8 +48,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -58,19 +55,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import kotlin.math.PI
-import kotlin.math.atan
-import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.roundToInt
-import kotlin.math.sinh
-import kotlin.math.tan
-
-private const val MapZoom = 15
-private const val MapTileUrl = "https://tile.openstreetmap.org/$MapZoom"
 
 private data class LiveLocationChoice(
     val label: String,
@@ -87,63 +76,98 @@ private val LiveLocationChoices = listOf(
 /**
  * A deliberately small OpenStreetMap picker: one raster tile with a draggable
  * pin. Whole-map panning or zooming would need tile caching and a proper grid,
- * which this client does not ship. Coordinates can be typed directly, which is
- * also how the map is moved to another city.
+ * which this client does not ship.
+ *
+ * There is no coordinate field: the position always comes from the device. The
+ * picker opens on the current position, and everything it cannot obtain is a
+ * status message with a retry (or the system switch) instead of numbers typed
+ * by hand. The composer hides the entry point entirely when the platform
+ * cannot produce a location at all.
  */
 @Composable
 fun LocationPickerDialog(
     onDismiss: () -> Unit,
     onSend: (latitude: Double, longitude: Double, livePeriodSeconds: Int) -> Unit
 ) {
-    var latitudeText by remember { mutableStateOf("") }
-    var longitudeText by remember { mutableStateOf("") }
+    var latitude by remember { mutableStateOf<Double?>(null) }
+    var longitude by remember { mutableStateOf<Double?>(null) }
     var liveChoice by remember { mutableStateOf(LiveLocationChoices.first()) }
     var pinFraction by remember { mutableStateOf(Offset(0.5f, 0.5f)) }
     var tileImage by remember { mutableStateOf<ImageBitmap?>(null) }
     var isLoadingTile by remember { mutableStateOf(false) }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var isLocating by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var locateRequest by remember { mutableStateOf(0) }
+    var locationIssue by remember { mutableStateOf<LocationFix?>(null) }
 
-    val latitude = latitudeText.toDoubleOrNull()
-    val longitude = longitudeText.toDoubleOrNull()
-    val hasCoordinates = latitude != null &&
-        longitude != null &&
-        latitude in -90.0..90.0 &&
-        longitude in -180.0..180.0
+    // The picker opens on the current position; there is no other source.
+    LaunchedEffect(locateRequest) {
+        isLocating = true
+        locationIssue = null
 
-    val tileCount = 1 shl MapZoom
-    val tileX = longitude
-        ?.let { lon -> floor(lonToTileX(lon, MapZoom)).toInt() }
-        ?.coerceIn(0, tileCount - 1)
-        ?: 0
-    val tileY = latitude
-        ?.let { lat -> floor(latToTileY(lat, MapZoom)).toInt() }
-        ?.coerceIn(0, tileCount - 1)
-        ?: 0
+        when (val fix = currentLocation()) {
+            is LocationFix.Position -> {
+                latitude = fix.latitude
+                longitude = fix.longitude
+            }
 
-    LaunchedEffect(hasCoordinates, tileX, tileY) {
-        if (!hasCoordinates) {
+            // Nothing can be shown without access, so the sheet closes.
+            LocationFix.PermissionDenied -> onDismiss()
+            else -> locationIssue = fix
+        }
+
+        isLocating = false
+    }
+
+    // Location off: the user is sent to the system switch and the status is
+    // re-checked here, so coming back to the app picks the position up.
+    LaunchedEffect(locationIssue) {
+        if (locationIssue != LocationFix.Disabled) return@LaunchedEffect
+
+        while (isActive) {
+            delay(1000L)
+
+            if (isLocationEnabled()) {
+                locateRequest++
+                break
+            }
+        }
+    }
+
+    val lat = latitude
+    val lon = longitude
+    val hasPosition = lat != null && lon != null
+
+    val tileCount = 1 shl OsmMapZoom
+    val (tileX, tileY) = if (lat != null && lon != null) {
+        osmTileCoordinates(lat, lon)
+    } else {
+        0 to 0
+    }
+
+    LaunchedEffect(hasPosition, tileX, tileY) {
+        if (!hasPosition) {
             tileImage = null
             isLoadingTile = false
             return@LaunchedEffect
         }
 
         isLoadingTile = true
-        val bytes = fetchUrlBytes("$MapTileUrl/$tileX/$tileY.png")
+        val bytes = fetchUrlBytes(osmTileUrl(tileX, tileY))
         tileImage = bytes?.let { data ->
             withContext(Dispatchers.Default) { decodeImageBitmap(data) }
         }
         isLoadingTile = false
     }
 
-    // Keep the pin in sync when coordinates are typed or clamped.
-    LaunchedEffect(latitude, longitude, hasCoordinates) {
-        if (latitude == null || longitude == null || !hasCoordinates) return@LaunchedEffect
+    // Keep the pin in sync when a new fix arrives or the pin is dragged, since
+    // dragging writes the new position straight back into the state above.
+    LaunchedEffect(lat, lon) {
+        if (lat == null || lon == null) return@LaunchedEffect
 
         pinFraction = Offset(
-            x = (lonToTileX(longitude, MapZoom) - tileX).toFloat().coerceIn(0f, 1f),
-            y = (latToTileY(latitude, MapZoom) - tileY).toFloat().coerceIn(0f, 1f)
+            x = (osmTileX(lon) - tileX).toFloat().coerceIn(0f, 1f),
+            y = (osmTileY(lat) - tileY).toFloat().coerceIn(0f, 1f)
         )
     }
 
@@ -162,7 +186,7 @@ fun LocationPickerDialog(
                     .fillMaxWidth()
                     .widthIn(max = 460.dp),
                 shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
                     modifier = Modifier
@@ -177,23 +201,48 @@ fun LocationPickerDialog(
                         style = MaterialTheme.typography.titleLarge
                     )
 
-                    TextButton(
-                        enabled = !isLocating,
-                        onClick = {
-                            isLocating = true
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            modifier = Modifier.weight(1f),
+                            text = when {
+                                isLocating -> "Getting your location…"
+                                hasPosition -> "Using your current location"
+                                locationIssue == LocationFix.Disabled ->
+                                    "Location services are off"
 
-                            scope.launch {
-                                val position = currentLocation()
-                                isLocating = false
+                                locationIssue == LocationFix.Unavailable ->
+                                    "Could not get your location"
 
-                                if (position != null) {
-                                    latitudeText = formatLocationCoordinate(position.first)
-                                    longitudeText = formatLocationCoordinate(position.second)
-                                }
+                                else -> "No location yet"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+
+                        TextButton(
+                            enabled = !isLocating,
+                            onClick = { locateRequest++ }
+                        ) {
+                            Text(if (isLocating) "Locating…" else "Retry")
+                        }
+                    }
+
+                    if (locationIssue == LocationFix.Disabled) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                modifier = Modifier.weight(1f),
+                                text = "Turn on location to share where you are.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+
+                            TextButton(onClick = { openLocationSettings() }) {
+                                Text("Turn on")
                             }
                         }
-                    ) {
-                        Text(if (isLocating) "Locating…" else "Use my location")
                     }
 
                     Box(
@@ -203,8 +252,8 @@ fun LocationPickerDialog(
                             .clip(RoundedCornerShape(16.dp))
                             .background(MaterialTheme.colorScheme.surfaceContainer)
                             .onSizeChanged { size -> mapSize = size }
-                            .pointerInput(hasCoordinates, tileX, tileY) {
-                                if (!hasCoordinates) return@pointerInput
+                            .pointerInput(hasPosition, tileX, tileY) {
+                                if (!hasPosition) return@pointerInput
 
                                 detectDragGestures { change, _ ->
                                     change.consume()
@@ -221,12 +270,8 @@ fun LocationPickerDialog(
                                     val globalX = (tileX + fractionX).toDouble() / tileCount
                                     val globalY = (tileY + fractionY).toDouble() / tileCount
 
-                                    latitudeText = formatLocationCoordinate(
-                                        tileYToLatitude(globalY)
-                                    )
-                                    longitudeText = formatLocationCoordinate(
-                                        globalX * 360.0 - 180.0
-                                    )
+                                    latitude = osmTileYToLatitude(globalY)
+                                    longitude = globalX * 360.0 - 180.0
                                 }
                             },
                         contentAlignment = Alignment.Center
@@ -240,20 +285,20 @@ fun LocationPickerDialog(
                             )
                         }
 
-                        if (!hasCoordinates) {
+                        if (!hasPosition && !isLocating) {
                             Text(
                                 modifier = Modifier.padding(24.dp),
-                                text = "Enter the latitude and longitude to load the map",
+                                text = "The map appears once your position is known.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.secondary
                             )
                         }
 
-                        if (isLoadingTile) {
+                        if (isLoadingTile || isLocating) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
                         }
 
-                        if (hasCoordinates) {
+                        if (hasPosition) {
                             val pinHeight = with(LocalDensity.current) { 28.dp.roundToPx() }
                             val pinWidth = with(LocalDensity.current) { 24.dp.roundToPx() }
 
@@ -272,30 +317,9 @@ fun LocationPickerDialog(
                         }
                     }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            modifier = Modifier.weight(1f),
-                            value = latitudeText,
-                            onValueChange = { latitudeText = it },
-                            label = { Text("Latitude") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                        )
-
-                        OutlinedTextField(
-                            modifier = Modifier.weight(1f),
-                            value = longitudeText,
-                            onValueChange = { longitudeText = it },
-                            label = { Text("Longitude") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                        )
-                    }
-
                     Text(
-                        text = "How long should it be shared?",
+                        text = "Drag the pin to adjust the point. How long should it " +
+                            "be shared?",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary
                     )
@@ -319,7 +343,7 @@ fun LocationPickerDialog(
                         }
 
                         Button(
-                            enabled = hasCoordinates,
+                            enabled = hasPosition,
                             onClick = {
                                 onSend(
                                     latitude ?: 0.0,
@@ -337,17 +361,3 @@ fun LocationPickerDialog(
     }
 }
 
-private fun lonToTileX(lon: Double, zoom: Int): Double {
-    return (lon + 180.0) / 360.0 * (1 shl zoom)
-}
-
-private fun latToTileY(lat: Double, zoom: Int): Double {
-    val radians = lat.coerceIn(-85.05112878, 85.05112878) * PI / 180.0
-    val mercator = ln(tan(radians) + 1.0 / cos(radians))
-    return (1.0 - mercator / PI) / 2.0 * (1 shl zoom)
-}
-
-/** Inverse Web Mercator for a global tile fraction in the range 0..1. */
-private fun tileYToLatitude(globalFraction: Double): Double {
-    return atan(sinh(PI * (1.0 - 2.0 * globalFraction))) * 180.0 / PI
-}

@@ -11,6 +11,7 @@ import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.platform.files.rememberFilePicker
+import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.components.ReorderDialog
 import com.mrboomdev.scrollix.ui.components.ReorderItem
 import com.mrboomdev.scrollix.ui.components.orderedStickerPacks
@@ -55,6 +56,8 @@ internal fun SettingsStorageContent() {
     val settings by AppSettingsStore.state.collectAsState()
     var refreshKey by remember { mutableStateOf(0) }
     var sizes by remember { mutableStateOf<Map<CacheStore.Category, Long>>(emptyMap()) }
+    var pendingClearCategory by remember { mutableStateOf<CacheStore.Category?>(null) }
+    var confirmClearAll by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshKey) {
         sizes = withContext(Dispatchers.IO) {
@@ -171,12 +174,7 @@ internal fun SettingsStorageContent() {
             }
 
             TextButton(
-                onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) { CacheStore.clear(category) }
-                        refreshKey++
-                    }
-                }
+                onClick = { pendingClearCategory = category }
             ) {
                 Text("Clear")
             }
@@ -196,15 +194,42 @@ internal fun SettingsStorageContent() {
         )
 
         TextButton(
-            onClick = {
+            onClick = { confirmClearAll = true }
+        ) {
+            Text("Clear all")
+        }
+    }
+
+    pendingClearCategory?.let { category ->
+        ConfirmDeleteDialog(
+            title = "Clear ${category.title.lowercase()}?",
+            message = "Cached ${category.title.lowercase()} files are deleted from " +
+                "this device. Messages and dialogs stay.",
+            confirmLabel = "Clear",
+            onConfirm = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { CacheStore.clear(category) }
+                    refreshKey++
+                }
+            },
+            onDismiss = { pendingClearCategory = null }
+        )
+    }
+
+    if (confirmClearAll) {
+        ConfirmDeleteDialog(
+            title = "Clear all cached data?",
+            message = "Every cached file is deleted from this device. Messages, " +
+                "dialogs and queued sends stay.",
+            confirmLabel = "Clear all",
+            onConfirm = {
                 scope.launch {
                     withContext(Dispatchers.IO) { CacheStore.clearAll() }
                     refreshKey++
                 }
-            }
-        ) {
-            Text("Clear all")
-        }
+            },
+            onDismiss = { confirmClearAll = false }
+        )
     }
 }
 
@@ -369,6 +394,7 @@ internal fun RestorePreviewDialog(
     onConfirm: () -> Unit
 ) {
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text("Restore from $fileName?") },
         text = {

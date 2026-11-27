@@ -181,10 +181,7 @@ internal fun DialogScreenViewModel.sendPoll(draft: PollDraft) {
  * cached translation. Translations are kept in this screen's state only: the
  * provider does not store them on the server, and none of them is persisted.
  */
-internal fun DialogScreenViewModel.toggleTranslation(
-    message: ChatMessage,
-    languageCode: String
-) {
+internal fun DialogScreenViewModel.toggleTranslation(message: ChatMessage) {
     val messageId = message.messageId
 
     if (messageId in translations) {
@@ -203,7 +200,7 @@ internal fun DialogScreenViewModel.toggleTranslation(
 
     viewModelScope.launch {
         try {
-            currentSession.translateText(message.text, languageCode)
+            currentSession.translateText(message.text, translationLanguage)
                 .onSuccess { translated ->
                     translations = translations + (messageId to translated)
                     hiddenTranslations = hiddenTranslations - messageId

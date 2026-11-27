@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ShortcutCheatSheetDialog(onDismiss: () -> Unit) {
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
         title = { Text("Keyboard shortcuts") },
         text = {
@@ -66,7 +67,7 @@ private fun ShortcutEntry(title: String, keys: String) {
 
         Surface(
             shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             Text(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
