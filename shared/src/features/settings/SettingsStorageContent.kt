@@ -8,7 +8,9 @@ import com.mrboomdev.scrollix.data.storage.MediaCacheLimitOptionsMb
 import com.mrboomdev.scrollix.data.storage.SettingsImportPreview
 import com.mrboomdev.scrollix.data.storage.UnlimitedMediaCacheBytes
 import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.data.storage.clearTemporaryFiles
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
+import com.mrboomdev.scrollix.data.storage.temporaryFilesBytes
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.platform.files.rememberFilePicker
 import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
@@ -58,6 +60,8 @@ internal fun SettingsStorageContent() {
     var sizes by remember { mutableStateOf<Map<CacheStore.Category, Long>>(emptyMap()) }
     var pendingClearCategory by remember { mutableStateOf<CacheStore.Category?>(null) }
     var confirmClearAll by remember { mutableStateOf(false) }
+    var temporaryBytes by remember { mutableStateOf(0L) }
+    var confirmClearTemporary by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshKey) {
         sizes = withContext(Dispatchers.IO) {
@@ -65,6 +69,8 @@ internal fun SettingsStorageContent() {
                 CacheStore.size(category)
             }
         }
+
+        temporaryBytes = withContext(Dispatchers.IO) { temporaryFilesBytes() }
     }
 
     Text(
@@ -185,6 +191,34 @@ internal fun SettingsStorageContent() {
 
     Row(
         modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "Temporary files",
+                style = MaterialTheme.typography.bodyLarge
+            )
+
+            Text(
+                text = formatCacheSize(temporaryBytes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+
+        TextButton(
+            enabled = temporaryBytes > 0,
+            onClick = { confirmClearTemporary = true }
+        ) {
+            Text("Clear")
+        }
+    }
+
+    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainer)
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -213,6 +247,22 @@ internal fun SettingsStorageContent() {
                 }
             },
             onDismiss = { pendingClearCategory = null }
+        )
+    }
+
+    if (confirmClearTemporary) {
+        ConfirmDeleteDialog(
+            title = "Clear temporary files?",
+            message = "Recordings waiting for review and temporary playback files " +
+                "are deleted. Queued sends and downloaded files stay.",
+            confirmLabel = "Clear",
+            onConfirm = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { clearTemporaryFiles() }
+                    refreshKey++
+                }
+            },
+            onDismiss = { confirmClearTemporary = false }
         )
     }
 

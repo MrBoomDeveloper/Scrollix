@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,9 +50,13 @@ internal fun VoiceMessagePlayer(
     var positionMs by remember(media.fileId) { mutableLongStateOf(0L) }
     var isSeeking by remember(media.fileId) { mutableStateOf(false) }
     var seekValue by remember(media.fileId) { mutableFloatStateOf(0f) }
+    var speed by remember(media.fileId) { mutableFloatStateOf(1f) }
     val player = remember { createVoicePlayer() }
     val scope = rememberCoroutineScope()
     val durationMs = (media.durationSeconds.toLong() * 1000L).coerceAtLeast(1L)
+    val waveform = remember(media.fileId, media.fileUniqueId) {
+        decodeVoiceWaveform(media.waveform ?: ByteArray(0))
+    }
 
     DisposableEffect(player) {
         onDispose {
@@ -129,29 +134,78 @@ internal fun VoiceMessagePlayer(
                 )
             }
 
-            Slider(
-                modifier = Modifier.fillMaxWidth(),
-                value = (if (isSeeking) seekValue else positionMs.toFloat())
-                    .coerceIn(0f, durationMs.toFloat()),
-                onValueChange = { value ->
-                    isSeeking = true
-                    seekValue = value
-                },
-                onValueChangeFinished = {
-                    isSeeking = false
-                    positionMs = seekValue.toLong()
-                    player.seekTo(seekValue.toLong())
-                },
-                valueRange = 0f..durationMs.toFloat()
-            )
+            val shownPosition = if (isSeeking) seekValue else positionMs.toFloat()
+
+            if (waveform.isEmpty()) {
+                // A message without a stored waveform keeps the plain slider.
+                Slider(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = shownPosition.coerceIn(0f, durationMs.toFloat()),
+                    onValueChange = { value ->
+                        isSeeking = true
+                        seekValue = value
+                    },
+                    onValueChangeFinished = {
+                        isSeeking = false
+                        positionMs = seekValue.toLong()
+                        player.seekTo(seekValue.toLong())
+                    },
+                    valueRange = 0f..durationMs.toFloat()
+                )
+            } else {
+                WaveformSeekBar(
+                    modifier = Modifier.fillMaxWidth(),
+                    levels = waveform,
+                    progress = (shownPosition / durationMs).coerceIn(0f, 1f),
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f),
+                    playedColor = MaterialTheme.colorScheme.primary,
+                    onSeekPreview = { fraction ->
+                        // Dragging only moves the preview, so playback is not
+                        // restarted for every pixel.
+                        isSeeking = true
+                        seekValue = fraction * durationMs
+                    },
+                    onSeek = { fraction ->
+                        isSeeking = false
+                        positionMs = (fraction * durationMs).toLong()
+                        player.seekTo(positionMs)
+                    }
+                )
+            }
         }
 
-        Text(
-            text = "${formatDuration((positionMs / 1000L).toInt())} / " +
-                formatDuration(media.durationSeconds),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary
-        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = "${formatDuration((positionMs / 1000L).toInt())} / " +
+                    formatDuration(media.durationSeconds),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+
+            if (player.supportsSpeed) {
+                TextButton(
+                    onClick = {
+                        val next = when (speed) {
+                            1f -> 1.5f
+                            1.5f -> 2f
+                            else -> 1f
+                        }
+
+                        speed = next
+                        player.setSpeed(next)
+                    }
+                ) {
+                    Text(
+                        text = when (speed) {
+                            1.5f -> "1.5x"
+                            2f -> "2x"
+                            else -> "1x"
+                        },
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
     }
 }
 

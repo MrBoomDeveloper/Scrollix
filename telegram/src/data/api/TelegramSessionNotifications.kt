@@ -257,7 +257,10 @@ internal suspend fun TelegramSession.loadTopicsImpl(providerDialogId: String, qu
                     lastMessageTimestamp = (topic.lastMessage?.date ?: 0).toLong() * 1000L,
                     iconCustomEmojiId = topic.info.icon?.customEmojiId?.takeIf { it != 0L },
                     isGeneral = topic.info.isGeneral,
-                    isPinned = topic.isPinned
+                    isPinned = topic.isPinned,
+                    // TDLib resolves muteFor even when the default is
+                    // inherited, so a positive value means muted.
+                    isMuted = topic.notificationSettings.muteFor > 0
                 )
             }
         )

@@ -10,6 +10,8 @@ import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageReplyQuote
+import com.mrboomdev.scrollix.data.outbox.OutboxEntry
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.AppSettings
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
@@ -44,6 +46,9 @@ internal class DialogScreenViewModel(
     /** Queued text and file sends, rendered as rows while they wait. */
     var pendingMessages by mutableStateOf<List<ChatMessage>>(emptyList())
         internal set
+
+    /** Outbox entries of this chat, kept so upload progress can refresh them. */
+    internal var pendingOutboxEntries by mutableStateOf<List<OutboxEntry>>(emptyList())
 
     /** Messages grouped for the list, with media albums merged into one row. */
     var displayMessages by mutableStateOf<List<ChatMessage>>(emptyList())
@@ -136,6 +141,8 @@ internal class DialogScreenViewModel(
     var recordingKind by mutableStateOf(MediaRecordingKind.Voice)
     var recordingStartedAt by mutableLongStateOf(0L)
     var recordingElapsedMs by mutableLongStateOf(0L)
+    /** Recent microphone levels while recording, oldest first. */
+    var recordingWaveform by mutableStateOf<List<Float>>(emptyList())
     var recordedMedia by mutableStateOf<RecordedMedia?>(null)
     var threadRoot by mutableStateOf<ChatMessage?>(null)
     /** Message whose text is open in the selectable-text dialog. */
@@ -152,6 +159,11 @@ internal class DialogScreenViewModel(
     var scrollRequest by mutableStateOf<ScrollRequest?>(null)
     var editingMessage by mutableStateOf<ChatMessage?>(null)
     var replyingTo by mutableStateOf<ChatMessage?>(null)
+    /** Chosen passage of [replyingTo], when the reply quotes one. */
+    var replyQuote by mutableStateOf<MessageReplyQuote?>(null)
+    var showChecklistDialog by mutableStateOf(false)
+    /** Checklist message the "add tasks" editor appends to. */
+    var addChecklistTasksTarget by mutableStateOf<ChatMessage?>(null)
     var locallySentMessageIds by mutableStateOf<Set<Long>>(emptySet())
     var composerHeightPx by mutableStateOf(0)
     var draftRestored by mutableStateOf(false)

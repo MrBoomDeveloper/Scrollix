@@ -82,6 +82,7 @@ import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageReplyQuote
 import com.mrboomdev.scrollix.data.model.DownloadedFile
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageReply
@@ -679,6 +680,20 @@ class TelegramSession(
     }
 
 
+    override suspend fun loadMessageReactionReactors(
+        providerDialogId: String,
+        messageId: Long,
+        reaction: MessageReactionOption,
+        offset: String,
+        limit: Int
+    ) = loadMessageReactionReactorsImpl(
+        providerDialogId = providerDialogId,
+        messageId = messageId,
+        reaction = reaction,
+        offset = offset,
+        limit = limit
+    )
+
     override suspend fun logout() {
         if (closed) return
 
@@ -714,11 +729,25 @@ class TelegramSession(
 
 
     override suspend fun loadFile(fileId: Int): Result<ByteArray> = loadFileImpl(fileId)
+
+    /** Fractions of the files downloading right now, keyed by TDLib file id. */
+    internal val downloadFractions = MutableStateFlow<Map<Int, Float>>(emptyMap())
+
+    override fun mediaDownloadProgress(fileId: Int): Float? = downloadFractions.value[fileId]
+
+    override suspend fun cancelMediaDownload(fileId: Int) {
+        downloadFractions.update { fractions -> fractions - fileId }
+
+        // TDLib keeps the partial file on disk; asking again resumes from it.
+        runCatching {
+            client.cancelDownloadFile(fileId = fileId, onlyIfPending = true)
+        }
+    }
     override suspend fun loadCachedMedia(remoteUniqueId: String): ByteArray? = loadCachedMediaImpl(remoteUniqueId)
     override suspend fun loadFileIfUnique(fileId: Int, uniqueId: String): Result<ByteArray> = loadFileIfUniqueImpl(fileId, uniqueId)
     override suspend fun loadMessageThread(providerDialogId: String, messageId: Long, limit: Int): Result<com.mrboomdev.scrollix.data.model.ChatMessageThread> = loadMessageThreadImpl(providerDialogId, messageId, limit)
     override suspend fun sendMessageToThread(threadChatId: String, rootMessageId: Long, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>): Result<Unit> = sendMessageToThreadImpl(threadChatId, rootMessageId, text, customEmojis, formatting)
-    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean): Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting, scheduling, sendSilently)
+    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean, replyQuote: MessageReplyQuote?): Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting, scheduling, sendSilently, replyQuote)
     override suspend fun sendFile(providerDialogId: String, path: String, asPhoto: Boolean): Result<Unit> = sendFileImpl(providerDialogId, path, asPhoto)
     override suspend fun sendVoiceNote(providerDialogId: String, path: String, durationSeconds: Int): Result<Unit> = sendVoiceNoteImpl(providerDialogId, path, durationSeconds)
     override suspend fun sendVideoNote(providerDialogId: String, path: String, durationSeconds: Int): Result<Unit> = sendVideoNoteImpl(providerDialogId, path, durationSeconds)
@@ -746,7 +775,7 @@ class TelegramSession(
 
     override suspend fun setDialogUnread(providerDialogId: String, unread: Boolean): Result<Unit> = setDialogUnreadImpl(providerDialogId, unread)
 
-    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean): Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId, hideSender, removeCaption)
+    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean, targetTopicId: Long?): Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId, hideSender, removeCaption, targetTopicId)
     override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray, forEveryone: Boolean): Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds, forEveryone)
 
     override suspend fun messageLink(providerDialogId: String, messageId: Long): Result<String> = messageLinkImpl(providerDialogId, messageId)
@@ -774,7 +803,17 @@ class TelegramSession(
     override suspend fun saveDraft(providerDialogId: String, text: String, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, threadId: Long): Result<Unit> = saveDraftImpl(providerDialogId, text, customEmojis, formatting, threadId)
 
     override suspend fun searchMessages(providerDialogId: String, query: String, limit: Int, fromMessageId: Long?): Result<List<ChatMessage>> = searchMessagesImpl(providerDialogId, query, limit, fromMessageId)
-    override suspend fun searchGlobalMessages(query: String, limit: Int): Result<List<ChatMessage>> = searchGlobalMessagesImpl(query, limit)
+    override suspend fun searchGlobalMessages(
+        query: String,
+        limit: Int,
+        minTimestamp: Long,
+        maxTimestamp: Long
+    ): Result<List<ChatMessage>> = searchGlobalMessagesImpl(
+        query = query,
+        limit = limit,
+        minTimestamp = minTimestamp,
+        maxTimestamp = maxTimestamp
+    )
     override suspend fun searchChats(query: String, limit: Int): Result<List<Dialog>> = searchChatsImpl(query, limit)
     override suspend fun searchPublicChats(query: String, limit: Int, kind: PublicChatSearchKind): Result<List<Dialog>> = searchPublicChatsImpl(query, limit, kind)
     override suspend fun searchPublicPosts(query: String, offset: String, limit: Int, starCount: Long): Result<PostSearchPage> = searchPublicPostsImpl(query, offset, limit, starCount)
@@ -786,6 +825,20 @@ class TelegramSession(
 
     override suspend fun loadNotificationSettings(): Result<NotificationSettings> = loadNotificationSettingsImpl()
     override val supportsLastSeenPrivacy: Boolean get() = true
+    override val supportsReporting: Boolean get() = true
+
+    override suspend fun reportMessage(
+        providerDialogId: String,
+        messageIds: LongArray,
+        optionId: String?,
+        comment: String
+    ): Result<com.mrboomdev.scrollix.data.model.MessageReportResult> = reportMessagesImpl(
+        providerDialogId = providerDialogId,
+        messageIds = messageIds,
+        optionId = optionId,
+        comment = comment
+    )
+
     override suspend fun loadLastSeenVisibility(): Result<LastSeenVisibility> = loadLastSeenVisibilityImpl()
     override suspend fun setLastSeenVisibility(visibility: LastSeenVisibility): Result<Unit> = setLastSeenVisibilityImpl(visibility)
     override suspend fun setScopeMuted(scope: NotificationScope, muted: Boolean): Result<Unit> = setScopeMutedImpl(scope, muted)
@@ -800,6 +853,14 @@ class TelegramSession(
     override suspend fun editForumTopicTitle(providerDialogId: String, topicId: Long, title: String): Result<Unit> = editForumTopicTitleImpl(providerDialogId, topicId, title)
     override suspend fun setForumTopicClosed(providerDialogId: String, topicId: Long, closed: Boolean): Result<Unit> = setForumTopicClosedImpl(providerDialogId, topicId, closed)
     override suspend fun setForumTopicPinned(providerDialogId: String, topicId: Long, pinned: Boolean): Result<Unit> = setForumTopicPinnedImpl(providerDialogId, topicId, pinned)
+
+    override val supportsTopicNotifications: Boolean get() = true
+
+    override suspend fun setForumTopicMuted(providerDialogId: String, topicId: Long, muted: Boolean): Result<Unit> = setForumTopicMutedImpl(providerDialogId, topicId, muted)
+
+    override val supportsChecklistAuthoring: Boolean get() = true
+    override suspend fun sendChecklist(providerDialogId: String, title: String, tasks: List<String>, othersCanAddTasks: Boolean, othersCanMarkTasksAsDone: Boolean, replyToMessageId: Long?): Result<Unit> = sendChecklistImpl(providerDialogId, title, tasks, othersCanAddTasks, othersCanMarkTasksAsDone, replyToMessageId)
+    override suspend fun addChecklistTasks(providerDialogId: String, messageId: Long, tasks: List<String>): Result<Unit> = addChecklistTasksImpl(providerDialogId, messageId, tasks)
     override suspend fun isDialogMuted(providerDialogId: String): Boolean? = isDialogMutedImpl(providerDialogId)
     override suspend fun loadDataUsage(): Result<DataUsageSummary> = loadDataUsageImpl()
     override suspend fun resetDataUsageStatistics(): Result<Unit> = resetDataUsageStatisticsImpl()

@@ -41,6 +41,19 @@ internal val TranslationLanguages = listOf(
 )
 
 /**
+ * The text a bubble renders. A shown translation replaces the original in
+ * place, which is what the message menu means by "Show original"; an absent
+ * or blank translation, or a hidden one, leaves the original untouched.
+ */
+internal fun messageTranslationToShow(
+    translation: String?,
+    isTranslationHidden: Boolean
+): String? {
+    if (isTranslationHidden) return null
+    return translation?.takeIf { it.isNotBlank() }
+}
+
+/**
  * Normalizes a platform locale into the language code TDLib expects. Devices
  * report locales such as "ru-RU", "pt_BR" or "zh-Hans-CN", while the
  * translation API takes the bare language ("ru", "pt", "zh"). An unknown or

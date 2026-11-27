@@ -8,8 +8,11 @@ import java.io.File
 actual fun createVoicePlayer(): VoicePlayback = AndroidVoicePlayer()
 
 private class AndroidVoicePlayer : VoicePlayback {
+    override val supportsSpeed: Boolean = true
+
     private var player: MediaPlayer? = null
     private var file: File? = null
+    private var speed = 1f
 
     override fun play(
         bytes: ByteArray,
@@ -41,9 +44,23 @@ private class AndroidVoicePlayer : VoicePlayback {
             }
 
             mediaPlayer.start()
+            applySpeed(mediaPlayer)
             player = mediaPlayer
             true
         }.getOrDefault(false)
+    }
+
+    override fun setSpeed(speed: Float) {
+        this.speed = speed.coerceIn(0.5f, 2f)
+        player?.let(::applySpeed)
+    }
+
+    private fun applySpeed(mediaPlayer: MediaPlayer) {
+        runCatching {
+            mediaPlayer.playbackParams = mediaPlayer.playbackParams
+                .setSpeed(speed)
+                .setPitch(1f)
+        }
     }
 
     override fun seekTo(positionMs: Long) {

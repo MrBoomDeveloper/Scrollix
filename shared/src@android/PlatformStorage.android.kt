@@ -3,9 +3,13 @@ package com.mrboomdev.scrollix.data.storage
 import com.mrboomdev.scrollix.data.AppMode
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URLConnection
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -168,6 +172,88 @@ actual suspend fun saveFileToDevice(fileName: String, bytes: ByteArray): String?
         target.writeBytes(bytes)
         target.absolutePath
     }.getOrNull()
+}
+
+private fun contentUriFor(path: String): Uri? {
+    val file = File(path)
+    if (!file.isFile) return null
+
+    // Only the folders declared in res/xml/scrollix_file_paths.xml may be
+    // exposed; anything else is a programming error, not a crash.
+    return runCatching {
+        FileProvider.getUriForFile(
+            AndroidAppContext.context,
+            "${AndroidAppContext.context.packageName}.fileprovider",
+            file
+        )
+    }.getOrNull()
+}
+
+private fun mimeTypeFor(path: String, mimeType: String?): String {
+    if (!mimeType.isNullOrBlank()) return mimeType
+
+    return URLConnection.guessContentTypeFromName(path) ?: "application/octet-stream"
+}
+
+actual fun openFileWith(path: String, mimeType: String?): Boolean {
+    val uri = contentUriFor(path) ?: return false
+
+    val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, mimeTypeFor(path, mimeType))
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    return runCatching {
+        AndroidAppContext.context.startActivity(intent)
+        true
+    }.getOrDefault(false)
+}
+
+actual fun shareFile(path: String, mimeType: String?): Boolean {
+    val uri = contentUriFor(path) ?: return false
+
+    val send = Intent(Intent.ACTION_SEND)
+        .setType(mimeTypeFor(path, mimeType))
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+    val chooser = Intent.createChooser(send, null)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    return runCatching {
+        AndroidAppContext.context.startActivity(chooser)
+        true
+    }.getOrDefault(false)
+}
+
+// Both cache directories hold only files this app created: recordings waiting
+// for review, temporary audio and video for playback. Nothing else to protect.
+private fun temporaryDirectories(): List<File> {
+    val context = AndroidAppContext.context
+    return listOfNotNull(context.cacheDir, context.externalCacheDir)
+}
+
+actual suspend fun temporaryFilesBytes(): Long = withContext(Dispatchers.IO) {
+    temporaryDirectories().sumOf { directory ->
+        directory.walkTopDown()
+            .filter { entry -> entry.isFile }
+            .sumOf { entry -> entry.length() }
+    }
+}
+
+actual suspend fun clearTemporaryFiles(): Long = withContext(Dispatchers.IO) {
+    var freed = 0L
+
+    temporaryDirectories().forEach { directory ->
+        directory.listFiles()?.forEach { child ->
+            freed += child.walkTopDown()
+                .filter { entry -> entry.isFile }
+                .sumOf { entry -> entry.length() }
+
+            child.deleteRecursively()
+        }
+    }
+
+    freed
 }
 
 actual fun randomId(): String = UUID.randomUUID().toString()

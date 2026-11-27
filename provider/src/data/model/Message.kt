@@ -179,6 +179,36 @@ data class MessageReply(
 )
 
 /**
+ * A chosen passage of the replied-to message. [position] is the UTF-16 offset
+ * of [text] in the original message, which is what the provider stores so the
+ * quote can be highlighted for every reader.
+ */
+@Serializable
+data class MessageReplyQuote(
+    val text: String,
+    val position: Int = 0
+)
+
+@Serializable
+enum class MessageGiftKind {
+    Gift,
+    Giveaway,
+    GiveawayWinners,
+    GiveawayCompleted
+}
+
+/** A gift or giveaway message, rendered as a card instead of plain text. */
+@Serializable
+data class MessageGiftInfo(
+    val kind: MessageGiftKind,
+    val title: String,
+    val subtitle: String = "",
+    val starCount: Long = 0,
+    val isUpgraded: Boolean = false,
+    val isRefunded: Boolean = false
+)
+
+/**
  * One forum topic of a chat: a thread with its own title, icon and unread
  * counter. Telegram channels keep comment threads as direct-message topics,
  * while supergroups expose them as forum topics; both map onto this shape.
@@ -193,7 +223,9 @@ data class ChatTopic(
     val iconCustomEmojiId: Long? = null,
     /** The General topic cannot be renamed, closed or pinned. */
     val isGeneral: Boolean = false,
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+    /** Notifications of this topic are muted on the server. */
+    val isMuted: Boolean = false
 )
 
 /** A provider message thread, with the chat that actually holds the replies. */
@@ -241,6 +273,10 @@ data class MessageChecklistTaskInfo(
     val id: Int,
     val text: String,
     val isDone: Boolean = false,
+    /** Account that marked the task done, before its name is resolved. */
+    val completedById: Long? = null,
+    /** Whoever marked the task done, when the provider names them. */
+    val completedByName: String? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList()
 )
 
@@ -254,6 +290,8 @@ data class MessageChecklistInfo(
     val title: String,
     val tasks: List<MessageChecklistTaskInfo> = emptyList(),
     val canMarkTasksAsDone: Boolean = false,
+    /** This account may append tasks to the list. */
+    val canAddTasks: Boolean = false,
     val customEmojis: List<CustomEmojiSpan> = emptyList()
 ) {
     /** How many tasks are already completed, for the progress line. */
@@ -386,6 +424,8 @@ data class ChatMessage(
     val poll: MessagePollInfo? = null,
     /** Non-null for a checklist message. */
     val checklist: MessageChecklistInfo? = null,
+    /** Non-null for a gift or giveaway message. */
+    val gift: MessageGiftInfo? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
     val formatting: List<MessageTextFormat> = emptyList(),
     /** Non-null while the message waits in the chat's schedule queue. */
@@ -409,6 +449,8 @@ data class ChatMessage(
     val canBeDeletedForEveryone: Boolean = true,
     val canBeForwarded: Boolean = true,
     val sendState: MessageSendState = MessageSendState.Sent,
+    /** Fraction of an outgoing file uploaded so far, null when unknown. */
+    val uploadProgress: Float? = null,
     val isRead: Boolean = false
 ) {
     /** Every attachment in display order, including a single-media message. */

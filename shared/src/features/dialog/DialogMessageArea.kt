@@ -280,6 +280,14 @@ internal fun ColumnScope.DialogMessageArea(
                                                                 }
                                                             }
                                                         }
+                                                    },
+                                                    onAddTasks = if (
+                                                        checklist.canAddTasks &&
+                                                        session?.supportsChecklistAuthoring == true
+                                                    ) {
+                                                        { addChecklistTasksTarget = message }
+                                                    } else {
+                                                        null
                                                     }
                                                 )
                                             }
@@ -551,8 +559,9 @@ internal fun ColumnScope.DialogMessageArea(
                                             onOpenWebApp = { button ->
                                                 webAppButton = button
                                             },
+                                            openMenuOnSingleTap = isMobileLayout,
                                             onDoubleTap = if (
-                                                isMobileLayout && doubleTapReaction != null
+                                                doubleTapReaction != null
                                             ) {
                                                 {
                                                     onApplyReaction(message, doubleTapReaction)
@@ -570,7 +579,10 @@ internal fun ColumnScope.DialogMessageArea(
                                                     }
                                             },
                                             onReply = if (dialog?.canSendMessages != false) {
-                                                { replyingTo = message }
+                                                {
+                                                    replyQuote = null
+                                                    replyingTo = message
+                                                }
                                             } else {
                                                 null
                                             },

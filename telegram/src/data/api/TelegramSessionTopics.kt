@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.api
 
 import dev.g000sha256.tdl.TdlResult
+import dev.g000sha256.tdl.dto.ChatNotificationSettings
 import dev.g000sha256.tdl.dto.ForumTopicIcon
 import kotlinx.coroutines.CancellationException
 
@@ -90,6 +91,66 @@ internal suspend fun TelegramSession.setForumTopicClosedImpl(
             chatId = chatId,
             forumTopicId = topicId.toInt(),
             isClosed = closed
+        )) {
+            is TdlResult.Success -> Result.success(Unit)
+            is TdlResult.Failure -> Result.failure(result.toSessionException())
+        }
+    } catch (exception: CancellationException) {
+        throw exception
+    } catch (exception: Exception) {
+        Result.failure(exception)
+    }
+}
+
+/**
+ * Mutes one topic. TDLib wants the whole notification settings object, so the
+ * current one is read first and only the mute fields are replaced; every other
+ * preference of the topic stays as its owner set it.
+ */
+internal suspend fun TelegramSession.setForumTopicMutedImpl(
+    providerDialogId: String,
+    topicId: Long,
+    muted: Boolean
+): Result<Unit> {
+    val chatId = providerDialogId.toLongOrNull()
+        ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
+
+    return try {
+        val topic = when (val result = client.getForumTopic(
+            chatId = chatId,
+            forumTopicId = topicId.toInt()
+        )) {
+            is TdlResult.Success -> result.result
+            is TdlResult.Failure -> return Result.failure(result.toSessionException())
+        }
+
+        // The DTO is not a data class, so every preference is copied by hand;
+        // only the mute fields change and the rest stay as the owner set them.
+        val current = topic.notificationSettings
+
+        val settings = ChatNotificationSettings(
+            useDefaultMuteFor = false,
+            muteFor = if (muted) Int.MAX_VALUE else 0,
+            useDefaultSound = current.useDefaultSound,
+            soundId = current.soundId,
+            useDefaultShowPreview = current.useDefaultShowPreview,
+            showPreview = current.showPreview,
+            useDefaultMuteStories = current.useDefaultMuteStories,
+            muteStories = current.muteStories,
+            useDefaultStorySound = current.useDefaultStorySound,
+            storySoundId = current.storySoundId,
+            useDefaultShowStoryPoster = current.useDefaultShowStoryPoster,
+            showStoryPoster = current.showStoryPoster,
+            useDefaultDisablePinnedMessageNotifications = current.useDefaultDisablePinnedMessageNotifications,
+            disablePinnedMessageNotifications = current.disablePinnedMessageNotifications,
+            useDefaultDisableMentionNotifications = current.useDefaultDisableMentionNotifications,
+            disableMentionNotifications = current.disableMentionNotifications
+        )
+
+        when (val result = client.setForumTopicNotificationSettings(
+            chatId = chatId,
+            forumTopicId = topicId.toInt(),
+            notificationSettings = settings
         )) {
             is TdlResult.Success -> Result.success(Unit)
             is TdlResult.Failure -> Result.failure(result.toSessionException())

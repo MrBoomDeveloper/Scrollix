@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageReplyQuote
 import com.mrboomdev.scrollix.platform.files.FilePicker
 import com.mrboomdev.scrollix.platform.media.MediaRecordingController
 import com.mrboomdev.scrollix.moved
@@ -30,6 +31,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +71,14 @@ private fun ForwardOptionRow(
     }
 }
 
+/** A forum target waiting for the topic the forwarded messages land in. */
+private data class ForwardTopicTarget(
+    val accountId: String,
+    val providerDialogId: String,
+    val title: String,
+    val messageIds: LongArray
+)
+
 @Composable
 internal fun DialogChatOverlays(
     ui: DialogScreenViewModel,
@@ -74,9 +88,20 @@ internal fun DialogChatOverlays(
     filePicker: FilePicker,
     onSend: () -> Unit
 ) = with(ui) {
+    var forwardTopicTarget by remember { mutableStateOf<ForwardTopicTarget?>(null) }
+
     selectTextMessage?.let { message ->
         MessageTextSelectionDialog(
             text = message.text,
+            onReply = if (dialog?.canSendMessages != false) {
+                { quote, position ->
+                    replyQuote = MessageReplyQuote(text = quote, position = position)
+                    replyingTo = message
+                    selectTextMessage = null
+                }
+            } else {
+                null
+            },
             onDismiss = { selectTextMessage = null }
         )
     }
@@ -105,6 +130,8 @@ internal fun DialogChatOverlays(
             customEmojiData = customEmojiData,
             customEmojiAdaptive = customEmojiAdaptive,
             session = session,
+            providerDialogId = providerDialogId,
+            messageId = live.messageId,
             onDismiss = {
                 reactionListMessage = null
                 reactionListFocusKey = null
@@ -205,7 +232,22 @@ internal fun DialogChatOverlays(
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
                                             forwardingMessageIds = null
-                                            forwardMessages(messageIds, target.providerDialogId)
+
+                                            // A forum needs a topic before the
+                                            // forward can name its target.
+                                            if (target.isForum) {
+                                                forwardTopicTarget = ForwardTopicTarget(
+                                                    accountId = target.accountId,
+                                                    providerDialogId = target.providerDialogId,
+                                                    title = target.title,
+                                                    messageIds = messageIds
+                                                )
+                                            } else {
+                                                forwardMessages(
+                                                    messageIds = messageIds,
+                                                    targetDialogId = target.providerDialogId
+                                                )
+                                            }
                                         }
                                         .padding(vertical = 8.dp, horizontal = 4.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -232,6 +274,23 @@ internal fun DialogChatOverlays(
                         }
                     }
                 }
+            }
+        )
+    }
+
+    forwardTopicTarget?.let { target ->
+        ForwardTopicDialog(
+            accountId = target.accountId,
+            providerDialogId = target.providerDialogId,
+            title = target.title,
+            onDismiss = { forwardTopicTarget = null },
+            onPick = { topicId ->
+                forwardTopicTarget = null
+                forwardMessages(
+                    messageIds = target.messageIds,
+                    targetDialogId = target.providerDialogId,
+                    targetTopicId = topicId
+                )
             }
         )
     }
@@ -346,6 +405,32 @@ internal fun DialogChatOverlays(
             onCreate = { draft ->
                 showPollDialog = false
                 sendPoll(draft)
+            }
+        )
+    }
+
+    if (showChecklistDialog) {
+        ChecklistCreateDialog(
+            header = "New checklist",
+            confirmLabel = "Send",
+            onDismiss = { showChecklistDialog = false },
+            onConfirm = { draft ->
+                showChecklistDialog = false
+                sendChecklist(draft)
+            }
+        )
+    }
+
+    addChecklistTasksTarget?.let { target ->
+        ChecklistCreateDialog(
+            header = "Add tasks",
+            confirmLabel = "Add",
+            allowTitleEdit = false,
+            showOptions = false,
+            onDismiss = { addChecklistTasksTarget = null },
+            onConfirm = { draft ->
+                addChecklistTasksTarget = null
+                addChecklistTasks(target, draft.tasks)
             }
         )
     }

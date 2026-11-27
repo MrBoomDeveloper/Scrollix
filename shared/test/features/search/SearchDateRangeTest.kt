@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.search
 
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.features.dialog.SearchDateFilter
+import com.mrboomdev.scrollix.features.dialog.minTimestamp
 
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -124,6 +125,32 @@ class SearchDateRangeTest {
         assertTrue(isInvalidDateBound("2024-02-30", endOfDay = false, zone))
         assertFalse(isInvalidDateBound("2024-02-29", endOfDay = false, zone))
         assertFalse(isInvalidDateBound("", endOfDay = false, zone))
+    }
+
+    @Test
+    fun `bounds sent to the provider match the local filter`() {
+        val from = parseDateBoundMillis("2024-03-01", endOfDay = false, zone)!!
+        val to = parseDateBoundMillis("2024-03-02", endOfDay = true, zone)!!
+
+        val (min, max) = MessageDateRange(
+            fromDate = "2024-03-01",
+            toDate = "2024-03-02"
+        ).boundsMillis(now, zone)
+
+        assertEquals(from, min)
+        assertEquals(to, max)
+
+        val (presetMin, presetMax) = MessageDateRange(
+            preset = SearchDateFilter.LastWeek
+        ).boundsMillis(now, zone)
+
+        assertEquals(SearchDateFilter.LastWeek.minTimestamp(now), presetMin)
+        assertEquals(0L, presetMax)
+    }
+
+    @Test
+    fun `an open range sends no bounds`() {
+        assertEquals(0L to 0L, MessageDateRange().boundsMillis(now, zone))
     }
 
     @Test

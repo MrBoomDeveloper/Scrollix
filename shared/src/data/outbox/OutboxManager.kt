@@ -3,9 +3,11 @@ package com.mrboomdev.scrollix.data.outbox
 import com.mrboomdev.scrollix.data.api.ApiManager
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageReplyQuote
 import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.model.MessageTextFormat
 import com.mrboomdev.scrollix.data.model.OutgoingAttachment
+import com.mrboomdev.scrollix.data.model.UploadProgressStore
 import com.mrboomdev.scrollix.data.storage.DataUsageStore
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
@@ -75,9 +77,9 @@ object OutboxManager {
     suspend fun enqueue(
         providerId: String,
         accountId: String,
-        providerDialogId: String,
-        text: String,
+        providerDialogId: String,        text: String,
         replyToMessageId: Long? = null,
+        replyQuote: MessageReplyQuote? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
         scheduling: MessageScheduling? = null,
@@ -88,6 +90,7 @@ object OutboxManager {
         providerDialogId = providerDialogId,
         text = text,
         replyToMessageId = replyToMessageId,
+        replyQuote = replyQuote,
         customEmojis = customEmojis,
         formatting = formatting,
         scheduling = scheduling,
@@ -100,6 +103,7 @@ object OutboxManager {
         providerDialogId: String,
         text: String,
         replyToMessageId: Long? = null,
+        replyQuote: MessageReplyQuote? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
         scheduling: MessageScheduling? = null,
@@ -111,6 +115,7 @@ object OutboxManager {
         kind = OutboxEntryKind.Text,
         text = text,
         replyToMessageId = replyToMessageId,
+        replyQuote = replyQuote,
         customEmojis = customEmojis,
         formatting = formatting,
         scheduling = scheduling,
@@ -214,7 +219,8 @@ object OutboxManager {
                 customEmojis = entry.customEmojis,
                 formatting = entry.formatting,
                 scheduling = entry.scheduling,
-                sendSilently = entry.silent
+                sendSilently = entry.silent,
+                replyQuote = entry.replyQuote
             )
 
             OutboxEntryKind.Files -> session.sendFiles(
@@ -270,6 +276,10 @@ object OutboxManager {
         }
 
         if (result.isSuccess) {
+            entry.attachments.forEach { attachment ->
+                UploadProgressStore.clear(attachment.path)
+            }
+
             // Only text is measurable here; attachment sizes are not tracked by
             // the queue. The statistics screen presents the number as approximate.
             if (entry.text.isNotEmpty()) {
@@ -307,6 +317,10 @@ object OutboxManager {
             )
             Result.success(Unit)
         } else {
+            entry.attachments.forEach { attachment ->
+                UploadProgressStore.clear(attachment.path)
+            }
+
             store.update(entryId) { current ->
                 current.copy(
                     state = OutboxEntryState.Failed,
@@ -340,6 +354,9 @@ object OutboxManager {
 
         scope.launch {
             jobsMutex.withLock { jobs.remove(entry.id)?.cancel() }
+            entry.attachments.forEach { attachment ->
+                UploadProgressStore.clear(attachment.path)
+            }
             store.remove(entry.id)
         }
     }
@@ -424,6 +441,7 @@ object OutboxManager {
         attachments: List<OutboxAttachment> = emptyList(),
         targetMessageIds: List<Long> = emptyList(),
         replyToMessageId: Long? = null,
+        replyQuote: MessageReplyQuote? = null,
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
         scheduling: MessageScheduling? = null,
@@ -441,6 +459,7 @@ object OutboxManager {
             attachments = attachments,
             targetMessageIds = targetMessageIds,
             replyToMessageId = replyToMessageId,
+            replyQuote = replyQuote,
             customEmojis = customEmojis,
             formatting = formatting,
             scheduling = scheduling,

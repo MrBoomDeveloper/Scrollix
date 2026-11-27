@@ -186,8 +186,8 @@ Keep these when changing related code.
 - `supportsMarkAllRead` gates the bulk action; one failing chat must not stop
   the rest.
 - Last-seen privacy is server-side (`UserPrivacySettingShowStatus`). Writing
-  sends one base rule, so exceptions added by another client are replaced — say
-  so instead of implying they survive.
+  replaces the base rule and keeps per-user/per-chat exceptions in front of it;
+  never rewrite the whole list as one rule.
 - Auto-delete reads `loadMessageAutoDeleteTime` before writing and is gated by
   `supportsMessageAutoDelete`.
 - Data saver is local: `AppSettings.dataSaving` plus `DataUsageStore`

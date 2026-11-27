@@ -106,6 +106,8 @@ fun ComposerInputRow(
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
     onAddPoll: () -> Unit,
+    /** Null hides the entry: the provider cannot compose checklists. */
+    onAddChecklist: (() -> Unit)?,
     /** Null hides the entry: the platform cannot produce a location. */
     onAddLocation: (() -> Unit)?,
     onEmojiAnchorChanged: (Rect) -> Unit,
@@ -213,6 +215,16 @@ fun ComposerInputRow(
                             onAddPoll()
                         }
                     )
+
+                    if (onAddChecklist != null) {
+                        DropdownMenuItem(
+                            text = { Text("Checklist") },
+                            onClick = {
+                                onAttachmentMenuChange(false)
+                                onAddChecklist()
+                            }
+                        )
+                    }
 
                     if (onAddLocation != null) {
                         DropdownMenuItem(

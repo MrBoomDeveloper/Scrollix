@@ -65,6 +65,9 @@ import androidx.compose.ui.unit.sp
 import com.mrboomdev.scrollix.clickableNoIndication
 import com.mrboomdev.scrollix.ui.icons.close_icon
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -476,6 +479,25 @@ fun FullscreenGalleryViewer(
     var downloaded by remember(current.fileId, current.previewFileId) {
         mutableStateOf(false)
     }
+    var downloadFraction by remember(current.fileId, current.previewFileId) {
+        mutableStateOf<Float?>(null)
+    }
+    var downloadJob by remember(current.fileId, current.previewFileId) {
+        mutableStateOf<Job?>(null)
+    }
+
+    val downloadFileId = current.fileId ?: current.previewFileId
+
+    // Watched only while this screen is saving, so a download started in the
+    // chat does not make the counter move on its own.
+    LaunchedEffect(isDownloading, downloadFileId) {
+        if (!isDownloading || downloadFileId == null) return@LaunchedEffect
+
+        while (true) {
+            downloadFraction = session?.mediaDownloadProgress(downloadFileId)
+            delay(150)
+        }
+    }
     // While the photo is zoomed, a horizontal drag pans it instead of paging.
     // The pager is blocked so a pan at the edge cannot flip the page.
     var isZoomed by remember { mutableStateOf(false) }
@@ -547,7 +569,7 @@ fun FullscreenGalleryViewer(
                     val fileId = current.fileId ?: current.previewFileId
                     ?: return@TextButton
 
-                    scope.launch {
+                    downloadJob = scope.launch {
                         isDownloading = true
 
                         val bytes = session?.loadMediaBytes(
@@ -565,17 +587,41 @@ fun FullscreenGalleryViewer(
                         }
 
                         isDownloading = false
+                        downloadFraction = null
+                        downloadJob = null
                     }
                 }
             ) {
                 Text(
                     text = when {
-                        isDownloading -> "Saving..."
+                        isDownloading -> downloadFraction
+                            ?.let { fraction -> "Saving ${(fraction * 100).toInt()}%" }
+                            ?: "Saving..."
+
                         downloaded -> "Saved"
                         else -> "Download"
                     },
                     color = Color.White
                 )
+            }
+
+            if (isDownloading) {
+                TextButton(
+                    onClick = {
+                        // The partial file stays in the media cache, so asking
+                        // again resumes instead of starting over.
+                        downloadJob?.cancel()
+                        downloadJob = null
+                        isDownloading = false
+                        downloadFraction = null
+
+                        downloadFileId?.let { fileId ->
+                            scope.launch { session?.cancelMediaDownload(fileId) }
+                        }
+                    }
+                ) {
+                    Text(text = "Cancel", color = Color.White)
+                }
             }
 
             IconButton(

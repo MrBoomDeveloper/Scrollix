@@ -161,6 +161,57 @@ actual suspend fun saveFileToDevice(fileName: String, bytes: ByteArray): String?
     }.getOrNull()
 }
 
+actual fun openFileWith(path: String, mimeType: String?): Boolean {
+    val file = File(path)
+    if (!file.isFile) return false
+
+    // The desktop has no "open with" chooser API, so the system opener is
+    // used: it shows the default application or the desktop's own picker.
+    val os = System.getProperty("os.name").orEmpty().lowercase()
+
+    val command = when {
+        os.startsWith("linux") -> listOf("xdg-open", file.absolutePath)
+        os.startsWith("mac") -> listOf("open", file.absolutePath)
+        os.startsWith("windows") -> listOf(
+            "rundll32", "url.dll,FileProtocolHandler", file.absolutePath
+        )
+
+        else -> return false
+    }
+
+    return runCatching {
+        ProcessBuilder(command).start()
+        true
+    }.getOrDefault(false)
+}
+
+// Desktop has no share sheet; the action is not offered in the UI there.
+actual fun shareFile(path: String, mimeType: String?): Boolean = false
+
+// Only files this app named are touched: the system temp directory is shared
+// with every other program on the machine.
+private fun temporaryFiles(): List<File> {
+    return File(System.getProperty("java.io.tmpdir"))
+        .listFiles()
+        ?.filter { file -> file.isFile && file.name.startsWith("scrollix-") }
+        .orEmpty()
+}
+
+actual suspend fun temporaryFilesBytes(): Long = withContext(Dispatchers.IO) {
+    temporaryFiles().sumOf { file -> file.length() }
+}
+
+actual suspend fun clearTemporaryFiles(): Long = withContext(Dispatchers.IO) {
+    var freed = 0L
+
+    temporaryFiles().forEach { file ->
+        freed += file.length()
+        file.delete()
+    }
+
+    freed
+}
+
 actual fun randomId(): String = UUID.randomUUID().toString()
 
 actual fun currentTimeMillis(): Long = System.currentTimeMillis()

@@ -11,6 +11,8 @@ import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.TargetDataLine
 import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlin.math.abs
+import kotlin.math.max
 
 @Composable
 actual fun rememberMediaRecorder(): MediaRecordingController {
@@ -32,6 +34,9 @@ private class JvmMediaRecordingController : MediaRecordingController {
     private var buffer: ByteArrayOutputStream? = null
     private var file: File? = null
     private var startedAt = 0L
+
+    @Volatile
+    private var amplitude = 0f
 
     override fun start(kind: MediaRecordingKind): Boolean {
         if (kind == MediaRecordingKind.VideoNote) return false
@@ -56,7 +61,11 @@ private class JvmMediaRecordingController : MediaRecordingController {
                 try {
                     while (line === dataLine) {
                         val read = dataLine.read(chunk, 0, chunk.size)
-                        if (read > 0) output.write(chunk, 0, read)
+
+                        if (read > 0) {
+                            output.write(chunk, 0, read)
+                            amplitude = peakAmplitude(chunk, read)
+                        }
                     }
                 } catch (_: Exception) {
                 }
@@ -69,6 +78,8 @@ private class JvmMediaRecordingController : MediaRecordingController {
         }.getOrDefault(false)
     }
 
+    override fun currentAmplitude(): Float = amplitude
+
     override fun stop(): RecordedMedia? {
         val dataLine = line ?: return null
         val output = buffer
@@ -78,6 +89,7 @@ private class JvmMediaRecordingController : MediaRecordingController {
         line = null
         buffer = null
         file = null
+        amplitude = 0f
         thread?.interrupt()
         thread = null
 
@@ -109,6 +121,7 @@ private class JvmMediaRecordingController : MediaRecordingController {
         thread?.interrupt()
         thread = null
         buffer = null
+        amplitude = 0f
         file?.delete()
         file = null
     }
@@ -118,6 +131,22 @@ private class JvmMediaRecordingController : MediaRecordingController {
     }
 
     override fun requestPermissions() = Unit
+}
+
+/** Peak of 16-bit little-endian samples in the first [length] bytes, 0..1. */
+private fun peakAmplitude(buffer: ByteArray, length: Int): Float {
+    var peak = 0
+
+    var index = 0
+    while (index + 1 < length) {
+        val sample = ((buffer[index].toInt() and 0xFF) or
+            (buffer[index + 1].toInt() shl 8)).toShort().toInt()
+
+        peak = max(peak, abs(sample))
+        index += 2
+    }
+
+    return (peak / 32768f).coerceIn(0f, 1f)
 }
 
 private fun ByteArray.toWav(format: AudioFormat): ByteArray {

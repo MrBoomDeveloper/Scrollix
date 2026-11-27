@@ -33,16 +33,18 @@ import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
+import com.mrboomdev.scrollix.data.model.MessageReplyQuote
 import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
 import com.mrboomdev.scrollix.data.model.DataUsageSummary
 import com.mrboomdev.scrollix.data.model.DataUsagePreset
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
+import com.mrboomdev.scrollix.data.model.MessageReportResult
 import com.mrboomdev.scrollix.data.model.LastSeenVisibility
 
 /** Sessions without a live transport are always considered connected. */
 private val AlwaysConnected = MutableStateFlow(true)
 
-interface AccountSession {
+interface AccountSession : ChecklistAuthoringSession {
     val accountId: String
     val providerId: String
 
@@ -179,6 +181,22 @@ interface AccountSession {
         )
     )
 
+    /** Whether a single topic can be muted and the General topic hidden. */
+    val supportsTopicNotifications: Boolean
+        get() = false
+
+    /** Mutes or unmutes notifications of one topic on the server. */
+    suspend fun setForumTopicMuted(
+        providerDialogId: String,
+        topicId: Long,
+        muted: Boolean
+    ): Result<Unit> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Topic notifications are not supported"
+        )
+    )
+
     suspend fun loadMessagesUntil(providerDialogId: String, messageId: Long): Result<Boolean>
 
     /**
@@ -227,6 +245,16 @@ interface AccountSession {
      * Returns null when nothing is cached under that id.
      */
     suspend fun loadCachedMedia(remoteUniqueId: String): ByteArray? = null
+
+    /**
+     * Fraction of [fileId] already downloaded, 0..1, or null when the provider
+     * cannot report it. The UI polls this only while a download it started is
+     * still running.
+     */
+    fun mediaDownloadProgress(fileId: Int): Float? = null
+
+    /** Stops an in-flight download. Unknown or already finished ids are ignored. */
+    suspend fun cancelMediaDownload(fileId: Int) = Unit
     /**
      * Loads the replies of a message thread. For channel comments the replies
      * live in a different chat, which [ChatMessageThread.chatId] exposes.
@@ -273,7 +301,8 @@ interface AccountSession {
         customEmojis: List<CustomEmojiSpan> = emptyList(),
         formatting: List<MessageTextFormat> = emptyList(),
         scheduling: MessageScheduling? = null,
-        sendSilently: Boolean = false
+        sendSilently: Boolean = false,
+        replyQuote: MessageReplyQuote? = null
     ): Result<Unit>
     suspend fun sendFile(
         providerDialogId: String,
@@ -574,9 +603,16 @@ interface AccountSession {
         limit: Int = 50,
         fromMessageId: Long? = null
     ): Result<List<ChatMessage>>
+    /**
+     * Global message search. A non-zero [minTimestamp]/[maxTimestamp] is a date
+     * range in epoch milliseconds, inclusive; the provider may apply it on the
+     * server instead of returning matches the caller would drop anyway.
+     */
     suspend fun searchGlobalMessages(
         query: String,
-        limit: Int = 50
+        limit: Int = 50,
+        minTimestamp: Long = 0L,
+        maxTimestamp: Long = 0L
     ): Result<List<ChatMessage>>
     suspend fun searchChats(
         query: String,
@@ -770,6 +806,27 @@ interface AccountSession {
         )
     )
 
+    /** Whether this provider can report a message to its moderators. */
+    val supportsReporting: Boolean
+        get() = false
+
+    /**
+     * Reports [messageIds] of one chat. A null [optionId] asks the provider
+     * what it requires: the result is either [MessageReportResult.Reported],
+     * a list of reasons to choose from, or a request for a comment.
+     */
+    suspend fun reportMessage(
+        providerDialogId: String,
+        messageIds: LongArray,
+        optionId: String? = null,
+        comment: String = ""
+    ): Result<MessageReportResult> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "Reporting messages is not supported"
+        )
+    )
+
     /** Whether [setChecklistTasksDone] can toggle tasks of a checklist message. */
     val supportsChecklists: Boolean
         get() = false
@@ -803,12 +860,18 @@ interface AccountSession {
      * captions. Providers that cannot do either keep
      * [supportsForwardOptions] false, and the picker does not offer them.
      */
+    /**
+     * Forwards [messageIds] into [targetDialogId]. For a forum, [targetTopicId]
+     * names the topic the messages land in; null means the general topic or a
+     * provider without topics.
+     */
     suspend fun forwardMessages(
         providerDialogId: String,
         messageIds: LongArray,
         targetDialogId: String,
         hideSender: Boolean = false,
-        removeCaption: Boolean = false
+        removeCaption: Boolean = false,
+        targetTopicId: Long? = null
     ): Result<Unit>
     /**
      * Deletes [messageIds]. With [forEveryone] the deletion reaches the other
@@ -893,6 +956,23 @@ interface AccountSession {
         providerDialogId: String,
         messageId: Long
     ): Result<List<MessageReactionOption>>
+
+    /**
+     * The reactors of one reaction on a message, paged with [offset]. A message
+     * only carries a recent window, so this fills in the rest of the list.
+     */
+    suspend fun loadMessageReactionReactors(
+        providerDialogId: String,
+        messageId: Long,
+        reaction: MessageReactionOption,
+        offset: String = "",
+        limit: Int = 50
+    ): Result<com.mrboomdev.scrollix.data.model.MessageReactionReactorsPage> = Result.failure(
+        com.mrboomdev.scrollix.data.model.SessionException(
+            com.mrboomdev.scrollix.data.model.SessionErrorCode.Unsupported,
+            "The full reaction list is not supported"
+        )
+    )
     suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?>
     /**
      * Devices currently signed in to this account. Telegram calls these active

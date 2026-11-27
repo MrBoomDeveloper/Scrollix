@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.platform.audio
 
+import com.mrboomdev.scrollix.data.media.resamplePcm16
 import com.mrboomdev.scrollix.data.media.silenceFfmpegLogs
 
 import org.bytedeco.ffmpeg.global.avutil.AV_SAMPLE_FMT_S16
@@ -16,6 +17,8 @@ import kotlin.math.log10
 actual fun createVoicePlayer(): VoicePlayback = JvmVoicePlayer()
 
 private class JvmVoicePlayer : VoicePlayback {
+    override val supportsSpeed: Boolean = true
+
     private var thread: Thread? = null
     private var bytes: ByteArray? = null
     private var completion: (() -> Unit)? = null
@@ -24,6 +27,9 @@ private class JvmVoicePlayer : VoicePlayback {
 
     @Volatile
     private var volume = 1f
+
+    @Volatile
+    private var speed = 1f
 
     @Volatile
     private var currentPositionMs = 0L
@@ -87,7 +93,10 @@ private class JvmVoicePlayer : VoicePlayback {
                             pcm[index * 2 + 1] = ((value shr 8) and 0xFF).toByte()
                         }
 
-                        line.write(pcm, 0, pcm.size)
+                        // Faster playback is a resample of the same frames,
+                        // so the reported position stays in media time.
+                        val outputPcm = resamplePcm16(pcm, channels, speed)
+                        line.write(outputPcm, 0, outputPcm.size)
                         playedSamples += samples.size / channels
                         currentPositionMs =
                             (baseSamples + playedSamples) * 1000L / sampleRate
@@ -130,6 +139,10 @@ private class JvmVoicePlayer : VoicePlayback {
     }
 
     override fun positionMs(): Long = currentPositionMs
+
+    override fun setSpeed(speed: Float) {
+        this.speed = speed.coerceIn(0.5f, 2f)
+    }
 
     override fun setVolume(volume: Float) {
         this.volume = volume.coerceIn(0f, 1f)

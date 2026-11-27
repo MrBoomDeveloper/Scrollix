@@ -160,11 +160,18 @@ internal class SearchScreenViewModel : ViewModel() {
 
         val accountIds = messageAccountId?.let { accountId -> setOf(accountId) }
 
+        // The date narrowing is also sent to the provider, so a range search
+        // does not fetch a full page just to drop most of it on this device.
+        val (minTimestamp, maxTimestamp) = messageDateRange
+            .boundsMillis(currentTimeMillis())
+
         viewModelScope.launch {
             ApiManager.searchGlobalMessages(
                 query = searchQuery,
                 limit = SearchPageSize,
-                accountIds = accountIds
+                accountIds = accountIds,
+                minTimestamp = minTimestamp,
+                maxTimestamp = maxTimestamp
             ).onSuccess { results ->
                 messageResults = results
             }.onFailure { failure ->

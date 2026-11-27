@@ -56,6 +56,30 @@ internal fun isInvalidDateBound(
 ): Boolean = text.isNotBlank() && parseDateBoundMillis(text, endOfDay, zone) == null
 
 /**
+ * Epoch-millisecond bounds of [range]; 0 on a side means "no bound". A custom
+ * range wins over the preset and a blank or unparsable bound leaves that side
+ * open. The same bounds are sent to the provider and applied to the page.
+ */
+internal fun MessageDateRange.boundsMillis(
+    nowMillis: Long,
+    zone: TimeZone = TimeZone.currentSystemDefault()
+): Pair<Long, Long> {
+    val from = if (isCustom) {
+        parseDateBoundMillis(fromDate, endOfDay = false, zone) ?: 0L
+    } else {
+        preset.minTimestamp(nowMillis)
+    }
+
+    val to = if (isCustom) {
+        parseDateBoundMillis(toDate, endOfDay = true, zone) ?: 0L
+    } else {
+        0L
+    }
+
+    return from to to
+}
+
+/**
  * Keeps the messages inside [range], preserving their order. A custom range
  * wins over the preset; a blank or unparsable bound leaves that side open.
  */
@@ -65,19 +89,10 @@ internal fun filterMessagesByRange(
     nowMillis: Long,
     zone: TimeZone = TimeZone.currentSystemDefault()
 ): List<ChatMessage> {
-    val from = if (range.isCustom) {
-        parseDateBoundMillis(range.fromDate, endOfDay = false, zone) ?: 0L
-    } else {
-        range.preset.minTimestamp(nowMillis)
-    }
+    val (from, to) = range.boundsMillis(nowMillis, zone)
+    val upper = if (to <= 0L) Long.MAX_VALUE else to
 
-    val to = if (range.isCustom) {
-        parseDateBoundMillis(range.toDate, endOfDay = true, zone) ?: Long.MAX_VALUE
-    } else {
-        Long.MAX_VALUE
-    }
+    if (from <= 0L && upper == Long.MAX_VALUE) return messages
 
-    if (from <= 0L && to == Long.MAX_VALUE) return messages
-
-    return messages.filter { message -> message.timestamp in from..to }
+    return messages.filter { message -> message.timestamp in from..upper }
 }

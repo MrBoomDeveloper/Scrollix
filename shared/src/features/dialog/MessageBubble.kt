@@ -96,6 +96,8 @@ fun MessageBubble(
     onOpenStickerSet: ((Long) -> Unit)? = null,
     onOpenWebApp: ((MessageButton) -> Unit)? = null,
     onDoubleTap: (() -> Unit)? = null,
+    /** On compact layouts a single tap opens the message menu. */
+    openMenuOnSingleTap: Boolean = false,
     onOpenSender: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
     onToggleSelection: (() -> Unit)? = null,
@@ -135,6 +137,7 @@ fun MessageBubble(
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
     var menuExpanded by remember(message.messageId) { mutableStateOf(false) }
+    var showReport by remember(message.messageId) { mutableStateOf(false) }
     var readTimestamp by remember(message.messageId) { mutableStateOf<Long?>(null) }
     var usedEmojiPacks by remember(message.messageId) {
         mutableStateOf<List<EmojiPackEntry>>(emptyList())
@@ -288,7 +291,10 @@ fun MessageBubble(
                             indication = null,
                             interactionSource = null,
                             onClick = {
-                                if (isSelectionMode) onToggleSelection?.invoke()
+                                when {
+                                    isSelectionMode -> onToggleSelection?.invoke()
+                                    openMenuOnSingleTap -> menuExpanded = true
+                                }
                             },
                             onLongClick = {
                                 if (isSelectionMode) {
@@ -522,6 +528,14 @@ fun MessageBubble(
                                 )
                             }
 
+                            message.gift?.let { gift ->
+                                MessageGiftCard(
+                                    modifier = Modifier.padding(bottom = 4.dp),
+                                    gift = gift,
+                                    isOutgoing = message.isOutgoing
+                                )
+                            }
+
                             message.linkPreview?.takeIf { it.showAboveText }?.let { preview ->
                                 LinkPreviewCard(
                                     preview = preview,
@@ -529,8 +543,13 @@ fun MessageBubble(
                                 )
                             }
 
-                            if (message.richBlocks.isNotEmpty()) {
-                                SelectionContainer {
+                            val shownTranslation = messageTranslationToShow(
+                                translation = translatedText,
+                                isTranslationHidden = isTranslationHidden
+                            )
+
+                            if (message.richBlocks.isNotEmpty() && shownTranslation == null) {
+                                BubbleSelectionContainer(message.isOutgoing) {
                                     RichMessageContent(
                                         modifier = Modifier.padding(bottom = 2.dp),
                                         blocks = message.richBlocks,
@@ -542,21 +561,41 @@ fun MessageBubble(
                                         highlightQuery = highlightQuery
                                     )
                                 }
-                            } else if (message.text.isNotBlank()) {
-                                SelectionContainer {
+                            } else if (shownTranslation != null || message.text.isNotBlank()) {
+                                BubbleSelectionContainer(message.isOutgoing) {
                                     CustomEmojiMessageText(
                                         modifier = Modifier.padding(bottom = 2.dp),
                                         lineHeight = 20.sp,
-                                        text = message.text,
-                                        emojis = message.customEmojis,
-                                        formatting = message.formatting,
-                                        data = customEmojiData,
-                                        adaptiveEmojis = customEmojiAdaptive,
+                                        text = shownTranslation ?: message.text,
+                                        emojis = if (shownTranslation == null) {
+                                            message.customEmojis
+                                        } else {
+                                            emptyList()
+                                        },
+                                        formatting = if (shownTranslation == null) {
+                                            message.formatting
+                                        } else {
+                                            emptyList()
+                                        },
+                                        data = if (shownTranslation == null) {
+                                            customEmojiData
+                                        } else {
+                                            emptyMap()
+                                        },
+                                        adaptiveEmojis = if (shownTranslation == null) {
+                                            customEmojiAdaptive
+                                        } else {
+                                            emptySet()
+                                        },
                                         onMentionClick = onMentionClick,
                                         onPhoneClick = onPhoneClick,
                                         onHashtagClick = onHashtagClick,
                                         mentionAvatars = mentionAvatars,
-                                        highlightQuery = highlightQuery,
+                                        highlightQuery = if (shownTranslation == null) {
+                                            highlightQuery
+                                        } else {
+                                            null
+                                        },
                                         trailingContent = if (isFooterInline) {
                                             {
                                                 MessageStatusRow(
@@ -580,14 +619,6 @@ fun MessageBubble(
                                 )
                             }
 
-                            if (translatedText != null && !isTranslationHidden) {
-                                TranslatedTextBlock(
-                                    modifier = Modifier.padding(top = 4.dp),
-                                    text = translatedText,
-                                    isOutgoing = message.isOutgoing,
-                                    onHide = onTranslate
-                                )
-                            }
 
                             if (message.autoDeleteAt > 0) {
                                 AutoDeleteCountdown(
@@ -864,7 +895,7 @@ fun MessageBubble(
                                         isTranslating -> "Translating…"
                                         translatedText == null -> "Translate"
                                         isTranslationHidden -> "Show translation"
-                                        else -> "Hide translation"
+                                        else -> "Show original"
                                     },
                                     icon = translate_icon,
                                     onClick = onTranslate
@@ -945,6 +976,18 @@ fun MessageBubble(
                                 onClick = onDelete
                             )
                         }
+
+                        if (
+                            session?.supportsReporting == true &&
+                            !message.isService &&
+                            !isSending
+                        ) {
+                            action(
+                                text = "Report",
+                                icon = info_icon,
+                                onClick = { showReport = true }
+                            )
+                        }
                     }
                     
                     if (usedEmojiPacks.isNotEmpty() && onOpenStickerSet != null) {
@@ -970,5 +1013,13 @@ fun MessageBubble(
                 Spacer(Modifier.widthIn(64.dp))
             }
         }
+    }
+
+    if (showReport && session != null) {
+        ReportMessageDialog(
+            session = session,
+            message = message,
+            onDismiss = { showReport = false }
+        )
     }
 }

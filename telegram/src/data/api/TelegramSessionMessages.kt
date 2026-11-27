@@ -148,7 +148,7 @@ internal suspend fun TelegramSession.sendMessageToThreadImpl(threadChatId: Strin
     )
 }
 
-internal suspend fun TelegramSession.sendMessageImpl(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling? = null, silent: Boolean = false): Result<Unit> {
+internal suspend fun TelegramSession.sendMessageImpl(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling? = null, silent: Boolean = false, replyQuote: com.mrboomdev.scrollix.data.model.MessageReplyQuote? = null): Result<Unit> {
     val chatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
 
@@ -169,7 +169,17 @@ internal suspend fun TelegramSession.sendMessageImpl(providerDialogId: String, t
             replyTo = replyToMessageId?.let { messageId ->
                 InputMessageReplyToMessage(
                     messageId = messageId,
-                    quote = null,
+                    // A chosen passage is re-sent with the reply so every
+                    // client highlights the same words.
+                    quote = replyQuote
+                        ?.takeIf { quote -> quote.text.isNotBlank() }
+                        ?.let { quote ->
+                            InputTextQuote(
+                                text = FormattedText(quote.text, emptyArray()),
+                                richTexts = emptyArray(),
+                                position = quote.position.coerceAtLeast(0)
+                            )
+                        },
                     checklistTaskId = 0,
                     pollOptionId = ""
                 )
@@ -569,7 +579,8 @@ internal suspend fun TelegramSession.forwardMessagesImpl(
     messageIds: LongArray,
     targetDialogId: String,
     hideSender: Boolean = false,
-    removeCaption: Boolean = false
+    removeCaption: Boolean = false,
+    targetTopicId: Long? = null
 ): Result<Unit> {
     val fromChatId = providerDialogId.toLongOrNull()
         ?: return Result.failure(IllegalArgumentException("Invalid dialog id"))
@@ -581,6 +592,8 @@ internal suspend fun TelegramSession.forwardMessagesImpl(
     return try {
         when (val result = client.forwardMessages(
             chatId = targetChatId,
+            // Forum topic id 0 is the General topic; non-forum chats ignore it.
+            topicId = MessageTopicForum((targetTopicId ?: 0L).toInt()),
             fromChatId = fromChatId,
             messageIds = messageIds.sortedArray(),
             // TDLib copies the content instead of referencing the original

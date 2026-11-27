@@ -430,7 +430,9 @@ object ApiManager {
     suspend fun searchGlobalMessages(
         query: String,
         limit: Int = 50,
-        accountIds: Set<String>? = null
+        accountIds: Set<String>? = null,
+        minTimestamp: Long = 0L,
+        maxTimestamp: Long = 0L
     ): Result<List<ChatMessage>> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return Result.success(emptyList())
@@ -443,11 +445,22 @@ object ApiManager {
         if (sessions.isEmpty()) return Result.success(emptyList())
 
         val results = sessions.flatMap { session ->
-            session.searchGlobalMessages(trimmed, limit).getOrDefault(emptyList())
+            session.searchGlobalMessages(
+                query = trimmed,
+                limit = limit,
+                minTimestamp = minTimestamp,
+                maxTimestamp = maxTimestamp
+            ).getOrDefault(emptyList())
         }
 
         return Result.success(
             results
+                // Only providers with server-side date filters honour the
+                // bounds themselves; the filter keeps the merged page correct.
+                .filter { message ->
+                    (minTimestamp <= 0L || message.timestamp >= minTimestamp) &&
+                        (maxTimestamp <= 0L || message.timestamp <= maxTimestamp)
+                }
                 .sortedByDescending { message -> message.timestamp }
                 .take(limit)
         )

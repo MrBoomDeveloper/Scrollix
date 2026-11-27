@@ -436,6 +436,7 @@ internal fun DialogScreenViewModel.beginRecording(kind: MediaRecordingKind) {
     recordingKind = kind
     recordingStartedAt = System.currentTimeMillis()
     recordingElapsedMs = 0L
+    recordingWaveform = emptyList()
     isRecording = true
 
     // Navigation is frozen for the whole recording: leaving the chat would
@@ -461,6 +462,7 @@ internal fun DialogScreenViewModel.startRecording(recorder: MediaRecordingContro
 
         recordingStartedAt = System.currentTimeMillis()
         recordingElapsedMs = 0L
+        recordingWaveform = emptyList()
         recordingActive = recorder.start(recordingKind)
 
         if (!recordingActive) {
@@ -476,6 +478,10 @@ internal fun DialogScreenViewModel.startRecording(recorder: MediaRecordingContro
 
         while (isRecording) {
             recordingElapsedMs = System.currentTimeMillis() - recordingStartedAt
+            recordingWaveform = appendWaveformLevel(
+                levels = recordingWaveform,
+                level = recorder.currentAmplitude()
+            )
 
             if (recordingKind == MediaRecordingKind.VideoNote &&
                 recordingElapsedMs >= 60_000L
@@ -496,6 +502,7 @@ internal fun DialogScreenViewModel.stopRecording() {
     recordedMedia = if (recordingActive) activeRecorder?.stop() else null
     recordingActive = false
     recordingElapsedMs = 0L
+    recordingWaveform = emptyList()
     DialogRecordingState.setRecording(false)
 }
 
@@ -507,6 +514,7 @@ internal fun DialogScreenViewModel.cancelRecording() {
     activeRecorder?.cancel()
     recordedMedia = null
     recordingElapsedMs = 0L
+    recordingWaveform = emptyList()
     DialogRecordingState.setRecording(false)
 }
 

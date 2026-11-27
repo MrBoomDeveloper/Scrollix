@@ -500,7 +500,9 @@ class MaxSession(
 
     override suspend fun searchGlobalMessages(
         query: String,
-        limit: Int
+        limit: Int,
+        minTimestamp: Long,
+        maxTimestamp: Long
     ): Result<List<ChatMessage>> {
         val active = rpc ?: return Result.failure(maxNotConnected())
 
@@ -920,10 +922,10 @@ class MaxSession(
 
     internal fun MaxChat.peerUser(): MaxUser? = peerUserId()?.let(users::get)
 
-    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean) : Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting)
+    override suspend fun sendMessage(providerDialogId: String, text: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean, replyQuote: com.mrboomdev.scrollix.data.model.MessageReplyQuote?) : Result<Unit> = sendMessageImpl(providerDialogId, text, replyToMessageId, customEmojis, formatting)
     override suspend fun deleteMessages(providerDialogId: String, messageIds: LongArray, forEveryone: Boolean) : Result<Unit> = deleteMessagesImpl(providerDialogId, messageIds, forEveryone)
 
-    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean) : Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId)
+    override suspend fun forwardMessages(providerDialogId: String, messageIds: LongArray, targetDialogId: String, hideSender: Boolean, removeCaption: Boolean, targetTopicId: Long?) : Result<Unit> = forwardMessagesImpl(providerDialogId, messageIds, targetDialogId)
     override suspend fun sendPoll(providerDialogId: String, question: String, options: List<String>, isAnonymous: Boolean, allowsMultipleAnswers: Boolean, allowsRevoting: Boolean, questionCustomEmojis: List<CustomEmojiSpan>, optionCustomEmojis: List<List<CustomEmojiSpan>>, optionMediaPaths: List<String?>, isQuiz: Boolean, correctOptionIndex: Int?, explanation: String) : Result<Unit> = sendPollImpl(providerDialogId, question, options, isAnonymous, allowsMultipleAnswers, allowsRevoting, questionCustomEmojis, optionCustomEmojis, optionMediaPaths, isQuiz, correctOptionIndex, explanation)
     override suspend fun votePoll(providerDialogId: String, messageId: Long, optionIds: List<String>) : Result<Unit> = votePollImpl(providerDialogId, messageId, optionIds)
     override suspend fun sendSticker(providerDialogId: String, sticker: MessageMedia) : Result<Unit> = sendStickerImpl(providerDialogId, sticker)

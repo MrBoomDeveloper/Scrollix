@@ -29,19 +29,28 @@ internal fun lastSeenVisibilityOf(rules: List<UserPrivacySettingRule>): LastSeen
 }
 
 /**
- * The rule list for one visibility. Writing it replaces every rule, including
- * exceptions another client added, because the app only offers the three base
- * values and inventing an order for unknown rules would change who can see
- * what.
+ * The rule list for one visibility, keeping the per-user and per-group
+ * exceptions another client added. Only the base rule is replaced; exceptions
+ * stay in front of it, where Telegram evaluates rules in order, so the chosen
+ * visibility applies to everyone except the people the user listed.
  */
-internal fun lastSeenRulesFor(visibility: LastSeenVisibility): UserPrivacySettingRules {
-    val rule: UserPrivacySettingRule = when (visibility) {
+internal fun lastSeenRulesFor(
+    visibility: LastSeenVisibility,
+    existing: List<UserPrivacySettingRule> = emptyList()
+): UserPrivacySettingRules {
+    val base: UserPrivacySettingRule = when (visibility) {
         LastSeenVisibility.Everybody -> UserPrivacySettingRuleAllowAll()
         LastSeenVisibility.Contacts -> UserPrivacySettingRuleAllowContacts()
         LastSeenVisibility.Nobody -> UserPrivacySettingRuleRestrictAll()
     }
 
-    return UserPrivacySettingRules(rules = arrayOf(rule))
+    val exceptions = existing.filterNot { rule ->
+        rule is UserPrivacySettingRuleAllowAll ||
+            rule is UserPrivacySettingRuleAllowContacts ||
+            rule is UserPrivacySettingRuleRestrictAll
+    }
+
+    return UserPrivacySettingRules(rules = (exceptions + base).toTypedArray())
 }
 
 internal suspend fun TelegramSession.loadLastSeenVisibilityImpl(): Result<LastSeenVisibility> {
@@ -64,10 +73,17 @@ internal suspend fun TelegramSession.setLastSeenVisibilityImpl(
     visibility: LastSeenVisibility
 ): Result<Unit> {
     return try {
+        val current = client.getUserPrivacySettingRules(UserPrivacySettingShowStatus())
+
+        val existingRules = when (current) {
+            is TdlResult.Success -> current.result.rules.toList()
+            is TdlResult.Failure -> return Result.failure(current.toSessionException())
+        }
+
         when (
             val result = client.setUserPrivacySettingRules(
                 setting = UserPrivacySettingShowStatus(),
-                rules = lastSeenRulesFor(visibility)
+                rules = lastSeenRulesFor(visibility, existingRules)
             )
         ) {
             is TdlResult.Success -> Result.success(Unit)

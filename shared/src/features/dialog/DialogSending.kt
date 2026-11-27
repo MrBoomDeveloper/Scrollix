@@ -111,6 +111,7 @@ internal fun DialogScreenViewModel.sendMessage(
 
         pendingAttachments = emptyList()
         replyingTo = null
+        replyQuote = null
 
         // A scheduled message stays in the queue instead of jumping the list.
         if (scheduling == null) {
@@ -156,9 +157,11 @@ internal fun DialogScreenViewModel.sendMessage(
     val spans = inputCustomEmojis
     val formatting = inputFormatting
     val replyToMessageId = replyingTo?.messageId
+    val quote = replyQuote
 
     clearComposer()
     replyingTo = null
+    replyQuote = null
     error = null
 
     if (scheduling == null) {
@@ -172,6 +175,7 @@ internal fun DialogScreenViewModel.sendMessage(
             providerDialogId = providerDialogId,
             text = text,
             replyToMessageId = replyToMessageId,
+            replyQuote = quote,
             customEmojis = spans,
             formatting = formatting,
             scheduling = scheduling,
@@ -220,6 +224,47 @@ internal fun DialogScreenViewModel.sendRecordedMedia(recording: RecordedMedia) {
             // Keep the review dialog open so the note can be retried.
             recordingError = failure.message ?: "Failed to send the recording"
             recordedMedia = recording
+        }
+    }
+}
+
+/** Sends a composed checklist as its own message. */
+internal fun DialogScreenViewModel.sendChecklist(draft: ChecklistDraft) {
+    val currentSession = session ?: return
+    val replyToMessageId = replyingTo?.messageId
+
+    viewModelScope.launch {
+        currentSession.sendChecklist(
+            providerDialogId = providerDialogId,
+            title = draft.title,
+            tasks = draft.tasks,
+            othersCanAddTasks = draft.othersCanAddTasks,
+            othersCanMarkTasksAsDone = draft.othersCanMarkTasksAsDone,
+            replyToMessageId = replyToMessageId
+        ).onSuccess {
+            replyingTo = null
+            replyQuote = null
+            scrollRequest = ScrollRequest.Latest
+        }.onFailure { failure ->
+            error = failure.message ?: "Failed to send the checklist"
+        }
+    }
+}
+
+/** Appends tasks to a checklist that is already on the server. */
+internal fun DialogScreenViewModel.addChecklistTasks(
+    target: ChatMessage,
+    tasks: List<String>
+) {
+    val currentSession = session ?: return
+
+    viewModelScope.launch {
+        currentSession.addChecklistTasks(
+            providerDialogId = providerDialogId,
+            messageId = target.messageId,
+            tasks = tasks
+        ).onFailure { failure ->
+            error = failure.message ?: "Failed to add tasks"
         }
     }
 }

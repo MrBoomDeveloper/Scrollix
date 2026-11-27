@@ -153,6 +153,7 @@ fun ForumTopicsDialog(
                     onQueryChange = { query = it },
                     actionError = actionError,
                     canManage = session.supportsTopicManagement,
+                    canNotify = session.supportsTopicNotifications,
                     busyTopicId = busyTopicId,
                     onSelect = { selected = it },
                     onCreate = {
@@ -180,6 +181,15 @@ fun ForumTopicsDialog(
                                 providerDialogId = providerDialogId,
                                 topicId = topic.id,
                                 pinned = !topic.isPinned
+                            )
+                        }
+                    },
+                    onToggleMuted = { topic ->
+                        runTopicAction(topic.id) {
+                            session.setForumTopicMuted(
+                                providerDialogId = providerDialogId,
+                                topicId = topic.id,
+                                muted = !topic.isMuted
                             )
                         }
                     },
@@ -275,12 +285,14 @@ private fun TopicsList(
     onQueryChange: (String) -> Unit,
     actionError: String?,
     canManage: Boolean,
+    canNotify: Boolean,
     busyTopicId: Long?,
     onSelect: (ChatTopic) -> Unit,
     onCreate: () -> Unit,
     onRename: (ChatTopic) -> Unit,
     onToggleClosed: (ChatTopic) -> Unit,
     onTogglePinned: (ChatTopic) -> Unit,
+    onToggleMuted: (ChatTopic) -> Unit,
     onRetry: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -416,10 +428,19 @@ private fun TopicsList(
                             )
                         }
 
+                        if (topic.isMuted) {
+                            Text(
+                                text = "Muted",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+
                         // The General topic is a fixed chat thread: Telegram
                         // rejects renaming, closing and pinning it, so those
-                        // actions are not offered at all.
-                        if (canManage && !topic.isGeneral) {
+                        // actions are not offered at all. Muting stays open to
+                        // everyone.
+                        if ((canManage && !topic.isGeneral) || canNotify) {
                             if (busyTopicId == topic.id) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
@@ -442,45 +463,65 @@ private fun TopicsList(
                                         expanded = expanded,
                                         onDismissRequest = { expanded = false }
                                     ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Rename") },
-                                            onClick = {
-                                                expanded = false
-                                                onRename(topic)
-                                            }
-                                        )
+                                        if (canManage && !topic.isGeneral) {
+                                            DropdownMenuItem(
+                                                text = { Text("Rename") },
+                                                onClick = {
+                                                    expanded = false
+                                                    onRename(topic)
+                                                }
+                                            )
 
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    if (topic.isClosed) {
-                                                        "Reopen"
-                                                    } else {
-                                                        "Close"
-                                                    }
-                                                )
-                                            },
-                                            onClick = {
-                                                expanded = false
-                                                onToggleClosed(topic)
-                                            }
-                                        )
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        if (topic.isClosed) {
+                                                            "Reopen"
+                                                        } else {
+                                                            "Close"
+                                                        }
+                                                    )
+                                                },
+                                                onClick = {
+                                                    expanded = false
+                                                    onToggleClosed(topic)
+                                                }
+                                            )
 
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    if (topic.isPinned) {
-                                                        "Unpin"
-                                                    } else {
-                                                        "Pin"
-                                                    }
-                                                )
-                                            },
-                                            onClick = {
-                                                expanded = false
-                                                onTogglePinned(topic)
-                                            }
-                                        )
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        if (topic.isPinned) {
+                                                            "Unpin"
+                                                        } else {
+                                                            "Pin"
+                                                        }
+                                                    )
+                                                },
+                                                onClick = {
+                                                    expanded = false
+                                                    onTogglePinned(topic)
+                                                }
+                                            )
+                                        }
+
+                                        if (canNotify) {
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        if (topic.isMuted) {
+                                                            "Unmute"
+                                                        } else {
+                                                            "Mute"
+                                                        }
+                                                    )
+                                                },
+                                                onClick = {
+                                                    expanded = false
+                                                    onToggleMuted(topic)
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }

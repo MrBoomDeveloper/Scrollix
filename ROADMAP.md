@@ -15,32 +15,6 @@ test server. MAX and VK lag behind Telegram.
 privacy → media pipeline → Telegram platform depth → MAX, then VK. Reworks run
 alongside; performance, accessibility and release work never stop.
 
-## Messaging
-
-- Comment-thread composers still keep reply text only while open: TDLib has
-  no draft for a reply thread, so those replies share the chat draft. Topic
-  drafts and cross-device conflict resolution are in place.
-- Reply quote selection (replying with a chosen passage) and
-  reply-in-another-chat.
-- Forwarding into topics.
-- Selection: range select by drag / shift-click, and archive/mute batch
-  actions.
-- Search: paged global results and grouping by account; date ranges on the
-  provider side (the presets already narrow the loaded page).
-- Last-seen per-contact exceptions: read and preserve the full TDLib rule list
-  instead of rewriting it as one base rule.
-- Reactions: paid reactions, the full `getMessageAddedReactions` list, and
-  double-tap on wide layouts.
-- Checklists: authoring, adding tasks to an existing list, "completed by".
-- Gift and giveaway rendering and participation.
-- Message effects, animated emoji and premium-only stickers.
-- Translation: replace the original text in place.
-- Secret-chat self-destruct (TTL) picker.
-- Topics: notifications, hidden topics, channel comment topics.
-- A Report action in the message menu, with reported-content history.
-- Unread divider in the topic and thread surfaces.
-- MAX/VK: caption editing for media messages.
-
 ## Chats, groups and channels
 
 - Folder management: create/edit/delete, include/exclude rules, invite links,
@@ -67,24 +41,23 @@ alongside; performance, accessibility and release work never stop.
 - Upload pipeline: progress, pause/resume, cancel, retry, background uploads,
   compression settings, EXIF stripping.
 - Staging: mixed photo/video albums, per-file progress, failure isolation.
-- Download manager: queue, progress, cancel, open-with, share, save to device.
+- Download manager: one queue shared by the chat, the viewer and the Downloads
+  tab. Chat file cards and the viewer already report progress and cancel their
+  own download; what is missing is sharing one download between screens.
 - Photo editor (crop/rotate/filters/draw/text) and basic video tools
   (trim/mute/compress).
-- Audio player: waveform, speed, queue, background playback, lock-screen
-  controls.
+- Audio player: waveform, speed, background playback, lock-screen controls.
 - Adaptive video streaming instead of downloading whole files.
 - Live waveform while recording a voice note.
 - Sticker/emoji/GIF picker completeness: full sets, animated previews, emoji
   search.
-- File-aware messages: type icons, "open with", in-app preview for PDFs, text
-  and archives.
+- File-aware messages: type icons, in-app preview for PDFs and archives.
 - Media spoilers, self-destruct media, protected-content rules.
 - Location: map picker improvements, live updates, geochats if feasible.
 - Wallpapers: per-chat, gradient editor, patterns, animated wallpapers,
   sharing.
-- Attachment cleanup for outbox files, temp recordings and exports.
-- Media permissions: partial photo access on Android, scoped storage, denied
-  state UX.
+- Cleanup for abandoned uploads and outbox attachments left by a crash;
+  temporary recordings and playback files are cleared from Storage.
 - Desktop drag-and-drop of files and text; clipboard image paste on both
   platforms.
 

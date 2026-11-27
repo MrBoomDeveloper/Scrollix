@@ -235,15 +235,28 @@ internal fun BoxScope.DialogComposer(
                 ) {
                     Text(
                         modifier = Modifier.weight(1f),
-                        text = "Replying to: " +
-                            message.text.ifBlank { "message" }.take(40),
+                        text = buildString {
+                            append("Replying to: ")
+                            append(message.text.ifBlank { "message" }.take(40))
+
+                            replyQuote?.text?.takeIf { it.isNotBlank() }?.let { quote ->
+                                append(" — “")
+                                append(quote.take(40))
+                                append("”")
+                            }
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    TextButton(onClick = { replyingTo = null }) {
+                    TextButton(
+                        onClick = {
+                            replyingTo = null
+                            replyQuote = null
+                        }
+                    ) {
                         Text("Cancel")
                     }
                 }
@@ -436,6 +449,11 @@ internal fun BoxScope.DialogComposer(
                     onPickImages = { filePicker.pickImages() },
                     onPickFiles = { filePicker.pickFiles() },
                     onAddPoll = { showPollDialog = true },
+                    onAddChecklist = if (session?.supportsChecklistAuthoring == true) {
+                        { showChecklistDialog = true }
+                    } else {
+                        null
+                    },
                     // Hidden entirely when the device has no location source,
                     // since there would be nothing to offer or to turn on.
                     onAddLocation = if (isLocationSupported()) {
@@ -528,7 +546,11 @@ internal fun BoxScope.DialogComposer(
                             style = MaterialTheme.typography.titleMedium
                         )
 
-                        Spacer(Modifier.weight(1f))
+                        RecordingWaveform(
+                            modifier = Modifier.weight(1f),
+                            levels = recordingWaveform,
+                            color = MaterialTheme.colorScheme.error
+                        )
 
                         TextButton(onClick = { cancelRecording() }) {
                             Text("Cancel")

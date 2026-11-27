@@ -355,16 +355,32 @@ internal fun MessageStatusRow(
 
             if(message.isOutgoing) {
                 when (message.sendState) {
-                    MessageSendState.Sending -> Icon(
-                        modifier = Modifier.size(14.dp),
-                        tint = if (onMedia) {
-                            Color.White
+                    MessageSendState.Sending -> {
+                        val upload = message.uploadProgress
+
+                        if (upload != null) {
+                            Text(
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (onMedia) {
+                                    Color.White
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimary
+                                },
+                                text = "${(upload * 100).toInt()}%"
+                            )
                         } else {
-                            MaterialTheme.colorScheme.onPrimary
-                        },
-                        imageVector = schedule_icon,
-                        contentDescription = "Sending"
-                    )
+                            Icon(
+                                modifier = Modifier.size(14.dp),
+                                tint = if (onMedia) {
+                                    Color.White
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimary
+                                },
+                                imageVector = schedule_icon,
+                                contentDescription = "Sending"
+                            )
+                        }
+                    }
 
                     MessageSendState.Failed -> Text(
                         modifier = if (onRetrySend != null) {
@@ -531,54 +547,6 @@ internal fun ReplyQuote(
                 lineHeight = 18.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-/**
- * Translation shown under the original message text. The original stays in
- * place, so the reader can compare both; the action hides the translation
- * again, and the message menu restores it.
- */
-@Composable
-internal fun TranslatedTextBlock(
-    text: String,
-    isOutgoing: Boolean,
-    modifier: Modifier = Modifier,
-    onHide: (() -> Unit)? = null
-) {
-    val accent = if (isOutgoing) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
-
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(accent.copy(alpha = 0.10f))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = "Translated",
-            style = MaterialTheme.typography.labelSmall,
-            color = accent.copy(alpha = 0.8f)
-        )
-
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            lineHeight = 20.sp
-        )
-
-        if (onHide != null) {
-            Text(
-                modifier = Modifier.clickable(onClick = onHide),
-                text = "Hide translation",
-                style = MaterialTheme.typography.labelSmall,
-                color = accent
             )
         }
     }

@@ -27,3 +27,22 @@ expect suspend fun listDeviceDownloads(): List<DeviceDownloadedFile>
  * user cancelled or the write failed.
  */
 expect suspend fun saveFileToDevice(fileName: String, bytes: ByteArray): String?
+
+/**
+ * Hands an already saved [path] to whatever application handles [mimeType]
+ * (guessed from the extension when null). Returns false when nothing accepts
+ * the file, so the caller can say so instead of doing nothing.
+ */
+expect fun openFileWith(path: String, mimeType: String? = null): Boolean
+
+/**
+ * Sends a saved [path] through the system share sheet. Desktop has no share
+ * sheet, so it reports false and the action stays hidden there.
+ */
+expect fun shareFile(path: String, mimeType: String? = null): Boolean
+
+/** Bytes held by temporary files Scrollix created (recordings, cached streams). */
+expect suspend fun temporaryFilesBytes(): Long
+
+/** Deletes those temporary files; returns how many bytes were freed. */
+expect suspend fun clearTemporaryFiles(): Long

@@ -8,6 +8,7 @@ import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
 import com.mrboomdev.scrollix.data.storage.formatTime
+import com.mrboomdev.scrollix.data.storage.openFileWith
 import com.mrboomdev.scrollix.features.dialog.formatFileSize
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.ui.components.AvatarImage
@@ -376,6 +377,7 @@ internal fun DownloadResults(
     }
 
     var visibleCount by remember(query, results) { mutableStateOf(SearchPageSize) }
+    var openFailedName by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(query, results) {
@@ -422,6 +424,17 @@ internal fun DownloadResults(
             }
         }
 
+        openFailedName?.let { name ->
+            item(key = "downloads-open-error") {
+                Text(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    text = "No app on this device can open $name.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
         items(
             items = results.take(visibleCount),
             key = { file -> "${file.path}:${file.modifiedAt}" }
@@ -429,6 +442,9 @@ internal fun DownloadResults(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable {
+                        openFailedName = if (openFileWith(file.path)) null else file.name
+                    }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

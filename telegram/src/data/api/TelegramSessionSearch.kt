@@ -46,9 +46,18 @@ internal suspend fun TelegramSession.searchMessagesImpl(providerDialogId: String
     }
 }
 
-internal suspend fun TelegramSession.searchGlobalMessagesImpl(query: String, limit: Int): Result<List<ChatMessage>> {
+internal suspend fun TelegramSession.searchGlobalMessagesImpl(
+    query: String,
+    limit: Int,
+    minTimestamp: Long = 0L,
+    maxTimestamp: Long = 0L
+): Result<List<ChatMessage>> {
     val trimmed = query.trim()
     if (trimmed.isEmpty()) return Result.success(emptyList())
+
+    // TDLib takes Unix seconds; 0 means "no bound" on either side.
+    val minDate = (minTimestamp / 1000L).coerceAtLeast(0L).toInt()
+    val maxDate = (maxTimestamp / 1000L).coerceAtLeast(0L).toInt()
 
     return try {
         val pageSize = limit.coerceIn(1, 100)
@@ -64,8 +73,8 @@ internal suspend fun TelegramSession.searchGlobalMessagesImpl(query: String, lim
                 offset = offset,
                 limit = pageSize - found.size,
                 filter = SearchMessagesFilterEmpty(),
-                minDate = 0,
-                maxDate = 0
+                minDate = minDate,
+                maxDate = maxDate
             )) {
                 is TdlResult.Success -> result.result
                 is TdlResult.Failure -> return Result.failure(

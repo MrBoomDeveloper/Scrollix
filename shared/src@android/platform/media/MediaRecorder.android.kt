@@ -142,6 +142,16 @@ private class AndroidMediaRecordingController(
         }.getOrDefault(false)
     }
 
+    override fun currentAmplitude(): Float {
+        val current = recorder ?: return 0f
+
+        // maxAmplitude reads the peak since the last call; it throws on a
+        // recorder that was stopped between the check and the call.
+        return runCatching {
+            (current.maxAmplitude.coerceIn(0, 32767) / 32767f)
+        }.getOrDefault(0f)
+    }
+
     override fun stop(): RecordedMedia? {
         val current = recorder ?: return null
         val output = file

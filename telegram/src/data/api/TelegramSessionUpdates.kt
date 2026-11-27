@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.mrboomdev.scrollix.data.diagnostics.AppLog
 import com.mrboomdev.scrollix.data.model.DialogFolder
+import com.mrboomdev.scrollix.data.model.UploadProgressStore
 import com.mrboomdev.scrollix.data.model.parseFolderCustomEmojis
 
 internal suspend fun TelegramSession.handleUpdate(update: Update) {
@@ -120,6 +121,40 @@ internal suspend fun TelegramSession.handleUpdate(update: Update) {
         is UpdateChatEmojiStatus -> {
             updateChat(update.chatId) { entry ->
                 entry.copy(emojiStatus = update.emojiStatus)
+            }
+        }
+
+        is UpdateFile -> {
+            val file = update.file
+            val path = file.local.path
+            val total = file.size
+
+            when {
+                // A download in flight has no local path yet. Reporting its
+                // share lets the file card draw a determinate bar.
+                path.isBlank() -> {
+                    if (total > 0L && file.local.isDownloadingActive) {
+                        downloadFractions.update { fractions ->
+                            fractions + (
+                                file.id to (file.local.downloadedSize.toFloat() / total)
+                                    .coerceIn(0f, 1f)
+                            )
+                        }
+                    }
+                }
+
+                total <= 0L -> Unit
+                // Completion is reported before the next update stops saying
+                // the upload is active, so the row drops the percentage here.
+                file.remote.isUploadingCompleted -> {
+                    UploadProgressStore.clear(path)
+                    downloadFractions.update { fractions -> fractions - file.id }
+                }
+
+                file.remote.isUploadingActive -> UploadProgressStore.report(
+                    path = path,
+                    fraction = file.remote.uploadedSize.toFloat() / total
+                )
             }
         }
 
@@ -385,7 +420,7 @@ internal fun TelegramSession.updateMessageContent(chatId: Long, messageId: Long,
                 location = mapLocation(content),
                 // A checklist task toggle arrives as a content update, so the
                 // card has to be re-read here or the new state never shows.
-                checklist = mapChecklist(content),
+                checklist = mapChecklistWithNames(content),
                 isService = isServiceContent(content)
             )
         } else {

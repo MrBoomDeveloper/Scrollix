@@ -27,6 +27,13 @@ interface MediaRecordingController {
     /** Starts recording, returning false when permission or hardware is unavailable. */
     fun start(kind: MediaRecordingKind): Boolean
 
+    /**
+     * Peak level of the audio captured since the previous call, 0..1. The
+     * composer samples it while recording to draw the live waveform. Zero on
+     * platforms or modes that cannot report it.
+     */
+    fun currentAmplitude(): Float = 0f
+
     /** Stops recording and returns the captured file for review. */
     fun stop(): RecordedMedia?
 

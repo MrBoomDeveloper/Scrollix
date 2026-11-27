@@ -18,6 +18,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
@@ -43,7 +44,9 @@ internal fun MessageChecklistCard(
     isOutgoing: Boolean,
     customEmojiData: Map<Long, ByteArray>,
     customEmojiAdaptive: Set<Long> = emptySet(),
-    onToggleTask: (MessageChecklistTaskInfo) -> Unit
+    onToggleTask: (MessageChecklistTaskInfo) -> Unit,
+    /** Offered only when this account may append tasks to the list. */
+    onAddTasks: (() -> Unit)? = null
 ) {
     val contentColor = if (isOutgoing) {
         MaterialTheme.colorScheme.onPrimary
@@ -99,6 +102,24 @@ internal fun MessageChecklistCard(
                 customEmojiData = customEmojiData,
                 customEmojiAdaptive = customEmojiAdaptive,
                 onClick = { onToggleTask(task) }
+            )
+        }
+
+        if (onAddTasks != null && checklist.canAddTasks) {
+            TextButton(onClick = onAddTasks) {
+                Text("Add tasks")
+            }
+        }
+
+        val completedBy = checklist.tasks
+            .mapNotNull { task -> task.completedByName }
+            .distinct()
+
+        if (completedBy.isNotEmpty()) {
+            Text(
+                text = "Completed by ${completedBy.joinToString()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = secondaryColor
             )
         }
 

@@ -25,6 +25,18 @@
             android:roundIcon="@mipmap/ic_launcher"
             android:supportsRtl="true"
             android:theme="@style/Scrollix.Splash">
+        <!-- Opens and shares files saved into Downloads/Scrollix. Only the
+             folders listed in res/xml/scrollix_file_paths.xml are exposed. -->
+        <provider
+                android:name="androidx.core.content.FileProvider"
+                android:authorities="${applicationId}.fileprovider"
+                android:exported="false"
+                android:grantUriPermissions="true">
+            <meta-data
+                    android:name="android.support.FILE_PROVIDER_PATHS"
+                    android:resource="@xml/scrollix_file_paths"/>
+        </provider>
+
         <service
                 android:name=".ScrollixNotificationService"
                 android:exported="false"

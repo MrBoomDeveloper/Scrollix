@@ -433,7 +433,8 @@ class VkSession(
         customEmojis: List<CustomEmojiSpan>,
         formatting: List<MessageTextFormat>,
         scheduling: MessageScheduling?,
-        sendSilently: Boolean
+        sendSilently: Boolean,
+        replyQuote: com.mrboomdev.scrollix.data.model.MessageReplyQuote?
     ): Result<Unit> = runCatchingApi {
         val peerId = parsePeerId(providerDialogId)
             ?: throw SessionException(SessionErrorCode.InvalidRequest, "Invalid VK peer id")
@@ -512,6 +513,26 @@ class VkSession(
         }
     }
 
+    /**
+     * VK stores a media caption in the message text, so `messages.edit` is the
+     * caption call as well. An empty caption clears it.
+     */
+    override val supportsCaptionEditing: Boolean get() = true
+
+    override suspend fun editMessageCaption(
+        providerDialogId: String,
+        messageId: Long,
+        caption: String,
+        customEmojis: List<CustomEmojiSpan>,
+        formatting: List<MessageTextFormat>
+    ): Result<Unit> = editMessage(
+        providerDialogId = providerDialogId,
+        messageId = messageId,
+        text = caption,
+        customEmojis = customEmojis,
+        formatting = formatting
+    )
+
     override suspend fun editMessage(
         providerDialogId: String,
         messageId: Long,
@@ -539,7 +560,8 @@ class VkSession(
         messageIds: LongArray,
         targetDialogId: String,
         hideSender: Boolean,
-        removeCaption: Boolean
+        removeCaption: Boolean,
+        targetTopicId: Long?
     ): Result<Unit> = runCatchingApi {
         val target = parsePeerId(targetDialogId)
             ?: throw SessionException(SessionErrorCode.InvalidRequest, "Invalid VK peer id")
@@ -759,7 +781,9 @@ class VkSession(
 
     override suspend fun searchGlobalMessages(
         query: String,
-        limit: Int
+        limit: Int,
+        minTimestamp: Long,
+        maxTimestamp: Long
     ): Result<List<ChatMessage>> = runCatchingApi {
         val response = api?.callObject(
             "messages.search",

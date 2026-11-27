@@ -6,6 +6,7 @@ import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageSendState
+import com.mrboomdev.scrollix.data.model.UploadProgressStore
 import com.mrboomdev.scrollix.data.model.UndiscoveredMessagesMessageId
 import com.mrboomdev.scrollix.data.model.groupMessageAlbums
 import com.mrboomdev.scrollix.data.outbox.OutboxEntry
@@ -78,21 +79,29 @@ internal fun DialogScreenViewModel.observe() {
 
     viewModelScope.launch {
         OutboxManager.entries.collect { entries ->
-            pendingMessages = entries
-                .filter { entry ->
-                    entry.accountId == accountId &&
-                        entry.providerDialogId == providerDialogId &&
-                        // Scheduled sends wait in the server queue, so they must
-                        // not appear as pending rows in the history.
-                        entry.scheduling == null &&
-                        (
-                            entry.kind == OutboxEntryKind.Text ||
-                                entry.kind == OutboxEntryKind.Files
-                            )
-                }
-                .map { entry -> entry.toPendingMessage() }
+            pendingOutboxEntries = entries.filter { entry ->
+                entry.accountId == accountId &&
+                    entry.providerDialogId == providerDialogId &&
+                    // Scheduled sends wait in the server queue, so they must
+                    // not appear as pending rows in the history.
+                    entry.scheduling == null &&
+                    (
+                        entry.kind == OutboxEntryKind.Text ||
+                            entry.kind == OutboxEntryKind.Files
+                        )
+            }
 
-            recomputeDerived()
+            refreshPendingMessages()
+        }
+    }
+
+    viewModelScope.launch {
+        // Upload fractions arrive while a file is still on its way; the row
+        // only needs rebuilding when this chat actually has queued sends.
+        UploadProgressStore.progress.collect {
+            if (pendingOutboxEntries.isNotEmpty()) {
+                refreshPendingMessages()
+            }
         }
     }
 
@@ -198,7 +207,20 @@ internal fun DialogScreenViewModel.recomputeDerived() {
     loadMissingReplies()
 }
 
-private fun OutboxEntry.toPendingMessage(): ChatMessage {
+/** Rebuilds pending rows, folding in the current upload fractions. */
+internal fun DialogScreenViewModel.refreshPendingMessages() {
+    val uploadProgress = UploadProgressStore.progress.value
+
+    pendingMessages = pendingOutboxEntries.map { entry ->
+        entry.toPendingMessage(uploadProgress)
+    }
+
+    recomputeDerived()
+}
+
+private fun OutboxEntry.toPendingMessage(
+    uploadProgress: Map<String, Float>
+): ChatMessage {
     return ChatMessage(
         providerId = providerId,
         accountId = accountId,
@@ -215,7 +237,11 @@ private fun OutboxEntry.toPendingMessage(): ChatMessage {
             MessageSendState.Failed
         } else {
             MessageSendState.Sending
-        }
+        },
+        // An album reports the furthest of its files; a text send has none.
+        uploadProgress = attachments
+            .mapNotNull { attachment -> uploadProgress[attachment.path] }
+            .maxOrNull()
     )
 }
 

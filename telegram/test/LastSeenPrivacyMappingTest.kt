@@ -74,6 +74,20 @@ class LastSeenPrivacyMappingTest {
     }
 
     @Test
+    fun `writing a visibility keeps user exceptions in front of the base rule`() {
+        val exception = UserPrivacySettingRuleAllowUsers(longArrayOf(7L, 9L))
+
+        val rules = lastSeenRulesFor(
+            visibility = LastSeenVisibility.Nobody,
+            existing = listOf(exception, UserPrivacySettingRuleAllowAll())
+        ).rules.toList()
+
+        assertEquals(2, rules.size)
+        assertEquals(exception, rules.first())
+        assertTrue(rules.last() is UserPrivacySettingRuleRestrictAll)
+    }
+
+    @Test
     fun `every visibility survives a write and read round trip`() {
         LastSeenVisibility.entries.forEach { value ->
             assertEquals(

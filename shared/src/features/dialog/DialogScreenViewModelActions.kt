@@ -85,7 +85,11 @@ internal fun DialogScreenViewModel.requestDelete(messageIds: LongArray) {
     deleteConfirmationIds = messageIds
 }
 
-internal fun DialogScreenViewModel.forwardMessages(messageIds: LongArray, targetDialogId: String) {
+internal fun DialogScreenViewModel.forwardMessages(
+    messageIds: LongArray,
+    targetDialogId: String,
+    targetTopicId: Long? = null
+) {
     val currentSession = session ?: return
 
     viewModelScope.launch {
@@ -94,7 +98,8 @@ internal fun DialogScreenViewModel.forwardMessages(messageIds: LongArray, target
             messageIds = messageIds,
             targetDialogId = targetDialogId,
             hideSender = forwardHideSender,
-            removeCaption = forwardRemoveCaption
+            removeCaption = forwardRemoveCaption,
+            targetTopicId = targetTopicId
         ).onSuccess {
             selectedMessageIds = emptySet()
         }.onFailure {

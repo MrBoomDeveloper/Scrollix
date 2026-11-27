@@ -141,63 +141,92 @@ private fun MessageResultRows(
         entries.associateBy { entry -> "${entry.account.id}:${entry.dialog.providerDialogId}" }
     }
 
+    // With several accounts signed in, results are grouped under the account
+    // they came from instead of repeating its name on every row. A single
+    // account needs no headers.
+    val groups = remember(messages, showAccount) {
+        if (showAccount) {
+            messages.groupBy { message -> message.accountId }.toList()
+        } else {
+            listOf("" to messages)
+        }
+    }
+
     LazyColumn(modifier = modifier.fillMaxSize()) {
-        items(
-            items = messages,
-            key = { message ->
-                "${message.accountId}:${message.providerDialogId}:${message.messageId}"
-            }
-        ) { message ->
-            val entry = dialogs["${message.accountId}:${message.providerDialogId}"]
-            val title = entry?.dialog?.title ?: "Message"
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpen(message) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AvatarImage(
-                    avatar = entry?.dialog?.avatar ?: Avatar.fromName(title),
-                    size = 44.dp
-                )
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            modifier = Modifier.weight(1f, fill = false),
-                            text = title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        if (showAccount) {
-                            Text(
-                                modifier = Modifier.padding(start = 6.dp),
-                                text = accountNames[message.accountId].orEmpty(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
+        groups.forEach { (accountId, group) ->
+            if (showAccount && accountId.isNotBlank()) {
+                item(key = "account:$accountId") {
                     Text(
-                        text = message.postSnippet(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier.padding(
+                            start = 12.dp,
+                            top = 12.dp,
+                            end = 12.dp,
+                            bottom = 2.dp
+                        ),
+                        text = accountNames[accountId] ?: accountId,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
+
+            items(
+                items = group,
+                key = { message ->
+                    "${message.accountId}:${message.providerDialogId}:${message.messageId}"
+                }
+            ) { message ->
+                val entry = dialogs["${message.accountId}:${message.providerDialogId}"]
+
+                MessageResultRow(
+                    message = message,
+                    entry = entry,
+                    onOpen = onOpen
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageResultRow(
+    message: ChatMessage,
+    entry: AccountDialogEntry?,
+    onOpen: (ChatMessage) -> Unit
+) {
+    val title = entry?.dialog?.title ?: "Message"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpen(message) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AvatarImage(
+            avatar = entry?.dialog?.avatar ?: Avatar.fromName(title),
+            size = 44.dp
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = message.postSnippet(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

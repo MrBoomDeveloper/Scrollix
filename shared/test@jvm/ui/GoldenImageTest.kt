@@ -180,6 +180,7 @@ class GoldenImageTest {
                         onPickImages = {},
                         onPickFiles = {},
                         onAddPoll = {},
+                        onAddChecklist = {},
                         onAddLocation = {},
                         onEmojiAnchorChanged = {},
                         onToggleEmojiPicker = {},

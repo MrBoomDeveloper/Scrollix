@@ -10,6 +10,8 @@ import com.mrboomdev.scrollix.data.model.MessageLinkPreview
 import com.mrboomdev.scrollix.data.model.MessageLocationInfo
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
+import com.mrboomdev.scrollix.data.model.MessageGiftInfo
+import com.mrboomdev.scrollix.data.model.MessageGiftKind
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionReactor
 import com.mrboomdev.scrollix.data.model.MessageReply
@@ -108,7 +110,8 @@ internal fun TelegramSession.mapMessage(message: Message): ChatMessage {
         media = mapMedia(message.content),
         mediaAlbumId = message.mediaAlbumId.takeIf { it != 0L },
         poll = mapPoll(message.content),
-        checklist = mapChecklist(message.content),
+        checklist = mapChecklistWithNames(message.content),
+        gift = mapGift(message.content, message.isOutgoing),
         customEmojis = messageCustomEmojis(message.content),
         formatting = messageFormatting(message.content),
         scheduling = mapMessageScheduling(message.schedulingState),
@@ -643,6 +646,69 @@ internal fun TelegramSession.supergroupChatCreateText(content: MessageSupergroup
         "Supergroup created"
     } else {
         "Supergroup \"$title\" created"
+    }
+}
+
+/**
+ * Gift and giveaway messages keep their text for the chat list, while the
+ * bubble renders a card from this data instead.
+ */
+internal fun TelegramSession.mapGift(
+    content: MessageContent,
+    isOutgoing: Boolean
+): MessageGiftInfo? {
+    return when (content) {
+        is MessageGift -> MessageGiftInfo(
+            kind = MessageGiftKind.Gift,
+            title = "Gift",
+            subtitle = content.text.text.ifBlank {
+                if (isOutgoing) "You sent a gift" else "You've got a gift"
+            },
+            starCount = content.gift.starCount,
+            isUpgraded = content.wasUpgraded,
+            isRefunded = content.wasRefunded
+        )
+
+        is dev.g000sha256.tdl.dto.MessageGiveaway -> MessageGiftInfo(
+            kind = MessageGiftKind.Giveaway,
+            title = "Giveaway",
+            subtitle = giveawayPrizeText(content.prize)
+                .ifBlank { "${content.winnerCount} winners" },
+            starCount = giveawayPrizeStars(content.prize),
+            isRefunded = (content.prize as? dev.g000sha256.tdl.dto.GiveawayPrizeStars) == null &&
+                content.winnerCount == 0
+        )
+
+        is dev.g000sha256.tdl.dto.MessageGiveawayWinners -> MessageGiftInfo(
+            kind = MessageGiftKind.GiveawayWinners,
+            title = "Giveaway results",
+            subtitle = content.prizeDescription.ifBlank {
+                "${content.winnerCount} winners"
+            },
+            starCount = giveawayPrizeStars(content.prize),
+            isRefunded = content.wasRefunded
+        )
+
+        is dev.g000sha256.tdl.dto.MessageGiveawayCompleted -> MessageGiftInfo(
+            kind = MessageGiftKind.GiveawayCompleted,
+            title = "Giveaway completed",
+            subtitle = "${content.winnerCount} winners",
+            isRefunded = content.unclaimedPrizeCount == content.winnerCount
+        )
+
+        else -> null
+    }
+}
+
+private fun giveawayPrizeStars(prize: dev.g000sha256.tdl.dto.GiveawayPrize?): Long {
+    return (prize as? dev.g000sha256.tdl.dto.GiveawayPrizeStars)?.starCount ?: 0L
+}
+
+private fun giveawayPrizeText(prize: dev.g000sha256.tdl.dto.GiveawayPrize?): String {
+    return when (prize) {
+        is dev.g000sha256.tdl.dto.GiveawayPrizeStars -> "${prize.starCount} stars"
+        is dev.g000sha256.tdl.dto.GiveawayPrizePremium -> "${prize.monthCount} months of Premium"
+        else -> ""
     }
 }
 

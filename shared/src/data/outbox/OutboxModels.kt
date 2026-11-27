@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.data.outbox
 
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.MessageReplyQuote
 import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.model.MessageTextFormat
 
@@ -74,6 +75,8 @@ data class OutboxEntry(
     /** Message ids an edit or a deletion targets. */
     val targetMessageIds: List<Long> = emptyList(),
     val replyToMessageId: Long? = null,
+    /** Chosen passage of the replied-to message, when the reply quotes one. */
+    val replyQuote: MessageReplyQuote? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
     /** Rich text ranges of [text]; empty when the message is plain. */
     val formatting: List<MessageTextFormat> = emptyList(),
