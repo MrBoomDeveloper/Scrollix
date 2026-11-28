@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 
-internal const val CurrentOutboxVersion = 2
+internal const val CurrentOutboxVersion = 3
 
 /** A queue larger than this is unbounded disk usage with no way to inspect it. */
 internal const val MaxOutboxEntries = 500
@@ -175,6 +175,8 @@ class OutboxStore(
  *
  * Version 1 stored text sends without a [OutboxEntry.kind]; the serializable
  * default upgrades those entries to [OutboxEntryKind.Text] while decoding.
+ * Version 3 added [OutboxEntry.paused] and [OutboxEntry.progress], whose
+ * defaults keep a version 2 file valid: an unpaused entry at no progress.
  */
 internal fun migrateOutbox(state: OutboxState): OutboxState {
     if (state.version > CurrentOutboxVersion) return state

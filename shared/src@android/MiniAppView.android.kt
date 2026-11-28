@@ -9,9 +9,13 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -19,9 +23,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 actual fun MiniAppView(
     url: String,
     modifier: Modifier,
+    command: String?,
+    onEvent: (String, String) -> Unit,
     onClose: () -> Unit
 ) {
     val latestOnClose by rememberUpdatedState(onClose)
+    val latestOnEvent by rememberUpdatedState(onEvent)
+    var view by remember(url) { mutableStateOf<WebView?>(null) }
 
     key(url) {
         AndroidView(
@@ -35,7 +43,8 @@ actual fun MiniAppView(
                     settings.setSupportMultipleWindows(false)
 
                     addJavascriptInterface(
-                        MiniAppBridge { type ->
+                        MiniAppBridge { type, data ->
+                            latestOnEvent(type, data)
                             if (type == "web_app_close") latestOnClose()
                         },
                         "ScrollixMiniApp"
@@ -60,20 +69,27 @@ actual fun MiniAppView(
                     }
 
                     loadUrl(url)
+                    view = this
                 }
             }
         )
     }
+
+    // Host commands answer a main/back button press inside the page.
+    LaunchedEffect(command) {
+        val target = command ?: return@LaunchedEffect
+        view?.evaluateJavascript(target, null)
+    }
 }
 
 private class MiniAppBridge(
-    private val onEvent: (String) -> Unit
+    private val onEvent: (String, String) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // The JS bridge runs on its own thread, so callbacks go back to main.
     @JavascriptInterface
     fun postEvent(type: String, data: String) {
-        mainHandler.post { onEvent(type) }
+        mainHandler.post { onEvent(type, data) }
     }
 }

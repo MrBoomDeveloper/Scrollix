@@ -1,8 +1,12 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.DeepLinkHandler
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.BusinessQuickReply
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReplyQuote
+import com.mrboomdev.scrollix.data.model.UploadProgressStore
+import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.platform.files.FilePicker
 import com.mrboomdev.scrollix.platform.media.MediaRecordingController
 import com.mrboomdev.scrollix.moved
@@ -10,6 +14,7 @@ import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetTarget
+import com.mrboomdev.scrollix.ui.components.photoeditor.PhotoEditorDialog
 import com.mrboomdev.scrollix.ui.icons.close_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 
@@ -32,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,6 +95,47 @@ internal fun DialogChatOverlays(
     onSend: () -> Unit
 ) = with(ui) {
     var forwardTopicTarget by remember { mutableStateOf<ForwardTopicTarget?>(null) }
+
+    // The review rows read the same fractions the pending bubble shows.
+    val uploadProgress by UploadProgressStore.progress.collectAsState()
+    val quickReplies by session?.businessQuickReplies?.collectAsState()
+        ?: remember { mutableStateOf(emptyList<BusinessQuickReply>()) }
+
+    editingAttachmentIndex?.let { index ->
+        val attachment = pendingAttachments.getOrNull(index)
+
+        if (attachment == null) {
+            LaunchedEffect(index) { editingAttachmentIndex = null }
+        } else {
+            PhotoEditorDialog(
+                path = attachment.file.path,
+                onDismiss = { editingAttachmentIndex = null },
+                onApply = { edited ->
+                    replaceAttachment(index, edited)
+                    editingAttachmentIndex = null
+                }
+            )
+        }
+    }
+
+    trimmingAttachmentIndex?.let { index ->
+        val attachment = pendingAttachments.getOrNull(index)
+
+        if (attachment == null) {
+            LaunchedEffect(index) { trimmingAttachmentIndex = null }
+        } else {
+            VideoTrimSheet(
+                path = attachment.file.path,
+                fileName = attachment.file.name,
+                isMobile = isMobileLayout,
+                onDismiss = { trimmingAttachmentIndex = null },
+                onApply = { trimmed ->
+                    replaceAttachment(index, trimmed)
+                    trimmingAttachmentIndex = null
+                }
+            )
+        }
+    }
 
     selectTextMessage?.let { message ->
         MessageTextSelectionDialog(
@@ -388,12 +435,60 @@ internal fun DialogChatOverlays(
         )
     }
 
+    // A callback button's answer is modal only when the bot asked for it;
+    // toasts go through the notice host instead.
+    callbackAlert?.let { alert ->
+        AlertDialog(
+            onDismissRequest = { callbackAlert = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    callbackAlert = null
+                    alert.url?.let { url -> DeepLinkHandler.publish(url) }
+                }) {
+                    Text(if (alert.url != null) "Open" else "OK")
+                }
+            },
+            dismissButton = if (alert.url != null) {
+                {
+                    TextButton(onClick = { callbackAlert = null }) {
+                        Text("Cancel")
+                    }
+                }
+            } else {
+                null
+            },
+            text = { Text(alert.text.ifBlank { "The bot did not say anything" }) }
+        )
+    }
+
     if (showMainWebApp) {
         MainMiniAppDialog(
             session = session,
             providerDialogId = providerDialogId,
             title = dialog?.title ?: "Mini app",
             onDismiss = { showMainWebApp = false }
+        )
+    }
+
+    val invoiceMessage = paymentMessage
+
+    if (invoiceMessage != null && session != null) {
+        InvoicePaymentDialog(
+            session = session,
+            providerDialogId = providerDialogId,
+            message = invoiceMessage,
+            onDismiss = { paymentMessage = null }
+        )
+    }
+
+    if (showQuickReplies && session != null) {
+        QuickReplyPickerDialog(
+            replies = quickReplies,
+            onDismiss = { showQuickReplies = false },
+            onPick = { reply ->
+                showQuickReplies = false
+                sendBusinessQuickReply(reply.id)
+            }
         )
     }
 
@@ -525,6 +620,13 @@ internal fun DialogChatOverlays(
             captionEmojiData = inputEmojiData,
             captionEmojiAdaptive = inputEmojiAdaptive,
             isSending = isSending,
+            uploadProgress = uploadProgress,
+            sendPaused = attachmentSendPaused,
+            sendError = attachmentSendError,
+            compressPhotos = attachmentCompressPhotos,
+            onCompressPhotosChange = { enabled ->
+                attachmentCompressPhotos = enabled
+            },
             isMobile = isMobileLayout,
             session = session,
             onCaptionChange = { value -> updateInput(value, TextRange(value.length)) },
@@ -532,12 +634,25 @@ internal fun DialogChatOverlays(
             onAddImages = { filePicker.pickImages() },
             onAddFiles = { filePicker.pickFiles() },
             onMove = { from, to -> pendingAttachments = pendingAttachments.moved(from, to) },
+            onEditImage = { index -> editingAttachmentIndex = index },
+            onTrimVideo = { index -> trimmingAttachmentIndex = index },
+            onPauseSend = { pauseAttachmentSend() },
+            onResumeSend = { resumeAttachmentSend() },
             onRemove = { index ->
                 pendingAttachments = pendingAttachments.filterIndexed { itemIndex, _ ->
                     itemIndex != index
                 }
             },
             onDiscard = {
+                // The review owns the queued entry: leaving it behind would
+                // send the message after the user discarded it.
+                attachmentSendEntryId?.let { entryId ->
+                    OutboxManager.cancelEntry(entryId)
+                }
+
+                attachmentSendEntryId = null
+                attachmentSendPaused = false
+                attachmentSendError = null
                 pendingAttachments = emptyList()
                 clearComposer()
                 showAttachmentMenu = false

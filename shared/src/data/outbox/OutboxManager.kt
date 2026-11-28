@@ -12,6 +12,8 @@ import com.mrboomdev.scrollix.data.storage.DataUsageStore
 import com.mrboomdev.scrollix.data.storage.createPlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.randomId
+import com.mrboomdev.scrollix.platform.media.deleteEditorFile
+import com.mrboomdev.scrollix.platform.media.deleteTrimFile
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -21,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -59,6 +62,22 @@ object OutboxManager {
             .stateIn(scope, SharingStarted.Eagerly, store.state.value.entries)
     }
 
+    /**
+     * One value for the background notification: how many files are still on
+     * their way and how far the queue as a whole has got.
+     */
+    val uploadSummary: StateFlow<UploadSummary> by lazy {
+        combine(store.state, UploadProgressStore.progress) { state, progress ->
+            val active = state.entries.filter { entry -> entry.isUploadActive() }
+
+            UploadSummary(
+                files = active.sumOf { entry -> entry.attachments.size },
+                progress = outboxOverallUploadProgress(active, progress),
+                active = active.isNotEmpty()
+            )
+        }.stateIn(scope, SharingStarted.Eagerly, UploadSummary())
+    }
+
     /** Recovers interrupted sends and schedules every queued entry once. */
     fun start() {
         if (started) return
@@ -68,7 +87,7 @@ object OutboxManager {
             store.recoverInterrupted()
 
             store.state.value.entries
-                .filter { entry -> entry.state == OutboxEntryState.Queued }
+                .filter { entry -> entry.state == OutboxEntryState.Queued && !entry.paused }
                 .forEach { entry -> schedule(entry.id, delayMillis = 0L) }
         }
     }
@@ -195,6 +214,9 @@ object OutboxManager {
         jobsMutex.withLock { jobs.remove(entryId) }
 
         val entry = store.find(entryId) ?: return@withLock Result.success(Unit)
+        // A pause may land between the schedule and this attempt.
+        if (entry.paused) return@withLock Result.success(Unit)
+
         val attempted = store.update(entryId) { current ->
             current.copy(
                 state = OutboxEntryState.Sending,
@@ -293,6 +315,12 @@ object OutboxManager {
             return@withLock Result.success(Unit)
         }
 
+        // Paused while the attempt was in flight: the pause owns the next
+        // attempt, so this failure is neither recorded nor retried here.
+        if (store.find(entryId)?.paused != false) {
+            return@withLock Result.success(Unit)
+        }
+
         val error = (result.exceptionOrNull() ?: IllegalStateException("Message was not sent"))
             .asSessionException()
 
@@ -341,6 +369,8 @@ object OutboxManager {
             store.update(entry.id) { current ->
                 current.copy(
                     state = OutboxEntryState.Queued,
+                    paused = false,
+                    progress = null,
                     attempts = 0,
                     lastError = null
                 )
@@ -349,15 +379,112 @@ object OutboxManager {
         }
     }
 
+    /**
+     * Restarts one entry by id; the review sheet retries the same album and may
+     * replace its attachments with a new compression choice.
+     */
+    suspend fun prepareRetry(
+        entryId: String,
+        attachments: List<OutboxAttachment>? = null
+    ) {
+        store.update(entryId) { current ->
+            current.copy(
+                attachments = attachments ?: current.attachments,
+                state = OutboxEntryState.Queued,
+                paused = false,
+                progress = null,
+                attempts = 0,
+                lastError = null
+            )
+        }
+    }
+
+    /** Pauses an entry; its files, caption and reply target are kept. */
+    fun pauseEntry(entryId: String) {
+        val entry = store.find(entryId) ?: return
+        scope.launch { pauseNow(entry) }
+    }
+
+    /** Continues a paused entry from the parts the provider already has. */
+    fun resumeEntry(entryId: String) {
+        val entry = store.find(entryId) ?: return
+        scope.launch { resumeNow(entry) }
+    }
+
+    /**
+     * Drops one entry after the user abandoned its review. Files Scrollix
+     * generated for it are deleted; a file the user picked is left alone.
+     */
+    fun cancelEntry(entryId: String) {
+        scope.launch {
+            jobsMutex.withLock { jobs.remove(entryId)?.cancel() }
+            store.find(entryId)?.attachments?.forEach { attachment ->
+                UploadProgressStore.clear(attachment.path)
+                deleteStagedAttachment(attachment.path)
+            }
+            store.remove(entryId)
+        }
+    }
+
     fun cancelByLocalMessageId(localMessageId: Long) {
         val entry = store.findByLocalMessageId(localMessageId) ?: return
+        cancelEntry(entry.id)
+    }
 
-        scope.launch {
-            jobsMutex.withLock { jobs.remove(entry.id)?.cancel() }
+    private suspend fun pauseNow(entry: OutboxEntry) {
+        jobsMutex.withLock { jobs.remove(entry.id)?.cancel() }
+
+        val session = ApiManager.session(entry.accountId)
+
+        if (session?.supportsUploadPause == true) {
             entry.attachments.forEach { attachment ->
-                UploadProgressStore.clear(attachment.path)
+                runCatching { session.pauseUpload(attachment.path) }
             }
-            store.remove(entry.id)
+        }
+
+        val stoppedAt = outboxAttachmentProgress(
+            attachments = entry.attachments,
+            progressByPath = UploadProgressStore.progress.value
+        )
+
+        store.update(entry.id) { current ->
+            current.copy(
+                state = OutboxEntryState.Queued,
+                paused = true,
+                progress = stoppedAt ?: current.progress,
+                lastError = null
+            )
+        }
+    }
+
+    private suspend fun resumeNow(entry: OutboxEntry) {
+        jobsMutex.withLock { jobs.remove(entry.id)?.cancel() }
+
+        val session = ApiManager.session(entry.accountId)
+
+        if (session?.supportsUploadPause == true) {
+            entry.attachments.forEach { attachment ->
+                runCatching { session.resumeUpload(attachment.path) }
+            }
+        }
+
+        store.update(entry.id) { current ->
+            current.copy(paused = false, progress = null)
+        }
+
+        schedule(entry.id, delayMillis = 0L)
+    }
+
+    /**
+     * Removes a generated staging copy. A path the user picked is only
+     * borrowed by the queue, so deleting it would delete their file.
+     */
+    private fun deleteStagedAttachment(path: String) {
+        val name = path.substringAfterLast('/').substringAfterLast('\\')
+
+        when {
+            name.startsWith("scrollix-edit-") -> deleteEditorFile(path)
+            name.startsWith("scrollix-trim-") -> deleteTrimFile(path)
         }
     }
 
@@ -369,7 +496,7 @@ object OutboxManager {
     fun retryAll() {
         scope.launch {
             store.state.value.entries
-                .filter { entry -> entry.state != OutboxEntryState.Sending }
+                .filter { entry -> entry.state != OutboxEntryState.Sending && !entry.paused }
                 .forEach { entry ->
                     jobsMutex.withLock { jobs.remove(entry.id)?.cancel() }
                     store.update(entry.id) { current ->
@@ -397,6 +524,19 @@ object OutboxManager {
             }
 
             store.state.value.entries.forEach { entry -> store.remove(entry.id) }
+        }
+    }
+
+    /** True while at least one file send still needs bytes. */
+    fun hasActiveUploads(): Boolean =
+        store.state.value.entries.any { entry -> entry.isUploadActive() }
+
+    /** Pauses every file send that is still waiting; used by the notification. */
+    fun pauseAllUploads() {
+        scope.launch {
+            store.state.value.entries
+                .filter { entry -> entry.isUploadActive() }
+                .forEach { entry -> pauseNow(entry) }
         }
     }
 
@@ -487,6 +627,8 @@ object OutboxManager {
     private suspend fun schedule(entryId: String, delayMillis: Long) {
         jobsMutex.withLock {
             if (jobs[entryId]?.isActive == true) return
+            // Paused entries wake up through resume, never through a timer.
+            if (store.find(entryId)?.paused != false) return
 
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 if (delayMillis > 0L) delay(delayMillis)

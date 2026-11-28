@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,6 +78,15 @@ internal fun AttachmentReviewDialog(
     captionEmojiData: Map<Long, ByteArray> = emptyMap(),
     captionEmojiAdaptive: Set<Long> = emptySet(),
     isSending: Boolean,
+    /** Live upload fraction per attachment path. */
+    uploadProgress: Map<String, Float> = emptyMap(),
+    /** The send of these rows was paused from this sheet. */
+    sendPaused: Boolean = false,
+    /** A permanent failure of this send; the rows stay for a retry. */
+    sendError: String? = null,
+    /** Whether photos of this send are compressed by the provider. */
+    compressPhotos: Boolean = true,
+    onCompressPhotosChange: ((Boolean) -> Unit)? = null,
     isMobile: Boolean,
     session: AccountSession?,
     onCaptionChange: (String) -> Unit,
@@ -85,6 +95,14 @@ internal fun AttachmentReviewDialog(
     onAddFiles: () -> Unit,
     /** Moves an attachment in the album; the order is the order it is sent. */
     onMove: (from: Int, to: Int) -> Unit,
+    /** Opens the photo editor for a row; null hides the action. */
+    onEditImage: ((Int) -> Unit)? = null,
+    /** Opens the video trimmer for a row; null hides the action. */
+    onTrimVideo: ((Int) -> Unit)? = null,
+    /** Pauses the in-flight send; null hides the action. */
+    onPauseSend: (() -> Unit)? = null,
+    /** Continues a paused send; null hides the action. */
+    onResumeSend: (() -> Unit)? = null,
     onRemove: (Int) -> Unit,
     onDiscard: () -> Unit,
     onSend: () -> Unit,
@@ -110,13 +128,56 @@ internal fun AttachmentReviewDialog(
                         style = MaterialTheme.typography.titleMedium
                     )
 
+                    if (sendError != null) {
+                        Text(
+                            text = sendError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    // The rows belong to an outbox entry once sending starts,
+                    // so reordering or removing them would desync the album.
+                    val isBusy = isSending || sendPaused || sendError != null
+
+                    if (attachments.any { row -> row.asPhoto } && onCompressPhotosChange != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = "Compress photos",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+
+                                Text(
+                                    text = if (compressPhotos) {
+                                        "The provider re-encodes photos to save traffic."
+                                    } else {
+                                        "Photos are sent as files at their original quality."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+
+                            Switch(
+                                checked = compressPhotos,
+                                enabled = !isBusy,
+                                onCheckedChange = onCompressPhotosChange
+                            )
+                        }
+                    }
+
                     // The album order is fixed by dragging a row, which is
                     // also the order the attachments are sent in. The library
                     // owns the gesture and auto-scroll; the arrows that used
                     // to do this are gone.
                     val listState = rememberLazyListState()
                     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
-                        if (!isSending) {
+                        if (!isBusy) {
                             onMove(from.index, to.index)
                         }
                     }
@@ -145,9 +206,19 @@ internal fun AttachmentReviewDialog(
                                     index = index,
                                     attachment = attachment,
                                     isSending = isSending,
+                                    uploadProgress = uploadProgress[attachment.file.path],
+                                    isPaused = sendPaused,
+                                    isFailed = sendError != null,
+                                    compressPhotos = compressPhotos,
                                     dragHandleModifier = Modifier.longPressDraggableHandle(
-                                        enabled = !isSending
+                                        enabled = !isBusy
                                     ),
+                                    onEditImage = onEditImage?.let { edit ->
+                                        { edit(index) }
+                                    },
+                                    onTrimVideo = onTrimVideo?.let { trim ->
+                                        { trim(index) }
+                                    },
                                     onRemove = { onRemove(index) }
                                 )
                             }
@@ -192,7 +263,7 @@ internal fun AttachmentReviewDialog(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             TextButton(
-                                enabled = !isSending &&
+                                enabled = !isBusy &&
                                     attachments.size < MaxAlbumAttachments,
                                 onClick = onAddImages
                             ) {
@@ -200,7 +271,7 @@ internal fun AttachmentReviewDialog(
                             }
 
                             TextButton(
-                                enabled = !isSending &&
+                                enabled = !isBusy &&
                                     attachments.size < MaxAlbumAttachments,
                                 onClick = onAddFiles
                             ) {
@@ -214,6 +285,16 @@ internal fun AttachmentReviewDialog(
                                 onClick = onDiscard
                             ) {
                                 Text("Discard")
+                            }
+
+                            if (isSending && onPauseSend != null) {
+                                TextButton(onClick = onPauseSend) {
+                                    Text("Pause")
+                                }
+                            } else if (sendPaused && onResumeSend != null) {
+                                TextButton(onClick = onResumeSend) {
+                                    Text("Resume")
+                                }
                             }
 
                             SendButton(
@@ -384,12 +465,19 @@ private fun AttachmentReviewRow(
     index: Int,
     attachment: PendingAttachment,
     isSending: Boolean,
+    uploadProgress: Float? = null,
+    isPaused: Boolean = false,
+    isFailed: Boolean = false,
+    compressPhotos: Boolean = true,
     dragHandleModifier: Modifier,
     modifier: Modifier = Modifier,
+    onEditImage: (() -> Unit)? = null,
+    onTrimVideo: (() -> Unit)? = null,
     onRemove: () -> Unit
 ) {
     val isImage = attachment.asPhoto ||
         attachment.file.mimeType?.startsWith("image/") == true
+    val isVideo = attachment.file.mimeType?.startsWith("video/") == true
     var preview by remember(attachment.file.path) { mutableStateOf<ImageBitmap?>(null) }
 
     LaunchedEffect(attachment.file.path, isImage) {
@@ -466,11 +554,43 @@ private fun AttachmentReviewRow(
                 overflow = TextOverflow.Ellipsis
             )
 
+            val status = when {
+                isFailed -> "Not sent"
+                isPaused -> "Paused"
+                uploadProgress != null -> "Uploading ${(uploadProgress * 100).toInt()}%"
+                isSending -> "Uploading"
+                else -> null
+            }
+
+            val kindLabel = when {
+                !attachment.asPhoto -> "File"
+                compressPhotos -> "Photo"
+                else -> "Photo · sent as file"
+            }
+
             Text(
-                text = if (attachment.asPhoto) "Photo" else "File",
+                text = listOfNotNull(kindLabel, status).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary
+                color = if (isFailed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.secondary
+                }
             )
+        }
+
+        val isLocked = isSending || isPaused || isFailed
+
+        if (isImage && !isLocked && onEditImage != null) {
+            TextButton(onClick = onEditImage) {
+                Text("Edit")
+            }
+        }
+
+        if (isVideo && !isLocked && onTrimVideo != null) {
+            TextButton(onClick = onTrimVideo) {
+                Text("Trim")
+            }
         }
 
         // Holding the handle drags the row; the rest of it stays tappable.
@@ -484,7 +604,7 @@ private fun AttachmentReviewRow(
         )
 
         IconButton(
-            enabled = !isSending,
+            enabled = !isSending && !isPaused && !isFailed,
             onClick = onRemove
         ) {
             Icon(

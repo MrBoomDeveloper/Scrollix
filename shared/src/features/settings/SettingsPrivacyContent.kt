@@ -62,15 +62,16 @@ internal fun SettingsPrivacyContent(accountId: String? = null) {
 private fun AccountLastSeenSettings(accountId: String, displayName: String) {
     val session = remember(accountId) { ApiManager.session(accountId) }
     val scope = rememberCoroutineScope()
-    val supported = session?.supportsLastSeenPrivacy == true
+    // A provider without the setting contributes no row at all, instead of
+    // an editor whose every action is disabled.
+    if (session?.supportsLastSeenPrivacy != true) return
+
     var visibility by remember(accountId) { mutableStateOf<LastSeenVisibility?>(null) }
     var busy by remember(accountId) { mutableStateOf(false) }
     var error by remember(accountId) { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(accountId, supported) {
-        if (!supported) return@LaunchedEffect
-
-        visibility = session?.loadLastSeenVisibility()?.getOrNull()
+    LaunchedEffect(accountId) {
+        visibility = session.loadLastSeenVisibility().getOrNull()
     }
 
     fun select(value: LastSeenVisibility) {
@@ -111,10 +112,10 @@ private fun AccountLastSeenSettings(accountId: String, displayName: String) {
         )
 
         Text(
-            text = when {
-                !supported -> "This provider has no last seen setting."
-                visibility == null -> "Loading server settings..."
-                else -> "Who can see when you were last online."
+            text = if (visibility == null) {
+                "Loading server settings..."
+            } else {
+                "Who can see when you were last online."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary
@@ -131,7 +132,7 @@ private fun AccountLastSeenSettings(accountId: String, displayName: String) {
                     }
                 } else {
                     TextButton(
-                        enabled = supported && !busy,
+                        enabled = !busy,
                         onClick = { select(option) }
                     ) {
                         Text(option.title)

@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.DialogRecordingState
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.platform.files.PickedFile
 import com.mrboomdev.scrollix.platform.media.MediaRecordingController
 import com.mrboomdev.scrollix.platform.clipboard.readClipboardRichText
@@ -61,6 +62,7 @@ internal fun DialogScreenViewModel.updateInput(value: String, selection: TextRan
 
     ensureInputEmojiLoaded()
     scheduleDraftSave()
+    refreshInlineBotQuery()
 }
 
 /**
@@ -139,6 +141,13 @@ internal fun DialogScreenViewModel.clearComposer() {
     // so the steps of the previous one would only restore a stale composer.
     composerHistory.clear()
     refreshComposerHistoryState()
+
+    // The inline picker belongs to the draft that just went away.
+    inlineBotJob?.cancel()
+    inlineBotQuery = null
+    inlineBotQueryId = null
+    inlineBotResults = emptyList()
+    inlineBotLoading = false
 
     scheduleDraftSave()
 }
@@ -412,6 +421,12 @@ internal fun DialogScreenViewModel.ensureInputEmojiLoaded() {
 internal fun DialogScreenViewModel.addAttachments(picked: List<PickedFile>, asPhoto: Boolean) {
     if (picked.isEmpty() || editingMessage != null) return
 
+    // A new review starts from the saved default; the sheet can change it
+    // for this send only.
+    if (pendingAttachments.isEmpty()) {
+        attachmentCompressPhotos = AppSettingsStore.state.value.compressPhotos
+    }
+
     val free = (MaxAlbumAttachments - pendingAttachments.size).coerceAtLeast(0)
 
     if (free == 0) {
@@ -425,6 +440,23 @@ internal fun DialogScreenViewModel.addAttachments(picked: List<PickedFile>, asPh
 
     if (picked.size > free) {
         error = "Only $MaxAlbumAttachments files can be sent at once"
+    }
+}
+
+/**
+ * Puts an edited photo or a trimmed video back into the album. The row keeps
+ * its position and the baked file replaces the picked one; only an image is
+ * sent as a photo, a trimmed video stays a file.
+ */
+internal fun DialogScreenViewModel.replaceAttachment(index: Int, file: PickedFile) {
+    val asPhoto = file.mimeType?.startsWith("image/") == true
+
+    pendingAttachments = pendingAttachments.mapIndexed { itemIndex, attachment ->
+        if (itemIndex == index) {
+            PendingAttachment(file = file, asPhoto = asPhoto)
+        } else {
+            attachment
+        }
     }
 }
 

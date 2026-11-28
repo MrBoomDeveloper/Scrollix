@@ -61,10 +61,13 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         setAppNotificationsForeground(true)
+        // The screen shows the progress while it is visible.
+        UploadService.stopIfRunning(this)
     }
 
     override fun onStop() {
         setAppNotificationsForeground(false)
+        UploadService.startIfNeeded(this)
         super.onStop()
     }
 

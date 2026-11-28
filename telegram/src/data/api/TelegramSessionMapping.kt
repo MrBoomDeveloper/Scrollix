@@ -19,6 +19,9 @@ import com.mrboomdev.scrollix.data.model.MessageRichBlock
 import com.mrboomdev.scrollix.data.model.MessageRichTextStyle
 import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.model.MessageSendState
+import com.mrboomdev.scrollix.data.model.MessageReplyKeyboard
+import com.mrboomdev.scrollix.data.model.ReplyKeyboardButton
+import com.mrboomdev.scrollix.data.model.ReplyKeyboardButtonKind
 import com.mrboomdev.scrollix.data.model.RichTextSpan
 
 /** A non-null result marks the message as waiting in the schedule queue. */
@@ -112,6 +115,7 @@ internal fun TelegramSession.mapMessage(message: Message): ChatMessage {
         poll = mapPoll(message.content),
         checklist = mapChecklistWithNames(message.content),
         gift = mapGift(message.content, message.isOutgoing),
+        invoice = mapInvoice(message.content),
         customEmojis = messageCustomEmojis(message.content),
         formatting = messageFormatting(message.content),
         scheduling = mapMessageScheduling(message.schedulingState),
@@ -132,6 +136,7 @@ internal fun TelegramSession.mapMessage(message: Message): ChatMessage {
         },
         replyCount = message.interactionInfo?.replyInfo?.replyCount ?: 0,
         keyboard = mapKeyboard(message.replyMarkup, message.senderId),
+        replyKeyboard = mapReplyKeyboard(message.replyMarkup, message.senderId),
         reactions = mapReactions(message.interactionInfo),
         viewCount = message.interactionInfo?.viewCount ?: 0,
         shareCount = message.interactionInfo?.forwardCount ?: 0,
@@ -153,9 +158,10 @@ internal fun TelegramSession.mapMessage(message: Message): ChatMessage {
 }
 
 /**
- * Inline keyboards are kept for the button types this client can open:
- * plain links and bot mini apps. Callback and payment buttons are skipped
- * until they are implemented instead of rendering dead buttons.
+ * Inline keyboards keep every button this client can act on: links, bot mini
+ * apps, callback buttons, copy-to-clipboard buttons and user profiles.
+ * Payment, game and login buttons are skipped instead of rendering dead
+ * buttons, and a disabled button is kept as a hint that the bot turned it off.
  */
 internal fun TelegramSession.mapKeyboard(
     markup: ReplyMarkup?,
@@ -179,11 +185,103 @@ internal fun TelegramSession.mapKeyboard(
                         botUserId = botUserId
                     )
 
+                    is InlineKeyboardButtonTypeCallback -> MessageButton(
+                        text = button.text,
+                        callbackData = type.data.decodeToString(),
+                        botUserId = botUserId
+                    )
+
+                    // A password callback still reaches the bot; the password
+                    // prompt itself is out of scope, so it presses as a plain
+                    // callback and the bot answers with its own error.
+                    is InlineKeyboardButtonTypeCallbackWithPassword -> MessageButton(
+                        text = button.text,
+                        callbackData = type.data.decodeToString(),
+                        botUserId = botUserId
+                    )
+
+                    is InlineKeyboardButtonTypeCopyText -> MessageButton(
+                        text = button.text,
+                        copyText = type.text
+                    )
+
+                    is InlineKeyboardButtonTypeUser -> MessageButton(
+                        text = button.text,
+                        userId = type.userId
+                    )
+
+                    is InlineKeyboardButtonTypeDisabled -> MessageButton(
+                        text = button.text,
+                        isDisabled = true
+                    )
+
                     else -> null
                 }
             }
         }
         .filter { row -> row.isNotEmpty() }
+}
+
+/**
+ * The reply keyboard a bot installs below the composer. Buttons that ask for
+ * a chat, users or a managed bot cannot be answered by this client, so they
+ * keep their label and behave like plain text buttons.
+ */
+internal fun TelegramSession.mapReplyKeyboard(
+    markup: ReplyMarkup?,
+    senderId: MessageSender
+): MessageReplyKeyboard? {
+    // A removed keyboard has to be reported as an empty one: the newest markup
+    // of the chat decides, so a message without a keyboard leaves the previous
+    // one in place while an explicit removal hides it.
+    if (markup is ReplyMarkupRemoveKeyboard) return MessageReplyKeyboard()
+
+    val keyboard = markup as? ReplyMarkupShowKeyboard ?: return null
+    val botUserId = (senderId as? MessageSenderUser)?.userId
+
+    val rows = keyboard.rows
+        .map { row ->
+            row.map { button ->
+                when (val type = button.type) {
+                    is KeyboardButtonTypeText -> ReplyKeyboardButton(text = button.text)
+
+                    is KeyboardButtonTypeRequestLocation -> ReplyKeyboardButton(
+                        text = button.text,
+                        kind = ReplyKeyboardButtonKind.RequestLocation
+                    )
+
+                    is KeyboardButtonTypeRequestPhoneNumber -> ReplyKeyboardButton(
+                        text = button.text,
+                        kind = ReplyKeyboardButtonKind.RequestPhoneNumber
+                    )
+
+                    is KeyboardButtonTypeRequestPoll -> ReplyKeyboardButton(
+                        text = button.text,
+                        kind = ReplyKeyboardButtonKind.RequestPoll
+                    )
+
+                    is KeyboardButtonTypeWebApp -> ReplyKeyboardButton(
+                        text = button.text,
+                        kind = ReplyKeyboardButtonKind.WebApp,
+                        webAppUrl = type.url,
+                        botUserId = botUserId
+                    )
+
+                    else -> ReplyKeyboardButton(
+                        text = button.text,
+                        kind = ReplyKeyboardButtonKind.Unsupported
+                    )
+                }
+            }
+        }
+        .filter { row -> row.isNotEmpty() }
+
+    return MessageReplyKeyboard(
+        rows = rows,
+        placeholder = keyboard.inputFieldPlaceholder,
+        isPersistent = keyboard.isPersistent,
+        isOneTime = keyboard.oneTime
+    )
 }
 
 /** Resolves the chat or user a forwarded message originally came from. */

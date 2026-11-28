@@ -161,10 +161,18 @@ internal fun ColumnScope.DialogMessageArea(
                             rows = 6
                         )
 
+                        // A fresh bot chat explains what the bot does instead
+                        // of claiming the chat has no messages yet.
                         messages.isEmpty() -> EmptyState(
                             modifier = Modifier.align(Alignment.Center),
-                            title = "No messages yet",
-                            message = "Send the first message to start this chat.",
+                            title = if (botDescription.isNotBlank()) {
+                                dialog?.title ?: "Bot"
+                            } else {
+                                "No messages yet"
+                            },
+                            message = botDescription.ifBlank {
+                                "Send the first message to start this chat."
+                            },
                             icon = chat_bubble_icon
                         )
 
@@ -558,6 +566,20 @@ internal fun ColumnScope.DialogMessageArea(
                                             },
                                             onOpenWebApp = { button ->
                                                 webAppButton = button
+                                            },
+                                            // Callback buttons ask the bot;
+                                            // profile buttons open the user.
+                                            onBotButton = { button ->
+                                                val userId = button.userId
+
+                                                if (userId != null) {
+                                                    onOpenUserProfile(userId)
+                                                } else {
+                                                    pressBotButton(message, button)
+                                                }
+                                            },
+                                            onOpenInvoice = {
+                                                paymentMessage = message
                                             },
                                             openMenuOnSingleTap = isMobileLayout,
                                             onDoubleTap = if (

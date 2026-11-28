@@ -9,6 +9,7 @@ import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
+import com.mrboomdev.scrollix.features.dialog.WebAppLinkDialog
 import com.mrboomdev.scrollix.features.home.adjacentDialogEntry
 import com.mrboomdev.scrollix.features.home.firstUnreadEntry
 import com.mrboomdev.scrollix.features.home.key
@@ -31,6 +32,7 @@ import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.navigation.Route
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
+import com.mrboomdev.scrollix.ui.notice.AppNotice
 import com.mrboomdev.scrollix.ui.notice.AppNoticeHost
 import com.mrboomdev.scrollix.ui.notice.NoticeCenter
 import com.mrboomdev.scrollix.ui.rememberMotionTokens
@@ -165,6 +167,11 @@ fun App() {
     val listDetailStrategy = rememberListDetailSceneStrategy<NavKey>()
     var stickerSetOverlay by remember {
         mutableStateOf<Pair<String, StickerSetTarget>?>(null)
+    }
+
+    // A mini app opened from a t.me link instead of a chat button.
+    var webAppOverlay by remember {
+        mutableStateOf<Pair<String, TelegramLinkTarget.WebApp>?>(null)
     }
 
     // First run: nothing is blocked. The onboarding route is only pushed when
@@ -369,6 +376,16 @@ fun App() {
                     kind = target.kind
                 )
             }
+
+            is TelegramLinkTarget.WebApp -> {
+                webAppOverlay = accountId to target
+            }
+
+            is TelegramLinkTarget.ChatFolder -> {
+                NoticeCenter.post(
+                    AppNotice(message = "Folder \"${target.title}\" was added")
+                )
+            }
         }
     }
     
@@ -384,6 +401,7 @@ fun App() {
         when {
             showShortcuts -> showShortcuts = false
             MediaViewer.isShowing -> MediaViewer.close()
+            webAppOverlay != null -> webAppOverlay = null
             stickerSetOverlay != null -> stickerSetOverlay = null
             showQrScanner -> showQrScanner = false
 
@@ -757,6 +775,15 @@ fun App() {
                             onDismiss = { stickerSetOverlay = null }
                         )
                     }
+                }
+
+                webAppOverlay?.let { (accountId, target) ->
+                    WebAppLinkDialog(
+                        session = ApiManager.session(accountId),
+                        title = target.title,
+                        url = target.url,
+                        onDismiss = { webAppOverlay = null }
+                    )
                 }
 
                 if (showQrScanner) {

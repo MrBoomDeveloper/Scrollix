@@ -5,6 +5,7 @@ import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.outbox.OutboxAttachment
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
+import com.mrboomdev.scrollix.data.outbox.photoKeepsPhotoForm
 import com.mrboomdev.scrollix.platform.media.MediaRecordingKind
 import com.mrboomdev.scrollix.platform.media.RecordedMedia
 
@@ -79,9 +80,10 @@ internal fun DialogScreenViewModel.sendMessage(
         val formatting = inputFormatting
         val replyToMessageId = replyingTo?.messageId
 
-        clearComposer()
-
+        // An attachment send keeps the caption until the album leaves the
+        // queue, so a failure can be retried without retyping it.
         if (editing != null) {
+            clearComposer()
             editingMessage = null
 
             viewModelScope.launch {
@@ -109,29 +111,28 @@ internal fun DialogScreenViewModel.sendMessage(
             return
         }
 
-        pendingAttachments = emptyList()
-        replyingTo = null
-        replyQuote = null
-
         // A scheduled message stays in the queue instead of jumping the list.
         if (scheduling == null) {
             scrollRequest = ScrollRequest.Latest
         }
 
+        val retryingEntryId = attachmentSendEntryId
+
         viewModelScope.launch {
-            isSending = true
-            error = null
+            if (retryingEntryId != null) {
+                startAttachmentSend(
+                    entryId = retryingEntryId,
+                    isNew = false,
+                    attachments = outgoingAttachments()
+                )
+                return@launch
+            }
 
             val entry = OutboxManager.enqueueFiles(
                 providerId = currentSession.providerId,
                 accountId = currentSession.accountId,
                 providerDialogId = providerDialogId,
-                attachments = attachments.map { attachment ->
-                    OutboxAttachment(
-                        path = attachment.file.path,
-                        asPhoto = attachment.asPhoto
-                    )
-                },
+                attachments = outgoingAttachments(),
                 caption = text,
                 replyToMessageId = replyToMessageId,
                 customEmojis = spans,
@@ -140,11 +141,7 @@ internal fun DialogScreenViewModel.sendMessage(
                 silent = silent
             )
 
-            OutboxManager.sendNow(entry.id).onFailure { failure ->
-                error = failure.message ?: "Failed to send attachments"
-            }
-
-            isSending = false
+            startAttachmentSend(entry.id, isNew = true)
         }
 
         return
@@ -186,6 +183,88 @@ internal fun DialogScreenViewModel.sendMessage(
             error = failure.message ?: "Failed to send message"
         }
     }
+}
+
+/**
+ * The queued form of the current review: a photo that should not be compressed
+ * travels as a document, so the choice is captured before the send starts and
+ * survives a retry.
+ */
+private fun DialogScreenViewModel.outgoingAttachments(): List<OutboxAttachment> =
+    pendingAttachments.map { attachment ->
+        OutboxAttachment(
+            path = attachment.file.path,
+            asPhoto = photoKeepsPhotoForm(
+                asPhoto = attachment.asPhoto,
+                compressPhotos = attachmentCompressPhotos
+            )
+        )
+    }
+
+/**
+ * Runs one album attempt and keeps the review sheet open until the outcome is
+ * known, so each row can show its own upload state.
+ */
+private fun DialogScreenViewModel.startAttachmentSend(
+    entryId: String,
+    isNew: Boolean,
+    attachments: List<OutboxAttachment>? = null
+) {
+    attachmentSendEntryId = entryId
+    attachmentSendError = null
+    attachmentSendPaused = false
+
+    attachmentSendJob = viewModelScope.launch {
+        isSending = true
+
+        val result = try {
+            if (!isNew) OutboxManager.prepareRetry(entryId, attachments)
+            OutboxManager.sendNow(entryId)
+        } finally {
+            isSending = false
+            attachmentSendJob = null
+        }
+
+        if (attachmentSendPaused) return@launch
+
+        result.onSuccess {
+            // Delivered, or queued for a background retry: the review closes
+            // and the pending bubble owns the rest.
+            pendingAttachments = emptyList()
+            replyingTo = null
+            replyQuote = null
+            clearComposer()
+            showAttachmentMenu = false
+            attachmentSendEntryId = null
+            attachmentSendError = null
+        }.onFailure { failure ->
+            // Permanent failure: the rows stay so Retry needs no retyping.
+            attachmentSendError = failure.message ?: "Failed to send attachments"
+        }
+    }
+}
+
+internal fun DialogScreenViewModel.pauseAttachmentSend() {
+    val entryId = attachmentSendEntryId ?: return
+
+    attachmentSendJob?.cancel()
+    attachmentSendJob = null
+
+    isSending = false
+    attachmentSendPaused = true
+    OutboxManager.pauseEntry(entryId)
+}
+
+internal fun DialogScreenViewModel.resumeAttachmentSend() {
+    val entryId = attachmentSendEntryId ?: return
+    if (isSending) return
+
+    // The toggle can change while paused; the resumed attempt uses it.
+    startAttachmentSend(
+        entryId = entryId,
+        isNew = false,
+        attachments = outgoingAttachments()
+    )
 }
 
 internal fun DialogScreenViewModel.sendRecordedMedia(recording: RecordedMedia) {

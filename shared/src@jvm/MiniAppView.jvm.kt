@@ -39,6 +39,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 actual fun MiniAppView(
     url: String,
     modifier: Modifier,
+    command: String?,
+    onEvent: (String, String) -> Unit,
     onClose: () -> Unit
 ) {
     var initializing by remember { mutableStateOf(!EmbeddedBrowser.isReady) }
@@ -101,7 +103,13 @@ actual fun MiniAppView(
         }
 
         else -> key(url) {
-            MiniAppBrowserContent(url = url, onClose = onClose, modifier = modifier)
+            MiniAppBrowserContent(
+                url = url,
+                command = command,
+                onEvent = onEvent,
+                onClose = onClose,
+                modifier = modifier
+            )
         }
     }
 }
@@ -109,10 +117,13 @@ actual fun MiniAppView(
 @Composable
 private fun MiniAppBrowserContent(
     url: String,
+    command: String?,
+    onEvent: (String, String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier
 ) {
     val latestOnClose by rememberUpdatedState(onClose)
+    val latestOnEvent by rememberUpdatedState(onEvent)
     val closed = remember(url) { AtomicBoolean(false) }
     val session = remember(url) {
         runCatching { createMiniAppBrowser(url) }.getOrNull()
@@ -127,6 +138,8 @@ private fun MiniAppBrowserContent(
             // Re-injecting is cheap: the script guards itself with a global.
             runCatching { browser.evaluateJavaScript(MiniAppBridgeScript) {} }
 
+            drainMiniAppEvents(browser) { type, data -> latestOnEvent(type, data) }
+
             runCatching {
                 browser.evaluateJavaScript(ClosePollScript) { raw ->
                     val requested = raw?.trim()?.trim('"') == "true"
@@ -139,6 +152,14 @@ private fun MiniAppBrowserContent(
 
             if (closed.get()) break
         }
+    }
+
+    // Host commands answer a main/back button press inside the page.
+    LaunchedEffect(session, command) {
+        val browser = session?.browser ?: return@LaunchedEffect
+        val target = command ?: return@LaunchedEffect
+
+        runCatching { browser.evaluateJavaScript(target) {} }
     }
 
     DisposableEffect(session) {
@@ -164,6 +185,29 @@ private fun MiniAppBrowserContent(
 }
 
 private const val ClosePollScript = "!!window.__scrollixMiniAppClose"
+
+/**
+ * Empties the event queue the page recorded and replays it as callbacks. The
+ * queue is populated by [MiniAppBridgeScript] on pages whose WebView has no
+ * native JS bridge.
+ */
+private fun drainMiniAppEvents(
+    browser: KCEFBrowser,
+    onEvent: (String, String) -> Unit
+) {
+    runCatching {
+        browser.evaluateJavaScript(MiniAppDrainScript) { raw ->
+            val json = raw
+                ?.trim()
+                ?.removeSurrounding("\"")
+                ?.replace("\\\"", "\"")
+                ?.replace("\\\\", "\\")
+                ?: return@evaluateJavaScript
+
+            parseMiniAppEvents(json).forEach { (type, data) -> onEvent(type, data) }
+        }
+    }
+}
 
 private class MiniAppBrowserSession(
     private val client: KCEFClient,

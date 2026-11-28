@@ -249,6 +249,15 @@ internal suspend fun TelegramSession.handleUpdate(update: Update) {
             action = update.action
         )
 
+        is UpdateOwnedStarCount -> _starBalance.value = update.starAmount.starCount
+
+        is UpdateQuickReplyShortcut -> upsertBusinessQuickReply(update.shortcut)
+        is UpdateQuickReplyShortcutMessages -> {
+            quickReplyMessageIds.update { ids ->
+                ids + (update.shortcutId to update.messages.map { message -> message.id })
+            }
+        }
+
         is UpdateNewMessage -> upsertMessage(update.message)
 
         is UpdateMessageContent -> updateMessageContent(

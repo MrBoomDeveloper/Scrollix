@@ -76,7 +76,7 @@ interaction or layout changes.
 - Reuse `shared/src/ui/components/` instead of building parallel widgets.
 - Pin dependencies in `libs.versions.toml` and reference them from
   `module.yaml`.
-- **1000-line limit per file.** Split by concern (`FooScreenSections.kt`,
+- **2000-line limit per file.** Split by concern (`FooScreenSections.kt`,
   `XSessionMapping.kt`) and keep helpers `internal` across the new boundary.
   A file already over the limit must be split when next touched.
 - **Every destructive action is confirmed.** Deleting a chat, message, cached
@@ -220,7 +220,9 @@ Keep these when changing related code.
   rows use negative local ids. Retries use backoff for retryable
   `SessionException`s and file retries reuse the original paths. Delivery is
   at-least-once — never add another retry loop. Removing an account clears its
-  queue.
+  queue. A paused entry is only woken by Resume, never by a timer; cancelling
+  deletes generated `scrollix-edit-`/`scrollix-trim-` copies but never a file
+  the user picked.
 - Scheduled sends never enter history (`upsertMessage` ignores
   `schedulingState`, pending rows skip `scheduling`); MAX and VK report
   `supportsScheduling = false`.
@@ -275,6 +277,41 @@ Keep these when changing related code.
   of a just-sent message); functional feedback stays. Do not reintroduce Compose
   shared-element transitions between screens: they were removed because they
   looked wrong.
+
+**Settings surfaces**
+
+- Account-level and server-side settings (sessions, privacy, notifications,
+  business, per-account data) live under Accounts → Manage. App Settings holds
+  only this install's preferences.
+- A provider that cannot back a setting hides its section and rows entirely
+  (`supportsSessionManagement`, `supportsLastSeenPrivacy`,
+  `supportsNotificationSettings`, `supportsBusinessSettings`); never show a
+  disabled or empty editor instead.
+
+**Bots & mini apps**
+
+- An inline keyboard keeps every button this client can act on (link, mini
+  app, callback, copy text, user, disabled); a callback answer is shown as a
+  notice, or as an alert when the bot asks for one. Never drop an answer.
+- The reply keyboard belongs to the chat, not to a message: the newest message
+  carrying markup wins, and `ReplyMarkupRemoveKeyboard` must hide it. A
+  text button sends its label immediately; request buttons open the matching
+  composer.
+- Bot commands come from `loadBotCommands` and only open when the draft starts
+  with `/`; ephemeral commands stay hidden until typed.
+- A `t.me/<bot>?start=` link delivers its payload through the provider while it
+  resolves, so resolving a start link also opens the dialog.
+- Mini apps get `Telegram.WebApp` from the injected bridge. `initData` comes
+  from the launch URL and is never rebuilt; theme, haptics, buttons and close
+  confirmations are forwarded as bridge events. `shareURL` copies the link;
+  `shareMessage` resolves the prepared message, asks for a chat and always
+  answers the page's callback, including on cancel.
+
+**Gifts, stars & premium**
+
+- Gift and giveaway messages render as cards and the own profile shows the
+  star balance and premium status. These are display surfaces only: no buying
+  premium or stars, no sending gifts, and no free feature gated by premium.
 
 **Notifications & diagnostics**
 

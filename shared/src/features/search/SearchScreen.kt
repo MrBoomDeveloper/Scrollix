@@ -392,7 +392,8 @@ private fun SearchPanel(
         
         SearchBar(
             modifier = Modifier
-                .padding(start = 8.dp, top = 8.dp, end = 8.dp),
+                .padding(start = 8.dp, top = 8.dp, end = 8.dp)
+                .fillMaxWidth(),
             state = searchBarState,
             
             colors = SearchBarDefaults.colors(

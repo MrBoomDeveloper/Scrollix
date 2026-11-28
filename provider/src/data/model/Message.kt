@@ -250,8 +250,19 @@ data class MessageButton(
     /** URL to pass to the provider's "open web app" call. */
     val webAppUrl: String? = null,
     /** Sender of the message: the bot that owns the web app. */
-    val botUserId: Long? = null
-)
+    val botUserId: Long? = null,
+    /** Payload sent to the bot through `pressCallbackButton`. */
+    val callbackData: String? = null,
+    /** Text copied to the clipboard instead of sending anything. */
+    val copyText: String? = null,
+    /** Profile the button opens. */
+    val userId: Long? = null,
+    /** The bot disabled the button; it is shown, but does nothing. */
+    val isDisabled: Boolean = false
+) {
+    /** True when pressing the button needs a provider call. */
+    val isCallback: Boolean get() = callbackData != null
+}
 
 /** A mini app the provider agreed to launch, with the URL to render. */
 data class WebAppLaunch(
@@ -426,6 +437,8 @@ data class ChatMessage(
     val checklist: MessageChecklistInfo? = null,
     /** Non-null for a gift or giveaway message. */
     val gift: MessageGiftInfo? = null,
+    /** Non-null when a bot attached an invoice to this message. */
+    val invoice: MessageInvoiceInfo? = null,
     val customEmojis: List<CustomEmojiSpan> = emptyList(),
     val formatting: List<MessageTextFormat> = emptyList(),
     /** Non-null while the message waits in the chat's schedule queue. */
@@ -440,6 +453,11 @@ data class ChatMessage(
     val replyCount: Int = 0,
     /** Inline keyboard rows, already filtered to supported button types. */
     val keyboard: List<List<MessageButton>> = emptyList(),
+    /**
+     * Reply keyboard the bot installed with this message, if any. The composer
+     * uses the newest message that has one, so it outlives the message itself.
+     */
+    val replyKeyboard: MessageReplyKeyboard? = null,
     val reactions: List<MessageReactionInfo> = emptyList(),
     val viewCount: Int = 0,
     val shareCount: Int = 0,

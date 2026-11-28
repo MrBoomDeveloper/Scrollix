@@ -82,6 +82,12 @@ data class AppSettings(
      */
     val dataSaving: DataSavingSettings = DataSavingSettings(),
     /**
+     * Telegram compresses photos on its servers when they are sent as photos.
+     * With this off, a picked photo is sent as a document instead, which keeps
+     * the original bytes; the switch is a per-install choice.
+     */
+    val compressPhotos: Boolean = true,
+    /**
      * Accessibility: skip the chat appearance animation and the shared-element
      * profile transitions. Nothing else depends on it, so a screen that forgets
      * to read it still works correctly.

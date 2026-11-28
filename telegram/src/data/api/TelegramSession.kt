@@ -51,6 +51,7 @@ import com.mrboomdev.scrollix.data.model.AuthField
 import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
+import com.mrboomdev.scrollix.data.model.BusinessQuickReply
 import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
@@ -187,6 +188,18 @@ class TelegramSession(
     override val downloads: StateFlow<List<DownloadedFile>> = _downloads.asStateFlow()
     internal val customEmojiCache = mutableMapOf<Long, Sticker>()
     internal val customEmojiCacheMutex = Mutex()
+
+    /** Business quick replies, kept current by `updateQuickReplyShortcut`. */
+    internal val _businessQuickReplies = MutableStateFlow<List<BusinessQuickReply>>(emptyList())
+    override val businessQuickReplies: StateFlow<List<BusinessQuickReply>> =
+        _businessQuickReplies.asStateFlow()
+
+    /** Owned stars, kept current by `updateOwnedStarCount`. */
+    internal val _starBalance = MutableStateFlow(0L)
+    override val starBalance: StateFlow<Long> = _starBalance.asStateFlow()
+
+    /** Message ids per shortcut; their contents are update-driven too. */
+    internal val quickReplyMessageIds = MutableStateFlow<Map<Int, List<Long>>>(emptyMap())
 
     /**
      * Mention avatars are identical for every message that mentions the same
@@ -754,6 +767,10 @@ class TelegramSession(
     override suspend fun sendPoll(providerDialogId: String, question: String, options: List<String>, isAnonymous: Boolean, allowsMultipleAnswers: Boolean, allowsRevoting: Boolean, questionCustomEmojis: List<CustomEmojiSpan>, optionCustomEmojis: List<List<CustomEmojiSpan>>, optionMediaPaths: List<String?>, isQuiz: Boolean, correctOptionIndex: Int?, explanation: String): Result<Unit> = sendPollImpl(providerDialogId, question, options, isAnonymous, allowsMultipleAnswers, allowsRevoting, questionCustomEmojis, optionCustomEmojis, optionMediaPaths, isQuiz, correctOptionIndex, explanation)
     override suspend fun sendLocation(providerDialogId: String, latitude: Double, longitude: Double, livePeriodSeconds: Int): Result<Long> = sendLocationImpl(providerDialogId, latitude, longitude, livePeriodSeconds)
     override suspend fun stopLiveLocation(providerDialogId: String, messageId: Long): Result<Unit> = stopLiveLocationImpl(providerDialogId, messageId)
+    // Pausing cancels the in-flight send; TDLib keeps the parts it already
+    // received, so resuming re-sends the same local path and continues.
+    override val supportsUploadPause: Boolean get() = true
+
     override suspend fun sendFiles(providerDialogId: String, attachments: List<OutgoingAttachment>, caption: String, replyToMessageId: Long?, customEmojis: List<CustomEmojiSpan>, formatting: List<MessageTextFormat>, scheduling: MessageScheduling?, sendSilently: Boolean): Result<Unit> = sendFilesImpl(providerDialogId, attachments, caption, replyToMessageId, customEmojis, formatting, scheduling, sendSilently)
 
     override val supportsScheduling: Boolean get() = true
@@ -823,6 +840,7 @@ class TelegramSession(
     override suspend fun resolveTelegramLinkTarget(url: String): Result<TelegramLinkTarget> = resolveTelegramLinkTargetImpl(url)
     override suspend fun loadMentionAvatars(text: String): Map<String, Avatar> = loadMentionAvatarsImpl(text)
 
+    override val supportsNotificationSettings: Boolean get() = true
     override suspend fun loadNotificationSettings(): Result<NotificationSettings> = loadNotificationSettingsImpl()
     override val supportsLastSeenPrivacy: Boolean get() = true
     override val supportsReporting: Boolean get() = true
@@ -865,6 +883,7 @@ class TelegramSession(
     override suspend fun loadDataUsage(): Result<DataUsageSummary> = loadDataUsageImpl()
     override suspend fun resetDataUsageStatistics(): Result<Unit> = resetDataUsageStatisticsImpl()
     override suspend fun applyDataUsagePreset(preset: DataUsagePreset): Result<Unit> = applyDataUsagePresetImpl(preset)
+    override val supportsSessionManagement: Boolean get() = true
     override suspend fun loadActiveSessions(): Result<List<ActiveSessionInfo>> = loadActiveSessionsImpl()
     override suspend fun terminateSession(sessionId: Long): Result<Unit> = terminateSessionImpl(sessionId)
     override suspend fun terminateOtherSessions(): Result<Unit> = terminateOtherSessionsImpl()
@@ -883,6 +902,23 @@ class TelegramSession(
     override suspend fun openWebApp(providerDialogId: String, button: MessageButton): Result<WebAppLaunch> = openWebAppImpl(providerDialogId, button)
     override suspend fun openMainWebApp(providerDialogId: String): Result<WebAppLaunch> = openMainWebAppImpl(providerDialogId)
     override suspend fun closeWebApp(launchId: Long) = closeWebAppImpl(launchId)
+    override suspend fun pressCallbackButton(providerDialogId: String, messageId: Long, data: String): Result<com.mrboomdev.scrollix.data.model.BotCallbackAnswer> = pressCallbackButtonImpl(providerDialogId, messageId, data)
+    override suspend fun loadBotCommands(providerDialogId: String): Result<List<com.mrboomdev.scrollix.data.model.BotCommandInfo>> = loadBotCommandsImpl(providerDialogId)
+    override suspend fun loadBotDescription(providerDialogId: String): Result<String> = loadBotDescriptionImpl(providerDialogId)
+    override suspend fun searchInlineBot(providerDialogId: String, username: String, query: String, offset: String): Result<com.mrboomdev.scrollix.data.model.InlineBotPage> = searchInlineBotImpl(providerDialogId, username, query, offset)
+    override suspend fun sendInlineBotResult(providerDialogId: String, queryId: Long, resultId: String): Result<Unit> = sendInlineBotResultImpl(providerDialogId, queryId, resultId)
+    override suspend fun sharePreparedMessage(providerDialogId: String, botUserId: Long?, preparedMessageId: String, targetDialogId: String): Result<Unit> = sharePreparedMessageImpl(providerDialogId, botUserId, preparedMessageId, targetDialogId)
+    override suspend fun loadPaymentForm(providerDialogId: String, messageId: Long): Result<com.mrboomdev.scrollix.data.model.PaymentFormInfo> = loadPaymentFormImpl(providerDialogId, messageId)
+    override suspend fun validatePaymentOrder(providerDialogId: String, messageId: Long, order: com.mrboomdev.scrollix.data.model.PaymentOrder): Result<com.mrboomdev.scrollix.data.model.PaymentValidation> = validatePaymentOrderImpl(providerDialogId, messageId, order)
+    override suspend fun payInvoice(providerDialogId: String, messageId: Long, formId: Long, orderInfoId: String, shippingOptionId: String, order: com.mrboomdev.scrollix.data.model.PaymentOrder): Result<com.mrboomdev.scrollix.data.model.PaymentOutcome> = payInvoiceImpl(providerDialogId, messageId, formId, orderInfoId, shippingOptionId, order)
+    override val supportsBusinessSettings: Boolean get() = true
+    override suspend fun loadBusinessSettings(): Result<com.mrboomdev.scrollix.data.model.BusinessSettings> = loadBusinessSettingsImpl()
+    override suspend fun setBusinessGreeting(text: String?): Result<Unit> = setBusinessGreetingImpl(text)
+    override suspend fun setBusinessAway(text: String?, outsideOpeningHours: Boolean): Result<Unit> = setBusinessAwayImpl(text, outsideOpeningHours)
+    override suspend fun setBusinessOpeningHours(timeZoneId: String, intervals: List<com.mrboomdev.scrollix.data.model.BusinessHoursInterval>): Result<Unit> = setBusinessOpeningHoursImpl(timeZoneId, intervals)
+    override suspend fun createBusinessQuickReply(name: String, text: String): Result<Unit> = createBusinessQuickReplyImpl(name, text)
+    override suspend fun deleteBusinessQuickReply(shortcutId: Int): Result<Unit> = deleteBusinessQuickReplyImpl(shortcutId)
+    override suspend fun sendBusinessQuickReply(providerDialogId: String, shortcutId: Int): Result<Unit> = sendBusinessQuickReplyImpl(providerDialogId, shortcutId)
 
     override suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo> = loadStickerSetImpl(setId)
     override suspend fun loadStickerSetByName(name: String, kind: StickerPackKind): Result<StickerSetInfo> = loadStickerSetByNameImpl(name, kind)

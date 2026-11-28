@@ -4,7 +4,8 @@ Remaining work only. Shipped features are not tracked here; the git history
 and `AGENTS.md` cover them.
 
 **Non-goals:** voice and video calls, call UI, call history, call notifications
-and call-related system integrations.
+and call-related system integrations; buying Telegram Premium or stars, and
+sending gifts. Gifts, balances and premium status are shown, never sold.
 
 **Where it stands:** multi-account Telegram/MAX/VK behind `AccountSession`;
 chats, history, rich-text composer with schedules, polls, reactions, topics,
@@ -36,31 +37,6 @@ alongside; performance, accessibility and release work never stop.
   transfer.
 - Community/space features if TDLib exposes them.
 
-## Media and files
-
-- Upload pipeline: progress, pause/resume, cancel, retry, background uploads,
-  compression settings, EXIF stripping.
-- Staging: mixed photo/video albums, per-file progress, failure isolation.
-- Download manager: one queue shared by the chat, the viewer and the Downloads
-  tab. Chat file cards and the viewer already report progress and cancel their
-  own download; what is missing is sharing one download between screens.
-- Photo editor (crop/rotate/filters/draw/text) and basic video tools
-  (trim/mute/compress).
-- Audio player: waveform, speed, background playback, lock-screen controls.
-- Adaptive video streaming instead of downloading whole files.
-- Live waveform while recording a voice note.
-- Sticker/emoji/GIF picker completeness: full sets, animated previews, emoji
-  search.
-- File-aware messages: type icons, in-app preview for PDFs and archives.
-- Media spoilers, self-destruct media, protected-content rules.
-- Location: map picker improvements, live updates, geochats if feasible.
-- Wallpapers: per-chat, gradient editor, patterns, animated wallpapers,
-  sharing.
-- Cleanup for abandoned uploads and outbox attachments left by a crash;
-  temporary recordings and playback files are cleared from Storage.
-- Desktop drag-and-drop of files and text; clipboard image paste on both
-  platforms.
-
 ## Security and privacy
 
 - Two-step verification management: password, recovery email, hint.
@@ -81,23 +57,8 @@ alongside; performance, accessibility and release work never stop.
 
 ## Telegram depth
 
-- Bots: inline bots, commands and menus, callback buttons, reply keyboards,
-  mini-app auth, payments/invoices/shipping, bot descriptions, "start" links.
-- Web apps: fullscreen, storage, theme propagation, closing confirmation,
-  sharing, `initData`.
-- Business features: business accounts, quick replies, greeting/farewell, away
-  messages, business hours, linked bots.
-- Gifts, stars and premium surfaces without blocking free features.
-- Passcode lock (app-level and per-chat) and secret-chat key verification.
-- Network: per-network data rules and detailed connection state.
-- Deep links for users, chats, folders, themes, stickers, bots and web apps;
-  QR codes for profiles and chats.
-- Storage and data: roaming warnings, video autoplay policy.
-- Premium: limits, badges, premium stickers and reactions.
-- Telegram Passport and secure document flows, if still supported.
-- Login edge cases: phone migration, number change, QR login, email
-  verification, recovery.
-- Push notifications with the app closed (today they need a live process).
+- Push notifications with the app closed. There is no relay in the project, so
+  this stays blocked until one exists; today notifications need a live process.
 
 ## MAX
 

@@ -115,6 +115,7 @@ internal fun settingsChanges(current: AppSettings, imported: AppSettings): List<
         current.dataSaving.videoNotes,
         imported.dataSaving.videoNotes
     )
+    compare("Compress photos", current.compressPhotos, imported.compressPhotos)
     compare("Reduce motion", current.reduceMotion, imported.reduceMotion)
 
     return changes

@@ -69,6 +69,10 @@ internal fun SettingsNotificationsContent(accountId: String? = null) {
 @Composable
 internal fun AccountNotificationSettings(accountId: String, displayName: String) {
     val session = remember(accountId) { ApiManager.session(accountId) }
+
+    // No server-side notification settings means no rows to show.
+    if (session?.supportsNotificationSettings != true) return
+
     val scope = rememberCoroutineScope()
     var settings by remember(accountId) { mutableStateOf<NotificationSettings?>(null) }
     var busy by remember(accountId) { mutableStateOf(false) }

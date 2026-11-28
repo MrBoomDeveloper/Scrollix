@@ -193,6 +193,7 @@ internal suspend fun TelegramSession.loadOwnProfileImpl(): Result<UserProfileDet
                 status = userStatusText(user),
                 isOnline = (user.status as? UserStatusOnline) != null,
                 isVerified = user.verificationStatus?.isVerified == true,
+                isPremium = user.isPremium,
                 emojiStatusId = emojiStatusId(user.emojiStatus),
                 accentColorsLight = user.upgradedGiftColors
                     ?.lightThemeColors
@@ -259,6 +260,7 @@ internal suspend fun TelegramSession.loadUserProfileImpl(providerDialogId: Strin
                 status = userStatusText(user),
                 isOnline = currentStatus is UserStatusOnline,
                 isVerified = user.verificationStatus?.isVerified == true,
+                isPremium = user.isPremium,
                 emojiStatusId = emojiStatusId(user.emojiStatus),
                 accentColorsLight = user.upgradedGiftColors
                     ?.lightThemeColors

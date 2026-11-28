@@ -95,6 +95,10 @@ fun MessageBubble(
     isPinned: Boolean = false,
     onOpenStickerSet: ((Long) -> Unit)? = null,
     onOpenWebApp: ((MessageButton) -> Unit)? = null,
+    /** Callback, copy and profile buttons of a bot's inline keyboard. */
+    onBotButton: ((MessageButton) -> Unit)? = null,
+    /** Opens the payment sheet of a bot invoice. */
+    onOpenInvoice: (() -> Unit)? = null,
     onDoubleTap: (() -> Unit)? = null,
     /** On compact layouts a single tap opens the message menu. */
     openMenuOnSingleTap: Boolean = false,
@@ -620,52 +624,14 @@ fun MessageBubble(
                             }
 
 
-                            if (message.autoDeleteAt > 0) {
-                                AutoDeleteCountdown(
-                                    modifier = Modifier.padding(top = 4.dp),
-                                    autoDeleteAt = message.autoDeleteAt,
-                                    isOutgoing = message.isOutgoing
-                                )
-                            }
-
-                            if (message.keyboard.isNotEmpty()) {
-                                onOpenWebApp?.let { openWebApp ->
-                                    MessageKeyboardButtons(
-                                        modifier = Modifier.padding(top = 6.dp),
-                                        keyboard = message.keyboard,
-                                        onOpenWebApp = openWebApp
-                                    )
-                                }
-                            }
-
-                            // Channel posts expose their discussion thread right
-                            // under the post instead of hiding it in the action
-                            // menu, where most readers never found it.
-                            if (
-                                dialogKind == DialogKind.Channel &&
-                                message.replyCount > 0 &&
-                                onOpenThread != null
-                            ) {
-                                TextButton(
-                                    modifier = Modifier.padding(top = 2.dp),
-                                    onClick = onOpenThread
-                                ) {
-                                    Icon(
-                                        modifier = Modifier.size(16.dp),
-                                        imageVector = reply_icon,
-                                        contentDescription = null
-                                    )
-
-                                    Text(
-                                        modifier = Modifier.padding(start = 6.dp),
-                                        text = if (message.replyCount == 1) {
-                                            "1 comment"
-                                        } else {
-                                            "${message.replyCount} comments"
-                                        }
-                                    )
-                                }
-                            }
+                            MessageBubbleExtras(
+                                message = message,
+                                dialogKind = dialogKind,
+                                onOpenWebApp = onOpenWebApp,
+                                onBotButton = onBotButton,
+                                onOpenThread = onOpenThread,
+                                onOpenInvoice = onOpenInvoice
+                            )
 
                             if (!isMediaOnly && !isFooterInline) {
                                 MessageFooter(

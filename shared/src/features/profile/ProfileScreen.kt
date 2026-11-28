@@ -91,6 +91,8 @@ internal fun ProfileScreen(
 ) {
     val isWide = isWideLayout()
     val session = remember(accountId) { ApiManager.session(accountId) }
+    val starBalance by session?.starBalance?.collectAsState()
+        ?: remember { mutableStateOf(0L) }
     val entries by ApiManager.dialogs.collectAsState()
     val entry = entries.firstOrNull { entry ->
         entry.account.id == accountId &&
@@ -319,6 +321,20 @@ internal fun ProfileScreen(
                         )
                     }
 
+                    // A paid subscription is shown, never required: every
+                    // feature this client offers stays available without it.
+                    if (profile?.isPremium == true) {
+                        Text(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                            text = "Premium",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
                     emojiStatusId?.let { emojiId ->
                         EmojiStatusIcon(
                             emojiId = emojiId,
@@ -334,6 +350,12 @@ internal fun ProfileScreen(
                 ) {
                     profile?.username?.takeIf { it.isNotBlank() }?.let { username ->
                         Text("@${username.removePrefix("@")}")
+                    }
+
+                    // Only the own profile has a balance; buying stars and gifts
+                    // happens elsewhere, so this is a read-only surface.
+                    if (ownAccount && starBalance > 0) {
+                        Text("★ ${formatStarCount(starBalance)}")
                     }
                 }
             }
@@ -567,7 +589,9 @@ private fun MembersSection(
     }
 }
 
-internal fun formatCount(count: Int): String {
+internal fun formatCount(count: Int): String = formatStarCount(count.toLong())
+
+private fun formatStarCount(count: Long): String {
     return count.toString()
         .reversed()
         .chunked(3)

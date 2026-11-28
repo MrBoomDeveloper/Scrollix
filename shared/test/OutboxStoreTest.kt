@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -277,6 +278,112 @@ class OutboxStoreTest {
             listOf("one"),
             entriesForKnownAccounts(entries, setOf("account")).map { entry -> entry.id }
         )
+    }
+
+    @Test
+    fun `a version 2 file decodes with the pause fields at their defaults`() {
+        val storage = MemoryStorage()
+        storage.writeText(
+            "outbox.json",
+            """
+            {
+              "version": 2,
+              "entries": [
+                {
+                  "id": "legacy",
+                  "localMessageId": -7,
+                  "providerId": "telegram",
+                  "accountId": "account",
+                  "providerDialogId": "dialog",
+                  "kind": "Files",
+                  "text": "caption",
+                  "attachments": [
+                    { "path": "/tmp/one.jpg", "asPhoto": true }
+                  ],
+                  "createdAt": 1
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val state = OutboxStore(storage).state.value
+        val entry = state.entries.single()
+
+        assertEquals(CurrentOutboxVersion, state.version)
+        assertFalse(entry.paused)
+        assertNull(entry.progress)
+        assertEquals("/tmp/one.jpg", entry.attachments.single().path)
+    }
+
+    @Test
+    fun `a paused entry keeps its progress across a restart`() = runBlocking {
+        val storage = MemoryStorage()
+        val store = OutboxStore(storage)
+
+        store.add(
+            entry("paused").copy(
+                state = OutboxEntryState.Queued,
+                paused = true,
+                progress = 0.5f
+            )
+        )
+
+        val reloaded = OutboxStore(storage).state.value.entries.single()
+
+        assertTrue(reloaded.paused)
+        assertEquals(0.5f, reloaded.progress)
+    }
+
+    @Test
+    fun `an album reports the slowest attachment`() {
+        val attachments = listOf(
+            OutboxAttachment(path = "/tmp/one.jpg", asPhoto = true),
+            OutboxAttachment(path = "/tmp/two.jpg", asPhoto = true)
+        )
+
+        assertEquals(
+            0.4f,
+            outboxAttachmentProgress(
+                attachments,
+                mapOf("/tmp/one.jpg" to 0.4f, "/tmp/two.jpg" to 0.8f)
+            )
+        )
+
+        assertEquals(
+            0.6f,
+            outboxAttachmentProgress(attachments, mapOf("/tmp/two.jpg" to 0.6f))
+        )
+
+        assertNull(outboxAttachmentProgress(attachments, emptyMap()))
+    }
+
+    @Test
+    fun `only active file sends count towards the overall upload`() {
+        val sending = entry("sending").copy(
+            kind = OutboxEntryKind.Files,
+            attachments = listOf(OutboxAttachment(path = "/tmp/a.jpg", asPhoto = true))
+        )
+        val paused = entry("paused").copy(
+            kind = OutboxEntryKind.Files,
+            paused = true,
+            attachments = listOf(OutboxAttachment(path = "/tmp/b.jpg", asPhoto = true))
+        )
+        val text = entry("text")
+
+        assertTrue(sending.isUploadActive())
+        assertFalse(paused.isUploadActive())
+        assertFalse(text.isUploadActive())
+
+        assertEquals(
+            0.5f,
+            outboxOverallUploadProgress(
+                listOf(sending, paused, text),
+                mapOf("/tmp/a.jpg" to 0.5f, "/tmp/b.jpg" to 1f)
+            )
+        )
+
+        assertEquals(0f, outboxOverallUploadProgress(listOf(paused, text), emptyMap()))
     }
 
     private fun entry(id: String): OutboxEntry {

@@ -342,7 +342,7 @@ fun LocationPickerDialog(
                             Text("Cancel")
                         }
 
-                        Button(
+                        TextButton(
                             enabled = hasPosition,
                             onClick = {
                                 onSend(

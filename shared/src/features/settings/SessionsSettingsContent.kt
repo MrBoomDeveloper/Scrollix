@@ -42,6 +42,12 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun SettingsSessionsContent(accountId: String? = null) {
+    // A provider without a server-side device list shows no section, not an
+    // empty list with a failed request behind it.
+    if (accountId != null && ApiManager.session(accountId)?.supportsSessionManagement != true) {
+        return
+    }
+
     val accountState by ApiManager.accountState.collectAsState()
     // When opened from a single account's management screen the list is
     // scoped to it and the account switcher disappears.

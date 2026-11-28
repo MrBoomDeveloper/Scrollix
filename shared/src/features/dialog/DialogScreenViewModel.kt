@@ -6,6 +6,9 @@ import com.mrboomdev.scrollix.data.model.AccountDialogFolder
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.BotCallbackAnswer
+import com.mrboomdev.scrollix.data.model.BotCommandInfo
+import com.mrboomdev.scrollix.data.model.InlineBotResult
 import com.mrboomdev.scrollix.data.model.MessageButton
 import com.mrboomdev.scrollix.data.model.MessageHistory
 import com.mrboomdev.scrollix.data.model.MessageTextFormat
@@ -126,8 +129,29 @@ internal class DialogScreenViewModel(
     var inputEmojiData by mutableStateOf<Map<Long, ByteArray>>(emptyMap())
     var inputEmojiAdaptive by mutableStateOf<Set<Long>>(emptySet())
     var pendingAttachments by mutableStateOf<List<PendingAttachment>>(emptyList())
+    /** Send photos as photos (compressed) or as files for the next send. */
+    var attachmentCompressPhotos by mutableStateOf(AppSettingsStore.state.value.compressPhotos)
+        internal set
+
+    /** Index of the row the photo editor is open for, if any. */
+    var editingAttachmentIndex by mutableStateOf<Int?>(null)
+    /** Index of the row the video trimmer is open for, if any. */
+    var trimmingAttachmentIndex by mutableStateOf<Int?>(null)
+    /** Outbox entry behind the attachment send the review sheet is showing. */
+    var attachmentSendEntryId by mutableStateOf<String?>(null)
+        internal set
+    /** True when that send was paused from the review sheet. */
+    var attachmentSendPaused by mutableStateOf(false)
+        internal set
+    /** Permanent failure of that send, shown inside the review sheet. */
+    var attachmentSendError by mutableStateOf<String?>(null)
+        internal set
+    /** The in-flight attachment send; pausing cancels this job. */
+    internal var attachmentSendJob: kotlinx.coroutines.Job? = null
     var showAttachmentMenu by mutableStateOf(false)
     var showPollDialog by mutableStateOf(false)
+    /** Picker of the account's saved quick replies. */
+    var showQuickReplies by mutableStateOf(false)
     var showLocationDialog by mutableStateOf(false)
     /** The composer's scheduling picker; true while it is open. */
     var showSchedulePicker by mutableStateOf(false)
@@ -148,7 +172,10 @@ internal class DialogScreenViewModel(
     /** Message whose text is open in the selectable-text dialog. */
     var selectTextMessage by mutableStateOf<ChatMessage?>(null)
     /** Message whose metadata sheet is open. */
-    var detailsMessage by mutableStateOf<ChatMessage?>(null)    /** Message whose reactor list is open, and the reaction that opened it. */
+    var detailsMessage by mutableStateOf<ChatMessage?>(null)
+    /** Message whose bot invoice is being paid. */
+    var paymentMessage by mutableStateOf<ChatMessage?>(null)
+    /** Message whose reactor list is open, and the reaction that opened it. */
     var reactionListMessage by mutableStateOf<ChatMessage?>(null)
     var reactionListFocusKey by mutableStateOf<String?>(null)
     var isSendingRecording by mutableStateOf(false)
@@ -179,6 +206,27 @@ internal class DialogScreenViewModel(
     var showMoreMenu by mutableStateOf(false)
     var openedStickerSetId by mutableStateOf<Long?>(null)
     var webAppButton by mutableStateOf<MessageButton?>(null)
+    /** Alert a bot returned for a callback button; null when there is none. */
+    var callbackAlert by mutableStateOf<BotCallbackAnswer?>(null)
+    /** Command menu of the chat's bot, empty when the chat has no bot. */
+    var botCommands by mutableStateOf<List<BotCommandInfo>>(emptyList())
+        internal set
+    /** "What can this bot do" line, shown while a bot chat is still empty. */
+    var botDescription by mutableStateOf("")
+        internal set
+    /** Inline bot named by the draft, null when the picker should be hidden. */
+    internal var inlineBotQuery by mutableStateOf<InlineBotQuery?>(null)
+    internal var inlineBotJob by mutableStateOf<Job?>(null)
+    /** Results of the current inline query; stale pages are dropped. */
+    var inlineBotResults by mutableStateOf<List<InlineBotResult>>(emptyList())
+        internal set
+    var inlineBotQueryId by mutableStateOf<Long?>(null)
+        internal set
+    var inlineBotLoading by mutableStateOf(false)
+        internal set
+    /** Id of the result being sent, so its row can show progress. */
+    var inlineBotSending by mutableStateOf<String?>(null)
+        internal set
     var showMainWebApp by mutableStateOf(false)
     var showEmojiPicker by mutableStateOf(false)
     var unreadAtOpen by mutableStateOf<Int?>(null)
@@ -273,6 +321,7 @@ internal class DialogScreenViewModel(
 
     init {
         observe()
+        loadBotCommands()
     }
 
     override fun onCleared() {

@@ -300,6 +300,12 @@ internal suspend fun TelegramSession.resolveTelegramLinkImpl(url: String): Resul
             is TelegramLinkTarget.StickerSet -> throw IllegalArgumentException(
                 "Sticker set links do not point at a chat"
             )
+            is TelegramLinkTarget.WebApp -> throw IllegalArgumentException(
+                "Mini app links do not point at a chat"
+            )
+            is TelegramLinkTarget.ChatFolder -> throw IllegalArgumentException(
+                "Folder links do not point at a chat"
+            )
         }
     }
 }
@@ -362,6 +368,29 @@ internal suspend fun TelegramSession.resolveTelegramLinkTargetImpl(url: String):
                     messageId = parseTelegramMessageLink(link)?.messageId
                 )
                 is InternalLinkTypeChatInvite -> resolveInviteTarget(link)
+                is InternalLinkTypeChatFolderInvite -> chatFolderTarget(link)
+
+                // A start link delivers its hidden parameter to the bot, so
+                // resolving it is also what opens the bot's dialog.
+                is InternalLinkTypeBotStart -> botStartTarget(
+                    botUsername = type.botUsername,
+                    startParameter = type.startParameter
+                )
+
+                // Adding a bot to a group needs a chat chosen first; the
+                // caller falls back to the browser instead of guessing one.
+                is InternalLinkTypeBotStartInGroup -> groupBotLink()
+                is InternalLinkTypeMainWebApp -> webAppLinkTarget(
+                    botUsername = type.botUsername,
+                    webAppShortName = "",
+                    startParameter = type.startParameter
+                )
+                is InternalLinkTypeWebApp -> webAppLinkTarget(
+                    botUsername = type.botUsername,
+                    webAppShortName = type.webAppShortName,
+                    startParameter = type.startParameter
+                )
+
                 else -> resolveLegacyTarget(link)
             }
 

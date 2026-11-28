@@ -26,8 +26,6 @@ import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.model.MessageButton
-import com.mrboomdev.scrollix.data.model.WebAppLaunch
 import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
@@ -44,7 +42,10 @@ import com.mrboomdev.scrollix.data.model.LastSeenVisibility
 /** Sessions without a live transport are always considered connected. */
 private val AlwaysConnected = MutableStateFlow(true)
 
-interface AccountSession : ChecklistAuthoringSession {
+/** Providers that do not report a star balance own none of it. */
+private val NoStars = MutableStateFlow(0L)
+
+interface AccountSession : ChecklistAuthoringSession, BotSession, PaymentSession, BusinessSession {
     val accountId: String
     val providerId: String
 
@@ -55,6 +56,11 @@ interface AccountSession : ChecklistAuthoringSession {
      * Providers without a live connection keep the default `true`.
      */
     val isConnected: StateFlow<Boolean> get() = AlwaysConnected
+    /**
+     * Stars the account owns, kept current by provider updates. Providers
+     * without stars keep the default zero, so the balance row simply hides.
+     */
+    val starBalance: StateFlow<Long> get() = NoStars
     val profile: StateFlow<AccountProfile?>
     val dialogs: StateFlow<List<Dialog>>
     val folders: StateFlow<List<DialogFolder>>
@@ -282,6 +288,18 @@ interface AccountSession : ChecklistAuthoringSession {
     open val supportsSilentSend: Boolean get() = false
 
     /**
+     * True when pausing stops the bytes on the provider side. Without it the
+     * queue still pauses between attempts, and the UI must not promise more.
+     */
+    open val supportsUploadPause: Boolean get() = false
+
+    /** Stops an in-flight upload; a no-op for providers without pause support. */
+    suspend fun pauseUpload(path: String): Result<Unit> = Result.success(Unit)
+
+    /** Lets a paused upload continue; a no-op for providers without pause support. */
+    suspend fun resumeUpload(path: String): Result<Unit> = Result.success(Unit)
+
+    /**
      * True when this account can approve a QR login shown by another device.
      * Telegram has the flow; MAX and VK do not, so the QR dialog offers only
      * the accounts that can actually finish it.
@@ -432,6 +450,10 @@ interface AccountSession : ChecklistAuthoringSession {
     ): Result<Unit> = Result.failure(
         UnsupportedOperationException("Scheduling is not supported")
     )
+
+    /** Whether the account has server-side notification settings to edit. */
+    val supportsNotificationSettings: Boolean
+        get() = false
 
     /** Scope-wide notification settings kept by the server. */
     suspend fun loadNotificationSettings(): Result<NotificationSettings> =
@@ -675,25 +697,6 @@ interface AccountSession : ChecklistAuthoringSession {
     suspend fun loadProfilePhotos(userId: Long): Result<List<MessageMedia>> =
         Result.success(emptyList())
 
-    /**
-     * Resolves a bot mini app button through the provider and returns the URL
-     * to render. Providers without mini apps keep the default failure.
-     */
-    suspend fun openWebApp(
-        providerDialogId: String,
-        button: MessageButton
-    ): Result<WebAppLaunch> = Result.failure(
-        UnsupportedOperationException("Mini apps are not supported by this provider")
-    )
-
-    /** Opens the main mini app of a bot chat, when the bot exposes one. */
-    suspend fun openMainWebApp(providerDialogId: String): Result<WebAppLaunch> =
-        Result.failure(
-            UnsupportedOperationException("Main mini apps are not supported by this provider")
-        )
-
-    /** Tells the provider that a mini app closed. */
-    suspend fun closeWebApp(launchId: Long) = Unit
 
     /** One page of a media kind sent in a dialog, newest first. */
     suspend fun loadSharedMedia(
@@ -974,6 +977,10 @@ interface AccountSession : ChecklistAuthoringSession {
         )
     )
     suspend fun loadPinnedMessageId(providerDialogId: String): Result<Long?>
+    /** Whether the account has a server-side device list to manage. */
+    val supportsSessionManagement: Boolean
+        get() = false
+
     /**
      * Devices currently signed in to this account. Telegram calls these active
      * sessions; providers without a server-side device list keep the failure.

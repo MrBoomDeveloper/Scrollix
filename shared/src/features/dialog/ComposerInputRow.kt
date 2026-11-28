@@ -75,6 +75,12 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.mrboomdev.scrollix.ui.icons.draft_icon
+import com.mrboomdev.scrollix.ui.icons.image_icon
+import com.mrboomdev.scrollix.ui.icons.location_on_icon
+import com.mrboomdev.scrollix.ui.icons.poll_icon
+import com.mrboomdev.scrollix.ui.icons.reply_icon
+import com.mrboomdev.scrollix.ui.icons.task_alt_icon
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -108,6 +114,8 @@ fun ComposerInputRow(
     onAddPoll: () -> Unit,
     /** Null hides the entry: the provider cannot compose checklists. */
     onAddChecklist: (() -> Unit)?,
+    /** Null hides the entry: the account has no saved quick replies. */
+    onQuickReply: (() -> Unit)? = null,
     /** Null hides the entry: the platform cannot produce a location. */
     onAddLocation: (() -> Unit)?,
     onEmojiAnchorChanged: (Rect) -> Unit,
@@ -190,9 +198,11 @@ fun ComposerInputRow(
 
                 DropdownMenu(
                     expanded = showAttachmentMenu,
-                    onDismissRequest = { onAttachmentMenuChange(false) }
+                    onDismissRequest = { onAttachmentMenuChange(false) },
+                    shape = MaterialTheme.shapes.extraLarge
                 ) {
                     DropdownMenuItem(
+                        leadingIcon = { Icon(image_icon, null) },
                         text = { Text("Photos") },
                         onClick = {
                             onAttachmentMenuChange(false)
@@ -201,6 +211,7 @@ fun ComposerInputRow(
                     )
 
                     DropdownMenuItem(
+                        leadingIcon = { Icon(draft_icon, null) },
                         text = { Text("Files") },
                         onClick = {
                             onAttachmentMenuChange(false)
@@ -209,6 +220,7 @@ fun ComposerInputRow(
                     )
 
                     DropdownMenuItem(
+                        leadingIcon = { Icon(poll_icon, null) },
                         text = { Text("Poll") },
                         onClick = {
                             onAttachmentMenuChange(false)
@@ -218,6 +230,7 @@ fun ComposerInputRow(
 
                     if (onAddChecklist != null) {
                         DropdownMenuItem(
+                            leadingIcon = { Icon(task_alt_icon, null) },
                             text = { Text("Checklist") },
                             onClick = {
                                 onAttachmentMenuChange(false)
@@ -228,6 +241,7 @@ fun ComposerInputRow(
 
                     if (onAddLocation != null) {
                         DropdownMenuItem(
+                            leadingIcon = { Icon(location_on_icon, null) },
                             text = { Text("Location") },
                             onClick = {
                                 onAttachmentMenuChange(false)
@@ -236,32 +250,15 @@ fun ComposerInputRow(
                         )
                     }
 
-                    // Undo lives here as well as on Ctrl+Z, because a phone
-                    // has no keyboard to reach the shortcut with.
-                    if (onUndo != null || onRedo != null) {
-                        HorizontalDivider()
-
-                        if (onUndo != null) {
-                            DropdownMenuItem(
-                                enabled = canUndo,
-                                text = { Text("Undo") },
-                                onClick = {
-                                    onAttachmentMenuChange(false)
-                                    onUndo()
-                                }
-                            )
-                        }
-
-                        if (onRedo != null) {
-                            DropdownMenuItem(
-                                enabled = canRedo,
-                                text = { Text("Redo") },
-                                onClick = {
-                                    onAttachmentMenuChange(false)
-                                    onRedo()
-                                }
-                            )
-                        }
+                    if (onQuickReply != null) {
+                        DropdownMenuItem(
+                            leadingIcon = { Icon(reply_icon, null) },
+                            text = { Text("Quick reply") },
+                            onClick = {
+                                onAttachmentMenuChange(false)
+                                onQuickReply()
+                            }
+                        )
                     }
                 }
             }

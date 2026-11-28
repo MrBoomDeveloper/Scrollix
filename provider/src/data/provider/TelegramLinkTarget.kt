@@ -19,4 +19,14 @@ sealed interface TelegramLinkTarget {
         val kind: StickerPackKind,
         val expectCustomEmoji: Boolean = kind == StickerPackKind.CustomEmoji
     ) : TelegramLinkTarget
+
+    /** A bot mini app opened from `t.me/<bot>/<app>` instead of a chat. */
+    data class WebApp(
+        val title: String,
+        /** HTTPS URL with the init data the provider produced. */
+        val url: String
+    ) : TelegramLinkTarget
+
+    /** A chat folder invite link; the folder is already added on resolve. */
+    data class ChatFolder(val title: String) : TelegramLinkTarget
 }

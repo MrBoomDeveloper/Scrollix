@@ -167,6 +167,20 @@ fun SettingsDataUsageContent(accountId: String? = null) {
                 }
             }
         )
+
+        SettingsSwitch(
+            icon = send_icon,
+            title = "Compress photos",
+            description = "The provider compresses a photo when it is sent as a " +
+                "photo. Turn this off to send photos as files and keep the " +
+                "original quality.",
+            checked = settings.compressPhotos,
+            onCheckedChange = { enabled ->
+                AppSettingsStore.update { current ->
+                    current.copy(compressPhotos = enabled)
+                }
+            }
+        )
     }
 }
 

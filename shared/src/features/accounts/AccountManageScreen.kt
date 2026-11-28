@@ -5,6 +5,7 @@ import com.mrboomdev.scrollix.data.model.AccountRecord
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.provider.ProviderRegistry
+import com.mrboomdev.scrollix.features.settings.SettingsBusinessContent
 import com.mrboomdev.scrollix.features.settings.SettingsDataUsageContent
 import com.mrboomdev.scrollix.features.settings.SettingsNavRow
 import com.mrboomdev.scrollix.features.settings.SettingsNotificationsContent
@@ -19,6 +20,7 @@ import com.mrboomdev.scrollix.ui.icons.delete_icon
 import com.mrboomdev.scrollix.ui.icons.devices_icon
 import com.mrboomdev.scrollix.ui.icons.info_icon
 import com.mrboomdev.scrollix.ui.icons.notifications_icon
+import com.mrboomdev.scrollix.ui.icons.reply_icon
 import com.mrboomdev.scrollix.ui.icons.visibility_icon
 
 import androidx.compose.foundation.layout.Arrangement
@@ -107,11 +109,27 @@ internal fun AccountManageScreen(
         return
     }
 
-    val section = ManageSection.entries.firstOrNull { it.name == selected }
+    val authState = sessionStates[account.id]
+
+    // Sections the provider cannot back are not listed at all: a settings
+    // screen should never open on an empty or permanently disabled editor.
+    val session = remember(account.id, authState) { ApiManager.session(account.id) }
+    val sections = ManageSection.entries.filter { entry ->
+        when (entry) {
+            ManageSection.Overview,
+            ManageSection.DataUsage -> true
+
+            ManageSection.Sessions -> session?.supportsSessionManagement == true
+            ManageSection.Privacy -> session?.supportsLastSeenPrivacy == true
+            ManageSection.Notifications -> session?.supportsNotificationSettings == true
+            ManageSection.Business -> session?.supportsBusinessSettings == true
+        }
+    }
+
+    val section = sections.firstOrNull { it.name == selected }
         ?: ManageSection.Overview
     val isRemoving = account.id in viewModel.removingIds
     val isConnected = connectionStates[account.id]
-    val authState = sessionStates[account.id]
 
     val details: @Composable () -> Unit = {
         Column(
@@ -138,6 +156,7 @@ internal fun AccountManageScreen(
                 ManageSection.Sessions -> SettingsSessionsContent(account.id)
                 ManageSection.Privacy -> SettingsPrivacyContent(account.id)
                 ManageSection.Notifications -> SettingsNotificationsContent(account.id)
+                ManageSection.Business -> SettingsBusinessContent(account.id)
                 ManageSection.DataUsage -> SettingsDataUsageContent(account.id)
             }
 
@@ -187,7 +206,7 @@ internal fun AccountManageScreen(
                     )
                 }
 
-                ManageSection.entries.forEach { entry ->
+                sections.forEach { entry ->
                     SettingsNavRow(
                         icon = entry.icon,
                         title = entry.title,
@@ -234,7 +253,7 @@ internal fun AccountManageScreen(
                 )
             }
 
-            ManageSection.entries.forEach { entry ->
+            sections.forEach { entry ->
                 SettingsNavRow(
                     icon = entry.icon,
                     title = entry.title,
@@ -459,5 +478,6 @@ private enum class ManageSection(
     Sessions("Sessions", "Devices signed in to this account", devices_icon),
     Privacy("Privacy", "Who can see your activity", visibility_icon),
     Notifications("Notifications", "Mutes and per-chat exceptions", notifications_icon),
+    Business("Business", "Greeting, away messages, hours and quick replies", reply_icon),
     DataUsage("Data and network", "Traffic on this device and data saver", data_usage_icon)
 }

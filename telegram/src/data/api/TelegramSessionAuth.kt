@@ -256,6 +256,10 @@ internal suspend fun TelegramSession.handleAuthorizationState(state: Authorizati
 
                 if (!wasReady) {
                     loadProfileAndChats()
+
+                    // Shortcut contents only arrive through updates, so the
+                    // list has to be asked for once the session is usable.
+                    runCatching { client.loadQuickReplyShortcuts() }
                 }
             }
 

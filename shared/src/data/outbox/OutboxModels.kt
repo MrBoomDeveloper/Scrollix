@@ -94,6 +94,10 @@ data class OutboxEntry(
     val lastAttemptAt: Long = 0,
     val lastError: String? = null,
     val state: OutboxEntryState = OutboxEntryState.Queued,
+    /** True while the user paused the send; a paused entry is never retried. */
+    val paused: Boolean = false,
+    /** Upload fraction when it was paused, so the row shows where it stopped. */
+    val progress: Float? = null,
     /** Failed attempts, oldest first; a succeeded entry leaves the queue. */
     val attemptHistory: List<OutboxAttempt> = emptyList()
 ) {
@@ -115,4 +119,53 @@ data class OutboxState(
     /** Schema version; files written before versioning decode as 0. */
     val version: Int = 0,
     val entries: List<OutboxEntry> = emptyList()
+)
+
+/**
+ * Overall upload fraction of a file send: the slowest attachment, because the
+ * album is only complete when every one of its parts is.
+ */
+internal fun outboxAttachmentProgress(
+    attachments: List<OutboxAttachment>,
+    progressByPath: Map<String, Float>
+): Float? = attachments
+    .mapNotNull { attachment -> progressByPath[attachment.path] }
+    .minOrNull()
+
+/**
+ * A picked photo is sent as a photo only while compression is allowed. With it
+ * off the provider receives a document, which Telegram does not re-encode.
+ */
+internal fun photoKeepsPhotoForm(asPhoto: Boolean, compressPhotos: Boolean): Boolean =
+    asPhoto && compressPhotos
+
+/** True while this entry is a file send that still needs bytes. */
+fun OutboxEntry.isUploadActive(): Boolean =
+    kind == OutboxEntryKind.Files &&
+        !paused &&
+        state != OutboxEntryState.Failed
+
+/**
+ * Aggregate fraction of every active file send, for the background
+ * notification. An entry without a reported fraction counts as zero, so the
+ * bar never reaches completion before the bytes do.
+ */
+fun outboxOverallUploadProgress(
+    entries: List<OutboxEntry>,
+    progressByPath: Map<String, Float>
+): Float {
+    val active = entries.filter { entry -> entry.isUploadActive() }
+    if (active.isEmpty()) return 0f
+
+    return active
+        .map { entry -> outboxAttachmentProgress(entry.attachments, progressByPath) ?: 0f }
+        .average()
+        .toFloat()
+}
+
+/** One value describing the whole outgoing file queue, for the notification. */
+data class UploadSummary(
+    val files: Int = 0,
+    val progress: Float = 0f,
+    val active: Boolean = false
 )

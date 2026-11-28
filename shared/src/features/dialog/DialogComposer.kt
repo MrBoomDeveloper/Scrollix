@@ -1,5 +1,6 @@
 package com.mrboomdev.scrollix.features.dialog
 
+import com.mrboomdev.scrollix.data.model.BusinessQuickReply
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.isDesktopPlatform
@@ -13,6 +14,7 @@ import com.mrboomdev.scrollix.platform.media.RecordedMedia
 import com.mrboomdev.scrollix.platform.media.VideoNotePreview
 import com.mrboomdev.scrollix.ui.components.EmojiPicker
 import com.mrboomdev.scrollix.ui.icons.send_icon
+import com.mrboomdev.scrollix.ui.notice.NoticeCenter
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -167,6 +169,9 @@ internal fun BoxScope.DialogComposer(
     sendRecording: (RecordedMedia) -> Unit
 ) = with(ui) {
     val inputFocusRequester = remember { FocusRequester() }
+    val quickReplies by session?.businessQuickReplies?.collectAsState()
+        ?: remember { mutableStateOf(emptyList<BusinessQuickReply>()) }
+    val quickReplyCount = quickReplies.size
 
     // Desktop opens a chat ready for typing; mobile keeps its keyboard hidden
     // until the field is tapped.
@@ -387,6 +392,18 @@ internal fun BoxScope.DialogComposer(
             if (dialog?.canSendMessages == false) {
                 NotSendableNotice()
             } else Column {
+                // A bot's command menu opens as soon as the draft starts with a
+                // slash, listing only what the bot actually supports.
+                val commandSuggestions = filterBotCommands(botCommands, input)
+
+                if (commandSuggestions.isNotEmpty()) {
+                    BotCommandSuggestions(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        commands = commandSuggestions,
+                        onPick = ::applyBotCommand
+                    )
+                }
+
                 // The formatting row shows up while a range is selected, so it
                 // does not take vertical space from every chat.
                 if (!inputSelection.collapsed || inputFormatting.isNotEmpty()) {
@@ -429,6 +446,32 @@ internal fun BoxScope.DialogComposer(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
+                Column {
+                InlineBotResultStrip(
+                    results = inlineBotResults,
+                    session = session,
+                    isLoading = inlineBotLoading,
+                    sendingId = inlineBotSending,
+                    onPick = ::sendInlineBotResult
+                )
+
+                replyKeyboardOf(messages)?.let { keyboard ->
+                    ReplyKeyboardBar(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        keyboard = keyboard,
+                        onText = ::sendReplyKeyboardText,
+                        onLocation = { showLocationDialog = true },
+                        // Sharing the account's number needs contact access
+                        // that only a phone gives; the action opens the picker
+                        // that sends a location instead of pretending to work.
+                        onPhoneNumber = {
+                            NoticeCenter.error("Phone number sharing is not available in this app")
+                        },
+                        onPoll = { showPollDialog = true },
+                        onWebApp = ::openReplyKeyboardWebApp
+                    )
+                }
+
                 ComposerInputRow(
                     input = input,
                     inputSelection = inputSelection,
@@ -451,6 +494,11 @@ internal fun BoxScope.DialogComposer(
                     onAddPoll = { showPollDialog = true },
                     onAddChecklist = if (session?.supportsChecklistAuthoring == true) {
                         { showChecklistDialog = true }
+                    } else {
+                        null
+                    },
+                    onQuickReply = if (quickReplyCount > 0) {
+                        { showQuickReplies = true }
                     } else {
                         null
                     },
@@ -513,6 +561,7 @@ internal fun BoxScope.DialogComposer(
                     focusRequester = inputFocusRequester,
                     autoFocus = isDesktopPlatform()
                 )
+                }
                 }
 
                 AnimatedVisibility(
