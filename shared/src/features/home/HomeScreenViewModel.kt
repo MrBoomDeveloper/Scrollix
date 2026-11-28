@@ -10,7 +10,6 @@ import com.mrboomdev.scrollix.data.diagnostics.AppLog
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.storage.AppSettings
-import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import kotlinx.coroutines.launch
 
 private const val HOME_LOG_TAG = "home"
@@ -18,23 +17,16 @@ private const val HOME_LOG_TAG = "home"
 /** Unread counters for the chip row, split the way the chips consume them. */
 internal data class HomeUnreadCounts(
     val all: Int = 0,
-    val tabs: Map<Int, Int> = emptyMap(),
-    val folders: Map<String, Int> = emptyMap()
+    val tabs: Map<Int, Int> = emptyMap()
 )
 
 /**
- * Owns the chat-list screen state: the selected chip, the two reorder dialogs
- * and the counters derived from the loaded dialogs. Pager geometry and chip
- * dragging stay in the composable because they only describe the layout.
+ * Owns the chat-list screen state: the selected chip, the pinned-chat reorder
+ * dialog and the counters derived from the loaded dialogs. Pager geometry
+ * stays in the composable because it only describes the layout.
  */
 internal class HomeScreenViewModel : ViewModel() {
     var selectedTab by mutableStateOf(TAB_DIRECT)
-        private set
-
-    var selectedNativeFolderKey by mutableStateOf<String?>(null)
-        private set
-
-    var showFolderOrderDialog by mutableStateOf(false)
         private set
 
     var showPinnedOrderDialog by mutableStateOf(false)
@@ -56,28 +48,12 @@ internal class HomeScreenViewModel : ViewModel() {
         }
     }
 
-    fun selectAll(isUsingNativeFolders: Boolean) {
-        if (isUsingNativeFolders) {
-            selectedNativeFolderKey = null
-        } else {
-            selectedTab = TAB_ALL
-        }
+    fun selectAll() {
+        selectedTab = TAB_ALL
     }
 
     fun selectTab(index: Int) {
         selectedTab = index
-    }
-
-    fun selectFolder(key: String) {
-        selectedNativeFolderKey = key
-    }
-
-    fun openFolderOrder() {
-        showFolderOrderDialog = true
-    }
-
-    fun closeFolderOrder() {
-        showFolderOrderDialog = false
     }
 
     fun openPinnedOrder() {
@@ -86,11 +62,6 @@ internal class HomeScreenViewModel : ViewModel() {
 
     fun closePinnedOrder() {
         showPinnedOrderDialog = false
-    }
-
-    fun applyFolderOrder(keys: List<String>) {
-        showFolderOrderDialog = false
-        AppSettingsStore.update { current -> current.copy(folderOrder = keys) }
     }
 
     /**
@@ -128,11 +99,10 @@ internal class HomeScreenViewModel : ViewModel() {
     }
 }
 
-/** Unread chips are counted per native folder and per built-in tab. */
+/** Unread chips are counted per built-in tab. */
 internal fun homeUnreadCounts(entries: List<AccountDialogEntry>): HomeUnreadCounts {
     var all = 0
     val tabs = mutableMapOf<Int, Int>()
-    val folders = mutableMapOf<String, Int>()
 
     entries.forEach { entry ->
         if (!entry.dialog.hasUnreadIndicator()) return@forEach
@@ -146,12 +116,7 @@ internal fun homeUnreadCounts(entries: List<AccountDialogEntry>): HomeUnreadCoun
         }
 
         tabs[tab] = (tabs[tab] ?: 0) + 1
-
-        entry.dialog.folderIds.forEach { folderId ->
-            val key = "${entry.account.id}:$folderId"
-            folders[key] = (folders[key] ?: 0) + 1
-        }
     }
 
-    return HomeUnreadCounts(all = all, tabs = tabs, folders = folders)
+    return HomeUnreadCounts(all = all, tabs = tabs)
 }

@@ -3,13 +3,12 @@ package com.mrboomdev.scrollix.features.profile
 import com.mrboomdev.scrollix.data.model.ProfileTrack
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.platform.audio.createVoicePlayer
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.components.BytesImage
 import com.mrboomdev.scrollix.ui.icons.music_note_icon
 import com.mrboomdev.scrollix.ui.icons.pause_icon_filled
 import com.mrboomdev.scrollix.ui.icons.play_icon_filled
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +36,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -55,9 +52,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalGridApi::class)
 @Composable
@@ -177,17 +172,8 @@ internal fun ProfileTrackCard(
     isLoading: Boolean,
     onToggle: () -> Unit
 ) {
-    var cover by remember(track.media.minithumbnail) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    LaunchedEffect(track.media.minithumbnail) {
-        cover = track.media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-    }
+    val cover = track.media.minithumbnail
+    var coverLoaded by remember(cover) { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -206,20 +192,22 @@ internal fun ProfileTrackCard(
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center
             ) {
-                val bitmap = cover
-
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
+                if (!coverLoaded) {
                     Text(
                         text = "♪",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                if (cover != null) {
+                    BytesImage(
+                        bytes = cover,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        onSuccess = { coverLoaded = true },
+                        onError = { coverLoaded = false }
                     )
                 }
             }

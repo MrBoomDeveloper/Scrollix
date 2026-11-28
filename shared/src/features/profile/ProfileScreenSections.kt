@@ -5,7 +5,7 @@ import com.mrboomdev.scrollix.data.model.CommonGroup
 import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.model.UserProfileDetails
-import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
+import com.mrboomdev.scrollix.data.phone.formatPhoneNumber
 import com.mrboomdev.scrollix.getPlatform
 import com.mrboomdev.scrollix.openDialer
 import com.mrboomdev.scrollix.ui.components.AvatarImage

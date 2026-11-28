@@ -49,8 +49,6 @@ data class AppSettings(
     val defaultHomeTab: String = "direct",
     /** Settings schema version, used to apply one-time default changes. */
     val settingsVersion: Int = 0,
-    /** User order of folder chips; keys are "all", "folder:<account:id>" or "tab:<index>". */
-    val folderOrder: List<String> = emptyList(),
     /** Per-account order of installed sticker packs (ids). */
     val stickerPackOrders: Map<String, List<Long>> = emptyMap(),
     /** Per-account order of installed custom-emoji packs (ids). */
@@ -66,7 +64,6 @@ data class AppSettings(
     val showRecentStickersAndEmojis: Boolean = true,
     val showSystemEmojis: Boolean = true,
     val disabledEmojis: Set<String> = emptySet(),
-    val useNativeFolders: Boolean = true,
     val hasCustomWallpaper: Boolean = false,
     val wallpaperUpdatedAt: Long = 0,
     val emojiPickerTab: Int = 0,

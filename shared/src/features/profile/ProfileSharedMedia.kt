@@ -1,28 +1,28 @@
 package com.mrboomdev.scrollix.features.profile
 
-import com.mrboomdev.scrollix.ui.icons.gif_box_icon_filled
-import com.mrboomdev.scrollix.ui.icons.microphone_icon
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.SharedMediaKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.features.dialog.JustifiedMediaGrid
-import com.mrboomdev.scrollix.features.dialog.JustifiedMediaItem
+import com.mrboomdev.scrollix.features.dialog.message.JustifiedMediaGrid
+import com.mrboomdev.scrollix.features.dialog.message.JustifiedMediaItem
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.features.settings.icon
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.components.BytesImage
+import com.mrboomdev.scrollix.ui.components.MediaImage
 import com.mrboomdev.scrollix.ui.icons.draft_icon
 import com.mrboomdev.scrollix.ui.icons.draft_icon_filled
 import com.mrboomdev.scrollix.ui.icons.gif_box_icon
+import com.mrboomdev.scrollix.ui.icons.gif_box_icon_filled
 import com.mrboomdev.scrollix.ui.icons.image_icon
 import com.mrboomdev.scrollix.ui.icons.image_icon_filled
 import com.mrboomdev.scrollix.ui.icons.link_icon
+import com.mrboomdev.scrollix.ui.icons.microphone_icon
 import com.mrboomdev.scrollix.ui.icons.microphone_icon_filled
 import com.mrboomdev.scrollix.ui.icons.videocam_icon
 import com.mrboomdev.scrollix.ui.icons.videocam_icon_filled
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,16 +62,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrboomdev.scrollix.ui.icons.gif_box_icon_filled
 import com.mrboomdev.scrollix.ui.icons.microphone_icon
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -418,50 +415,43 @@ private fun SharedMediaThumbnail(
     session: AccountSession?,
     modifier: Modifier = Modifier.size(44.dp)
 ) {
-    var bitmap by remember(media.previewFileId, media.previewUniqueId, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    LaunchedEffect(media.previewFileId, media.previewUniqueId, media.minithumbnail, session) {
-        bitmap = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
-        }
-
-        val bytes = session?.loadMediaBytes(
-            fileId = media.previewFileId ?: media.fileId,
-            uniqueId = media.previewUniqueId ?: media.fileUniqueId
-        )
-
-        if (bytes != null) {
-            bitmap = withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
-        }
-    }
-
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center
     ) {
-        val image = bitmap
+        Text(
+            text = when (media.kind) {
+                MessageMediaKind.VoiceNote -> "🎤"
+                MessageMediaKind.VideoNote -> "▶"
+                MessageMediaKind.Video -> "▶"
+                MessageMediaKind.Animation -> "GIF"
+                else -> "📷"
+            },
+            style = MaterialTheme.typography.labelMedium
+        )
 
-        if (image != null) {
-            Image(
-                bitmap = image,
+        media.minithumbnail?.let { bytes ->
+            BytesImage(
+                bytes = bytes,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
-        } else {
-            Text(
-                text = when (media.kind) {
-                    MessageMediaKind.VoiceNote -> "🎤"
-                    MessageMediaKind.VideoNote -> "▶"
-                    MessageMediaKind.Video -> "▶"
-                    MessageMediaKind.Animation -> "GIF"
-                    else -> "📷"
-                },
-                style = MaterialTheme.typography.labelMedium
+        }
+
+        val fileId = media.previewFileId ?: media.fileId
+        val uniqueId = media.previewUniqueId ?: media.fileUniqueId
+
+        if (fileId != null || uniqueId != null) {
+            MediaImage(
+                session = session,
+                fileId = fileId,
+                uniqueId = uniqueId,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
             )
         }
     }

@@ -2,28 +2,25 @@ package com.mrboomdev.scrollix.ui.components
 
 import com.mrboomdev.scrollix.data.model.Avatar
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @Composable
 fun AvatarImage(
@@ -31,18 +28,8 @@ fun AvatarImage(
     size: Dp,
     modifier: Modifier = Modifier
 ) {
-    val image by produceState<ImageBitmap?>(
-        initialValue = null,
-        avatar?.image
-    ) {
-        value = avatar?.image?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-    }
-
-    val bitmap = image
+    val bytes = avatar?.image
+    var loaded by remember(bytes) { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -51,14 +38,7 @@ fun AvatarImage(
             .background(avatarColor(avatar?.colorSeed ?: 0)),
         contentAlignment = Alignment.Center
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        } else {
+        if (!loaded) {
             Text(
                 text = avatar?.initials ?: "?",
                 style = MaterialTheme.typography.labelMedium,
@@ -66,10 +46,18 @@ fun AvatarImage(
                 maxLines = 1
             )
         }
+
+        if (bytes != null) {
+            BytesImage(
+                bytes = bytes,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onSuccess = { loaded = true },
+                onError = { loaded = false }
+            )
+        }
     }
 }
-
-expect fun decodeImageBitmap(bytes: ByteArray): ImageBitmap?
 
 private fun avatarColor(seed: Int): Color {
     val palette = listOf(

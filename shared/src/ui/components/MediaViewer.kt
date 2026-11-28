@@ -1,7 +1,7 @@
 package com.mrboomdev.scrollix.ui.components
 
 import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.MediaSession
 import com.mrboomdev.scrollix.platform.PlatformBackHandler
 
 import androidx.compose.runtime.Composable
@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 data class MediaViewerRequest(
     val media: MessageMedia,
-    val session: AccountSession?,
+    val session: MediaSession?,
     val isVideo: Boolean,
     /** Caption of the message the media belongs to; empty when it has none. */
     val caption: String = ""
@@ -22,7 +22,7 @@ data class MediaViewerRequest(
 data class MediaGalleryRequest(
     val media: List<MessageMedia>,
     val initialIndex: Int,
-    val session: AccountSession?,
+    val session: MediaSession?,
     /** Caption of the album's message, shown over every attachment. */
     val caption: String = ""
 )
@@ -36,7 +36,7 @@ object MediaViewer {
 
     fun showImage(
         media: MessageMedia,
-        session: AccountSession?,
+        session: MediaSession?,
         caption: String = ""
     ) {
         _gallery.value = null
@@ -50,7 +50,7 @@ object MediaViewer {
 
     fun showVideo(
         media: MessageMedia,
-        session: AccountSession?,
+        session: MediaSession?,
         caption: String = ""
     ) {
         _gallery.value = null
@@ -65,7 +65,7 @@ object MediaViewer {
     fun showGallery(
         media: List<MessageMedia>,
         initialIndex: Int,
-        session: AccountSession?,
+        session: MediaSession?,
         caption: String = ""
     ) {
         if (media.isEmpty()) return

@@ -10,11 +10,19 @@ import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.features.dialog.media.ChatAnimationPreview
+import com.mrboomdev.scrollix.features.dialog.media.ChatSticker
+import com.mrboomdev.scrollix.features.dialog.media.ChatVideoPreview
+import com.mrboomdev.scrollix.features.dialog.media.SpoilerOverlay
+import com.mrboomdev.scrollix.features.dialog.media.loadingBlur
+import com.mrboomdev.scrollix.features.dialog.media.mediaSpoilerBlur
+import com.mrboomdev.scrollix.features.dialog.message.CustomEmojiMessageText
 import com.mrboomdev.scrollix.features.home.FolderEmojiImage
 import com.mrboomdev.scrollix.features.profile.formatCount
 import com.mrboomdev.scrollix.features.search.formatFileSize
+import com.mrboomdev.scrollix.ui.components.BytesImage
+import com.mrboomdev.scrollix.ui.components.MediaImage
 import com.mrboomdev.scrollix.ui.components.MediaViewer
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 import com.mrboomdev.scrollix.ui.components.savedMediaFileName
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 
@@ -22,7 +30,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideIn
 import androidx.compose.animation.slideOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -67,16 +74,13 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** Corner radius of photos, videos and GIFs, matching Telegram's bubble. */
 internal val MediaCornerRadius = 16.dp
@@ -286,30 +290,8 @@ internal fun ReplyImageThumbnail(
     media: MessageMedia,
     session: AccountSession?
 ) {
-    var image by remember(media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
-        image = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        val bytes = session?.loadMediaBytes(
-            fileId = media.previewFileId,
-            uniqueId = media.previewUniqueId
-        )
-
-        if (bytes != null) {
-            image = withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-    }
-
-    val bitmap = image
+    var failed by remember(media.previewFileId, media.minithumbnail) { mutableStateOf(false) }
+    val minithumbnail = media.minithumbnail
 
     Box(
         modifier = Modifier
@@ -318,9 +300,19 @@ internal fun ReplyImageThumbnail(
             .background(MaterialTheme.colorScheme.surfaceContainer),
         contentAlignment = Alignment.Center
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
+        MediaImage(
+            session = session,
+            fileId = media.previewFileId,
+            uniqueId = media.previewUniqueId,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            onError = { failed = true }
+        )
+
+        if (failed && minithumbnail != null) {
+            BytesImage(
+                bytes = minithumbnail,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
@@ -335,39 +327,15 @@ internal fun MessageImagePreview(
     session: AccountSession?,
     onClick: () -> Unit
 ) {
-    var image by remember(media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-    var isLoading by remember(media.previewFileId, media.minithumbnail, session) {
+    var isLoading by remember(media.previewFileId, media.minithumbnail) {
         mutableStateOf(true)
     }
+    var failed by remember(media.previewFileId, media.minithumbnail) { mutableStateOf(false) }
     var revealed by remember(media.fileId, media.fileUniqueId) {
         mutableStateOf(!media.isSpoiler)
     }
-
-    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
-        isLoading = true
-        image = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        val bytes = session?.loadMediaBytes(
-            fileId = media.previewFileId,
-            uniqueId = media.previewUniqueId
-        )
-
-        if (bytes != null) {
-            image = withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        isLoading = false
-    }
-
-    val bitmap = image
+    val minithumbnail = media.minithumbnail
+    val hasPreview = minithumbnail != null || !failed
 
     // The preview bitmap can be cropped, so its own ratio must never resize
     // the bubble after it decodes. The dimensions that come with the message
@@ -391,14 +359,14 @@ internal fun MessageImagePreview(
             .aspectRatio(aspectRatio)
             .clip(RoundedCornerShape(MediaCornerRadius))
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(enabled = bitmap != null) {
+            .clickable(enabled = hasPreview) {
                 if (!revealed) revealed = true else onClick()
             },
         contentAlignment = Alignment.Center
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
+        if (minithumbnail != null) {
+            BytesImage(
+                bytes = minithumbnail,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -408,11 +376,30 @@ internal fun MessageImagePreview(
             )
         }
 
-        if (bitmap != null && !revealed) {
+        MediaImage(
+            session = session,
+            fileId = media.previewFileId,
+            uniqueId = media.previewUniqueId,
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .mediaSpoilerBlur(!revealed, radius = 26.dp),
+            contentScale = ContentScale.Crop,
+            onSuccess = {
+                isLoading = false
+                failed = false
+            },
+            onError = {
+                isLoading = false
+                failed = true
+            }
+        )
+
+        if (!revealed && (minithumbnail != null || !isLoading)) {
             SpoilerOverlay(onReveal = { revealed = true })
         }
 
-        if (bitmap == null && !isLoading) {
+        if (failed && minithumbnail == null) {
             Text(
                 text = "Image",
                 style = MaterialTheme.typography.labelMedium,
@@ -731,28 +718,8 @@ internal fun PollOptionMedia(
         return
     }
 
-    var image by remember(media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
-        image = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        val bytes = session?.loadMediaBytes(
-            fileId = media.previewFileId ?: media.fileId,
-            uniqueId = media.previewUniqueId ?: media.fileUniqueId
-        )
-
-        if (bytes != null) {
-            image = withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-    }
+    var failed by remember(media.previewFileId, media.minithumbnail) { mutableStateOf(false) }
+    val minithumbnail = media.minithumbnail
 
     Box(
         modifier = Modifier
@@ -761,9 +728,19 @@ internal fun PollOptionMedia(
             .background(MaterialTheme.colorScheme.surfaceContainer),
         contentAlignment = Alignment.Center
     ) {
-        image?.let { bitmap ->
-            Image(
-                bitmap = bitmap,
+        MediaImage(
+            session = session,
+            fileId = media.previewFileId ?: media.fileId,
+            uniqueId = media.previewUniqueId ?: media.fileUniqueId,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            onError = { failed = true }
+        )
+
+        if (failed && minithumbnail != null) {
+            BytesImage(
+                bytes = minithumbnail,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

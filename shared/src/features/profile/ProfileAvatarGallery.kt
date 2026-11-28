@@ -6,10 +6,10 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.fetchUrlBytes
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.components.BytesImage
+import com.mrboomdev.scrollix.ui.components.MediaImage
 import com.mrboomdev.scrollix.ui.icons.close_icon
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -65,9 +64,7 @@ fun ProfileAvatarGalleryDialog(
     var photos by remember(userId) { mutableStateOf<List<MessageMedia>>(emptyList()) }
     var isLoading by remember(userId) { mutableStateOf(true) }
     var selectedIndex by remember(userId) { mutableStateOf(0) }
-    var bitmap by remember(userId, selectedIndex) { mutableStateOf<ImageBitmap?>(null) }
     var fallbackBytes by remember(userId) { mutableStateOf<ByteArray?>(null) }
-    var fallbackBitmap by remember(userId) { mutableStateOf<ImageBitmap?>(null) }
     var isDownloading by remember(userId) { mutableStateOf(false) }
     var status by remember(userId) { mutableStateOf<String?>(null) }
 
@@ -101,26 +98,6 @@ fun ProfileAvatarGalleryDialog(
             }
 
         fallbackBytes = bytes
-        fallbackBitmap = bytes?.let { image ->
-            withContext(Dispatchers.Default) { decodeImageBitmap(image) }
-        }
-    }
-
-    LaunchedEffect(photos, selectedIndex, session) {
-        val photo = photos.getOrNull(selectedIndex) ?: return@LaunchedEffect
-
-        bitmap = photo.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
-        }
-
-        val bytes = session?.loadMediaBytes(
-            fileId = photo.fileId,
-            uniqueId = photo.fileUniqueId ?: photo.previewUniqueId
-        )
-
-        if (bytes != null) {
-            bitmap = withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
-        }
     }
 
     fun download() {
@@ -196,21 +173,38 @@ fun ProfileAvatarGalleryDialog(
                         .background(MaterialTheme.colorScheme.surfaceContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    val image = bitmap ?: fallbackBitmap
+                    val photo = photos.getOrNull(selectedIndex)
+                    val fallback = fallbackBytes
 
                     when {
-                        image != null -> Image(
-                            bitmap = image,
-                            contentDescription = if (photos.isEmpty()) {
-                                "Profile photo"
-                            } else {
-                                "Profile photo ${selectedIndex + 1}"
-                            },
+                        photo != null -> {
+                            photo.minithumbnail?.let { thumbnail ->
+                                BytesImage(
+                                    bytes = thumbnail,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+
+                            MediaImage(
+                                session = session,
+                                fileId = photo.fileId,
+                                uniqueId = photo.fileUniqueId ?: photo.previewUniqueId,
+                                contentDescription = "Profile photo ${selectedIndex + 1}",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+
+                        isLoading -> CircularProgressIndicator()
+
+                        fallback != null -> BytesImage(
+                            bytes = fallback,
+                            contentDescription = "Profile photo",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Fit
                         )
-
-                        isLoading -> CircularProgressIndicator()
 
                         else -> Text(
                             text = "No profile photos",
@@ -243,7 +237,7 @@ fun ProfileAvatarGalleryDialog(
                         modifier = Modifier.weight(1f),
                         text = when {
                             photos.isNotEmpty() -> status ?: "${selectedIndex + 1} / ${photos.size}"
-                            fallbackBitmap != null -> status ?: "Current profile photo"
+                            fallbackBytes != null -> status ?: "Current profile photo"
                             else -> status.orEmpty()
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -282,24 +276,8 @@ private fun AvatarGalleryThumbnail(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    var bitmap by remember(media.previewFileId, media.previewUniqueId, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    LaunchedEffect(media.previewFileId, media.previewUniqueId, media.minithumbnail, session) {
-        bitmap = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
-        }
-
-        val bytes = session?.loadMediaBytes(
-            fileId = media.previewFileId ?: media.fileId,
-            uniqueId = media.previewUniqueId ?: media.fileUniqueId
-        )
-
-        if (bytes != null) {
-            bitmap = withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
-        }
-    }
+    var failed by remember(media.previewFileId, media.previewUniqueId) { mutableStateOf(false) }
+    val minithumbnail = media.minithumbnail
 
     Box(
         modifier = Modifier
@@ -317,9 +295,19 @@ private fun AvatarGalleryThumbnail(
             .clip(RoundedCornerShape(8.dp)),
         contentAlignment = Alignment.Center
     ) {
-        bitmap?.let { image ->
-            Image(
-                bitmap = image,
+        MediaImage(
+            session = session,
+            fileId = media.previewFileId ?: media.fileId,
+            uniqueId = media.previewUniqueId ?: media.fileUniqueId,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            onError = { failed = true }
+        )
+
+        if (failed && minithumbnail != null) {
+            BytesImage(
+                bytes = minithumbnail,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

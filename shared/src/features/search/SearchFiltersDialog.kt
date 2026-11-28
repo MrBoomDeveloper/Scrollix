@@ -1,7 +1,7 @@
 package com.mrboomdev.scrollix.features.search
 
-import com.mrboomdev.scrollix.features.dialog.DialogSearchFilter
-import com.mrboomdev.scrollix.features.dialog.SearchDateFilter
+import com.mrboomdev.scrollix.features.dialog.search.DialogSearchFilter
+import com.mrboomdev.scrollix.features.dialog.search.SearchDateFilter
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

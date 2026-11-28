@@ -3,12 +3,12 @@ package com.mrboomdev.scrollix.features.dialog
 import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.features.dialog.message.CustomEmojiMessageText
 import com.mrboomdev.scrollix.platform.files.PickedFile
 import com.mrboomdev.scrollix.platform.files.rememberFilePicker
+import com.mrboomdev.scrollix.ui.components.BytesImage
 import com.mrboomdev.scrollix.ui.components.EmojiPickerDialog
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,7 +44,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -617,14 +616,10 @@ private fun PollEmojiTextField(
 /** Thumbnail of the image attached to a poll option. */
 @Composable
 private fun PollImagePreview(path: String, name: String) {
-    var bitmap by remember(path) { mutableStateOf<ImageBitmap?>(null) }
+    var bytes by remember(path) { mutableStateOf<ByteArray?>(null) }
 
     LaunchedEffect(path) {
-        val bytes = withContext(Dispatchers.IO) { readFileBytes(path) }
-
-        bitmap = bytes?.let { data ->
-            withContext(Dispatchers.Default) { decodeImageBitmap(data) }
-        }
+        bytes = withContext(Dispatchers.IO) { readFileBytes(path) }
     }
 
     Box(
@@ -634,9 +629,9 @@ private fun PollImagePreview(path: String, name: String) {
             .background(MaterialTheme.colorScheme.surfaceContainer),
         contentAlignment = Alignment.Center
     ) {
-        bitmap?.let { image ->
-            Image(
-                bitmap = image,
+        bytes?.let { data ->
+            BytesImage(
+                bytes = data,
                 contentDescription = name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

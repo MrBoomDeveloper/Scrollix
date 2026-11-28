@@ -1,5 +1,7 @@
 package com.mrboomdev.scrollix.features.search
 
+import com.mrboomdev.scrollix.features.dialog.search.DialogSearchFilter
+import com.mrboomdev.scrollix.features.dialog.search.filterSearchMessages
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,8 +16,6 @@ import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
 import com.mrboomdev.scrollix.data.storage.deviceDownloadsDirectory
 import com.mrboomdev.scrollix.data.storage.listDeviceDownloads
-import com.mrboomdev.scrollix.features.dialog.DialogSearchFilter
-import com.mrboomdev.scrollix.features.dialog.filterSearchMessages
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

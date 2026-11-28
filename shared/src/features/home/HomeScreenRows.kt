@@ -7,18 +7,18 @@ import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.DialogKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.storage.formatTime
-import com.mrboomdev.scrollix.features.dialog.CustomEmojiMessageText
-import com.mrboomdev.scrollix.features.dialog.MainMiniAppDialog
+import com.mrboomdev.scrollix.features.dialog.bots.MainMiniAppDialog
+import com.mrboomdev.scrollix.features.dialog.message.CustomEmojiMessageText
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
-import com.mrboomdev.scrollix.ui.notice.NoticeCenter
 import com.mrboomdev.scrollix.ui.icons.check_icon
 import com.mrboomdev.scrollix.ui.icons.delete_icon
 import com.mrboomdev.scrollix.ui.icons.done_all_icon
 import com.mrboomdev.scrollix.ui.icons.keep_icon
 import com.mrboomdev.scrollix.ui.icons.more_vertical_icon
 import com.mrboomdev.scrollix.ui.icons.verified_icon
+import com.mrboomdev.scrollix.ui.notice.NoticeCenter
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -155,12 +155,11 @@ internal fun UnreadCountBadge(
 internal fun DialogItem(
     entry: AccountDialogEntry,
     isSelected: Boolean,
-    folderId: Int?,
     showSavedMessagesAccountBadge: Boolean,
     onClick: () -> Unit
 ) {
     val dialog = entry.dialog
-    val isPinned = dialog.isPinnedIn(folderId)
+    val isPinned = dialog.isPinned
 
     // The same chat can be open on more than one account (and every account
     // has its own "Saved messages"). Such rows carry the account avatar on the
@@ -429,8 +428,7 @@ internal fun DialogItem(
                         ApiManager.setDialogPinned(
                             accountId = entry.account.id,
                             providerDialogId = dialog.providerDialogId,
-                            isPinned = !isPinned,
-                            folderId = folderId
+                            isPinned = !isPinned
                         )
                     }
                 }
@@ -510,22 +508,6 @@ internal fun DialogItem(
     }
 }
 
-internal fun Dialog.isPinnedIn(folderId: Int?): Boolean {
-    if (folderId == null) return isPinned
-
-    return folderPositions.any { position ->
-        position.folderId == folderId && position.isPinned
-    }
-}
-
-internal fun Dialog.orderIn(folderId: Int?): Long {
-    if (folderId == null) return order
-
-    return folderPositions.firstOrNull { position ->
-        position.folderId == folderId
-    }?.order ?: 0L
-}
-
 internal fun AccountDialogEntry.key(): String = "${account.id}:${dialog.providerDialogId}"
 
 /**
@@ -534,22 +516,19 @@ internal fun AccountDialogEntry.key(): String = "${account.id}:${dialog.provider
  * itself cannot be compared across providers: TDLib uses a huge int64 sort
  * key while MAX stores the last event time there.
  */
-internal fun sortDialogs(
-    entries: List<AccountDialogEntry>,
-    folderId: Int?
-): List<AccountDialogEntry> {
+internal fun sortDialogs(entries: List<AccountDialogEntry>): List<AccountDialogEntry> {
     val pinRanks = entries
-        .filter { entry -> entry.dialog.isPinnedIn(folderId) }
+        .filter { entry -> entry.dialog.isPinned }
         .groupBy { entry -> entry.account.id }
         .flatMap { (_, pinned) ->
             pinned
-                .sortedByDescending { entry -> entry.dialog.orderIn(folderId) }
+                .sortedByDescending { entry -> entry.dialog.order }
                 .mapIndexed { index, entry -> entry.key() to index }
         }
         .toMap()
 
     return entries.sortedWith(
-        compareByDescending<AccountDialogEntry> { entry -> entry.dialog.isPinnedIn(folderId) }
+        compareByDescending<AccountDialogEntry> { entry -> entry.dialog.isPinned }
             .thenBy { entry -> pinRanks[entry.key()] ?: 0 }
             .thenByDescending { entry -> entry.dialog.timestamp }
             .thenBy { entry -> entry.dialog.title.lowercase() }

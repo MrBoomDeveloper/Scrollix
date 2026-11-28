@@ -6,6 +6,8 @@ import com.mrboomdev.scrollix.data.model.MessageScheduling
 import com.mrboomdev.scrollix.data.outbox.OutboxAttachment
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
 import com.mrboomdev.scrollix.data.outbox.photoKeepsPhotoForm
+import com.mrboomdev.scrollix.features.dialog.viewmodel.DialogScreenViewModel
+import com.mrboomdev.scrollix.features.dialog.viewmodel.clearComposer
 import com.mrboomdev.scrollix.platform.media.MediaRecordingKind
 import com.mrboomdev.scrollix.platform.media.RecordedMedia
 

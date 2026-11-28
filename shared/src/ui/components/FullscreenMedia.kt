@@ -4,7 +4,7 @@ import com.mrboomdev.scrollix.data.media.WebmAnimation
 import com.mrboomdev.scrollix.data.media.loadWebmAnimation
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
-import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.MediaSession
 import com.mrboomdev.scrollix.data.storage.saveFileToDevice
 import com.mrboomdev.scrollix.features.home.WebmFrames
 import com.mrboomdev.scrollix.features.home.rememberFadeIn
@@ -74,7 +74,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun FullscreenImageViewer(
     media: MessageMedia,
-    session: AccountSession?,
+    session: MediaSession?,
     caption: String = "",
     onClose: () -> Unit
 ) {
@@ -92,7 +92,7 @@ fun FullscreenImageViewer(
 @Composable
 fun FullscreenVideoViewer(
     media: MessageMedia,
-    session: AccountSession?,
+    session: MediaSession?,
     caption: String = "",
     onClose: () -> Unit
 ) {
@@ -167,48 +167,20 @@ private fun MediaCaption(caption: String, modifier: Modifier = Modifier) {
 @Composable
 private fun FullscreenImageContent(
     media: MessageMedia,
-    session: AccountSession?,
+    session: MediaSession?,
     modifier: Modifier,
     /** Whether this page is the one the viewer shows; pages reset when inactive. */
     active: Boolean = true,
     /** Reports whether the photo is zoomed in, so the pager can stop paging. */
     onZoomChange: (Boolean) -> Unit = {}
 ) {
-    var image by remember(media.fileId, media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    LaunchedEffect(media.fileId, media.previewFileId, media.minithumbnail, session) {
-        image = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        val bytes = session?.loadMediaBytes(
-            fileId = media.fileId ?: media.previewFileId,
-            uniqueId = media.fileUniqueId ?: media.previewUniqueId
-        )
-
-        if (bytes != null) {
-            image = withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-    }
-
-    val bitmap = image
-
-    if (bitmap != null) {
-        ZoomableImage(
-            bitmap = bitmap,
-            modifier = modifier.alpha(rememberFadeIn(bitmap)),
-            active = active,
-            onZoomChange = onZoomChange
-        )
-    } else {
-        CircularProgressIndicator()
-    }
+    ZoomableImage(
+        media = media,
+        session = session,
+        modifier = modifier,
+        active = active,
+        onZoomChange = onZoomChange
+    )
 }
 
 /**
@@ -223,14 +195,19 @@ private fun FullscreenImageContent(
  */
 @Composable
 private fun ZoomableImage(
-    bitmap: ImageBitmap,
+    media: MessageMedia,
+    session: MediaSession?,
     modifier: Modifier = Modifier,
     active: Boolean = true,
     onZoomChange: (Boolean) -> Unit = {}
 ) {
-    var scale by remember(bitmap) { mutableFloatStateOf(1f) }
-    var offset by remember(bitmap) { mutableStateOf(Offset.Zero) }
+    var loaded by remember(media.fileId, media.previewFileId) { mutableStateOf(false) }
+    var failed by remember(media.fileId, media.previewFileId) { mutableStateOf(false) }
+    var scale by remember(media.fileId) { mutableFloatStateOf(1f) }
+    var offset by remember(media.fileId) { mutableStateOf(Offset.Zero) }
     var container by remember { mutableStateOf(IntSize.Zero) }
+    val fade = rememberFadeIn(if (loaded) media.fileId ?: media.previewFileId else null)
+    val minithumbnail = media.minithumbnail
 
     fun clamp(target: Offset, value: Float): Offset {
         return clampZoomOffset(
@@ -260,9 +237,7 @@ private fun ZoomableImage(
         onZoomChange(next > MinZoom)
     }
 
-    Image(
-        bitmap = bitmap,
-        contentDescription = null,
+    Box(
         modifier = modifier
             .onSizeChanged { size -> container = size }
             .graphicsLayer {
@@ -276,7 +251,7 @@ private fun ZoomableImage(
                 canPan = { scale > MinZoom },
                 lockRotationOnZoomPan = true
             )
-            .pointerInput(bitmap) {
+            .pointerInput(media.fileId, media.previewFileId) {
                 detectTapGestures(
                     onTap = { /* swallowed: only the backdrop and ✕ close */ },
                     onDoubleTap = { position ->
@@ -297,8 +272,38 @@ private fun ZoomableImage(
                     }
                 )
             },
-        contentScale = ContentScale.Fit
-    )
+        contentAlignment = Alignment.Center
+    ) {
+        // The tiny embedded preview stands in, blurred, until the full photo
+        // arrives; on a permanent failure it is left readable instead.
+        if (minithumbnail != null && !loaded) {
+            BytesImage(
+                bytes = minithumbnail,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (failed) Modifier else Modifier.blur(12.dp)),
+                contentScale = ContentScale.Fit
+            )
+        }
+
+        MediaImage(
+            session = session,
+            fileId = media.fileId ?: media.previewFileId,
+            uniqueId = media.fileUniqueId ?: media.previewUniqueId,
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(fade),
+            contentScale = ContentScale.Fit,
+            onSuccess = { loaded = true },
+            onError = { failed = true }
+        )
+
+        if (!loaded && !failed) {
+            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+        }
+    }
 }
 
 /**
@@ -331,7 +336,7 @@ private const val DoubleTapZoom = 2.5f
 @Composable
 private fun LegacyFullscreenVideoContent(
     media: MessageMedia,
-    session: AccountSession?,
+    session: MediaSession?,
     modifier: Modifier,
     active: Boolean = true
 ) {
@@ -438,7 +443,7 @@ private fun LegacyFullscreenVideoContent(
 @Composable
 private fun FullscreenVideoContent(
     media: MessageMedia,
-    session: AccountSession?,
+    session: MediaSession?,
     modifier: Modifier,
     active: Boolean = true
 ) {
@@ -459,7 +464,7 @@ private fun FullscreenVideoContent(
 fun FullscreenGalleryViewer(
     media: List<MessageMedia>,
     initialIndex: Int,
-    session: AccountSession?,
+    session: MediaSession?,
     caption: String = "",
     onClose: () -> Unit
 ) {
@@ -705,34 +710,12 @@ private fun BoxScope.GalleryArrow(
 @Composable
 private fun GalleryThumbnail(
     media: MessageMedia,
-    session: AccountSession?,
+    session: MediaSession?,
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    var bitmap by remember(media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
-        bitmap = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        if (bitmap == null) {
-            val bytes = session?.loadMediaBytes(
-                fileId = media.previewFileId,
-                uniqueId = media.previewUniqueId
-            )
-
-            if (bytes != null) {
-                bitmap = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(bytes)
-                }
-            }
-        }
-    }
+    var failed by remember(media.previewFileId, media.minithumbnail) { mutableStateOf(false) }
+    val minithumbnail = media.minithumbnail
 
     Box(
         modifier = Modifier
@@ -753,11 +736,19 @@ private fun GalleryThumbnail(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        val image = bitmap
+        MediaImage(
+            session = session,
+            fileId = media.previewFileId,
+            uniqueId = media.previewUniqueId,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            onError = { failed = true }
+        )
 
-        if (image != null) {
-            Image(
-                bitmap = image,
+        if (failed && minithumbnail != null) {
+            BytesImage(
+                bytes = minithumbnail,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

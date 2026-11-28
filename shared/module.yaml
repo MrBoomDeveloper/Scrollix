@@ -20,6 +20,7 @@ dependencies:
   - $libs.androidx.lifecycle.viewmodel.compose
   - $libs.androidx.lifecycle.runtime.compose
   - $libs.jetbrains.navigation3.ui
+  - $libs.jetbrains.navigationevent.compose
   - $libs.jetbrains.lifecycle.viewmodelNavigation3
   - $libs.jetbrains.material3.adaptiveNavigation3
   - $libs.qrose
@@ -27,6 +28,10 @@ dependencies:
   - $libs.haze.blur
   - $libs.compottie
   - $libs.reorderable
+  - $libs.ksoup
+  - $libs.coil.compose
+  - $libs.coil.core
+  - $libs.okio
   - nl.jacobras:Human-Readable:2.0.0
   - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0
   - $libs.androidx.room3.runtime
@@ -49,11 +54,6 @@ dependencies@android:
 test-dependencies:
   # Validates exported Room schemas and migrations on the JVM.
   - $libs.androidx.room3.testing
-
-test-dependencies@jvm:
-  # Offscreen Compose rendering for the golden-image tests.
-  - $compose.uiTest
-  - $compose.desktop.currentOs
 
 dependencies@jvm:
   # Desktop captcha: an embedded Chromium browser (KCEF) wrapped by Compose.

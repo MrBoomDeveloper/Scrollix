@@ -48,7 +48,7 @@ downloads → audio/streaming → small items**.
 
 - Sending: `DialogScreenViewModel.addAttachments` caps at `MaxAlbumAttachments`;
   rows live in `pendingAttachments` and are reviewed in
-  `shared/src/features/dialog/AttachmentReview.kt`; sending goes through
+  `shared/src/features/dialog/composer/AttachmentReview.kt`; sending goes through
   `OutboxManager` → `AccountSession.sendFiles` → `TelegramSessionMessages.sendFilesImpl`.
 - Upload progress: `UploadProgressStore` (path → fraction) fed from
   `TelegramSessionUpdates`; pending bubbles read it in
@@ -240,7 +240,7 @@ shared/src/ui/components/photoeditor/Baking.kt              shared pixel math
 shared/src/platform/media/ImageEditor.kt                    expect
 shared/src@android/platform/media/ImageEditor.android.kt
 shared/src@jvm/platform/media/ImageEditor.jvm.kt
-shared/src/features/dialog/VideoTrimSheet.kt
+shared/src/features/dialog/composer/VideoTrimSheet.kt
 shared/src/platform/media/VideoTrimmer.kt + actuals
 shared/test/ui/components/photoeditor/*Test.kt
 ```
@@ -546,14 +546,6 @@ Pure logic (common `shared/test`):
 - outbox: paused entries survive a restart, view-once migration, per-file
   failure isolation.
 - `fileTypeFamily` table.
-
-Golden tests (`shared/test@jvm/ui/golden/`, deterministic only):
-
-- review row with edit button and per-file progress states.
-- file card with a colored icon and `PDF · 2.4 MB` subtitle.
-- trim sheet with fixed thumbnails (no video decoding in the test).
-- Downloads screen empty state, active row with a fixed fraction.
-No golden test may use animation, network or a real codec.
 
 Provider tests: `AccountSessionContract` gains checks for the defaults (all new
 capabilities false; methods return failure/success without throwing). The

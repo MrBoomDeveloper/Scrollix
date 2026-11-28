@@ -27,9 +27,6 @@ import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.SharedMediaKind
-import com.mrboomdev.scrollix.data.model.StickerPackKind
-import com.mrboomdev.scrollix.data.model.StickerSetInfo
-import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReplyQuote
 import com.mrboomdev.scrollix.data.model.ActiveSessionInfo
@@ -45,8 +42,9 @@ private val AlwaysConnected = MutableStateFlow(true)
 /** Providers that do not report a star balance own none of it. */
 private val NoStars = MutableStateFlow(0L)
 
-interface AccountSession : ChecklistAuthoringSession, BotSession, PaymentSession, BusinessSession {
-    val accountId: String
+interface AccountSession : StickerSession, ChecklistAuthoringSession, BotSession, PaymentSession,
+    BusinessSession {
+    override val accountId: String
     val providerId: String
 
     val authState: StateFlow<AuthState>
@@ -216,51 +214,6 @@ interface AccountSession : ChecklistAuthoringSession, BotSession, PaymentSession
         messageId: Long,
         radius: Int = 50
     ): Result<Boolean> = loadMessagesUntil(providerDialogId, messageId)
-    suspend fun loadFile(fileId: Int): Result<ByteArray>
-
-    /**
-     * Loads bytes only when the runtime file id still belongs to the durable
-     * unique id. A file id restored from cache can be reassigned after a
-     * restart, and blindly using it shows a different file's bytes.
-     * Implementations that cannot verify the id fall back to [loadFile].
-     */
-    suspend fun loadFileIfUnique(fileId: Int, uniqueId: String): Result<ByteArray> =
-        loadFile(fileId)
-
-    /**
-     * Reads message media, preferring the durable cached entry. When a unique
-     * id is known, the file id is used only if it still resolves to it.
-     */
-    suspend fun loadMediaBytes(fileId: Int?, uniqueId: String?): ByteArray? {
-        if (uniqueId != null) {
-            loadCachedMedia(uniqueId)?.let { return it }
-            fileId?.let { id ->
-                loadFileIfUnique(id, uniqueId).getOrNull()?.let { return it }
-            }
-
-            return null
-        }
-
-        return fileId?.let { id -> loadFile(id).getOrNull() }
-    }
-
-    /**
-     * Reads a file that was cached in a previous run, without asking the
-     * provider for it. Media is addressed by its durable remote unique id, so
-     * this works even when the runtime file ids of a cached dialog are stale.
-     * Returns null when nothing is cached under that id.
-     */
-    suspend fun loadCachedMedia(remoteUniqueId: String): ByteArray? = null
-
-    /**
-     * Fraction of [fileId] already downloaded, 0..1, or null when the provider
-     * cannot report it. The UI polls this only while a download it started is
-     * still running.
-     */
-    fun mediaDownloadProgress(fileId: Int): Float? = null
-
-    /** Stops an in-flight download. Unknown or already finished ids are ignored. */
-    suspend fun cancelMediaDownload(fileId: Int) = Unit
     /**
      * Loads the replies of a message thread. For channel comments the replies
      * live in a different chat, which [ChatMessageThread.chatId] exposes.
@@ -723,23 +676,6 @@ interface AccountSession : ChecklistAuthoringSession, BotSession, PaymentSession
             TelegramLinkTarget.Dialog(providerDialogId)
         }
 
-    /** Loads a sticker or custom-emoji set by its public name. */
-    suspend fun loadStickerSetByName(
-        name: String,
-        kind: StickerPackKind = StickerPackKind.Sticker
-    ): Result<StickerSetInfo> = Result.failure(
-        UnsupportedOperationException("Loading sticker sets by name is not supported")
-    )
-
-    suspend fun loadStickerSet(setId: Long): Result<StickerSetInfo>
-    suspend fun setStickerSetInstalled(setId: Long, installed: Boolean): Result<Unit>
-    suspend fun loadStickerPacks(kind: StickerPackKind): Result<List<StickerPack>>
-    suspend fun loadRecentStickers(kind: StickerPackKind): Result<List<MessageMedia>>
-    suspend fun removeRecentSticker(sticker: MessageMedia): Result<Unit>
-    suspend fun clearRecentStickers(): Result<Unit>
-    suspend fun loadSavedAnimations(): Result<List<MessageMedia>>
-    suspend fun removeSavedAnimation(animation: MessageMedia): Result<Unit>
-    suspend fun clearSavedAnimations(): Result<Unit>
     suspend fun sendSticker(providerDialogId: String, sticker: MessageMedia): Result<Unit>
 
     /**

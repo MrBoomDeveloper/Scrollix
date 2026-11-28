@@ -74,7 +74,6 @@ internal fun settingsChanges(current: AppSettings, imported: AppSettings): List<
     compare("Show the \"All\" tab", current.showAllChatsTab, imported.showAllChatsTab)
     compare("Single row filters", current.singleRowFilters, imported.singleRowFilters)
     compare("Merge duplicate chats", current.mergeDuplicateDialogs, imported.mergeDuplicateDialogs)
-    compare("Use Telegram folders", current.useNativeFolders, imported.useNativeFolders)
     compare(
         "Recent emoji and stickers",
         current.showRecentStickersAndEmojis,
@@ -94,7 +93,6 @@ internal fun settingsChanges(current: AppSettings, imported: AppSettings): List<
         current.translationLanguage ?: "Device",
         imported.translationLanguage ?: "Device"
     )
-    compareCount("Folder order entries", current.folderOrder.size, imported.folderOrder.size)
     compareCount("Sticker pack orders", current.stickerPackOrders.size, imported.stickerPackOrders.size)
     compareCount("Emoji pack orders", current.emojiPackOrders.size, imported.emojiPackOrders.size)
     compare(

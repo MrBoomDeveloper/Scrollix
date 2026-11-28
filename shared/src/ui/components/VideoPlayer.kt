@@ -1,12 +1,11 @@
 package com.mrboomdev.scrollix.ui.components
 
 import com.mrboomdev.scrollix.data.model.MessageMedia
-import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.MediaSession
 import com.mrboomdev.scrollix.platform.media.VideoPlayback
 import com.mrboomdev.scrollix.platform.media.VideoPlaybackState
 import com.mrboomdev.scrollix.platform.media.createVideoPlayer
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,15 +52,12 @@ expect fun VideoRenderSurface(player: VideoPlayback, modifier: Modifier)
 @Composable
 fun VideoPlayer(
     media: MessageMedia,
-    session: AccountSession?,
+    session: MediaSession?,
     modifier: Modifier = Modifier,
     isActive: Boolean = true
 ) {
     val player = remember(media.fileId, media.fileUniqueId) { createVideoPlayer() }
     val state by player.state.collectAsState()
-    var poster by remember(media.minithumbnail, media.previewFileId) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
     var loadError by remember(media.fileId, media.fileUniqueId) {
         mutableStateOf<String?>(null)
     }
@@ -85,23 +80,6 @@ fun VideoPlayer(
     }
 
     LaunchedEffect(servedFileId, servedUniqueId, session) {
-        poster = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) { decodeImageBitmap(bytes) }
-        }
-
-        if (poster == null) {
-            val preview = session?.loadMediaBytes(
-                fileId = media.previewFileId,
-                uniqueId = media.previewUniqueId
-            )
-
-            if (preview != null) {
-                poster = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(preview)
-                }
-            }
-        }
-
         val fileId = servedFileId
         if (fileId == null) {
             loadError = "This video isn't available"
@@ -147,9 +125,20 @@ fun VideoPlayer(
             },
         contentAlignment = Alignment.Center
     ) {
-        if (state.frame == null && poster != null) {
-            Image(
-                bitmap = poster!!,
+        if (state.frame == null) {
+            media.minithumbnail?.let { thumbnail ->
+                BytesImage(
+                    bytes = thumbnail,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            }
+
+            MediaImage(
+                session = session,
+                fileId = media.previewFileId,
+                uniqueId = media.previewUniqueId,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit

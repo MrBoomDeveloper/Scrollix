@@ -8,7 +8,6 @@ import com.mrboomdev.scrollix.data.storage.DefaultQuickReactions
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.icons.bug_report_icon
-import com.mrboomdev.scrollix.ui.icons.folder_icon
 import com.mrboomdev.scrollix.ui.icons.history_icon
 import com.mrboomdev.scrollix.ui.icons.home_icon
 import com.mrboomdev.scrollix.ui.icons.image_icon
@@ -162,16 +161,6 @@ internal fun SettingsCategoryContent(
                     checked = settings.mergeDuplicateDialogs,
                     onCheckedChange = { value ->
                         AppSettingsStore.update { it.copy(mergeDuplicateDialogs = value) }
-                    }
-                )
-
-                SettingsSwitch(
-                    icon = folder_icon,
-                    title = "Use Telegram folders",
-                    description = "Show native server-side chat folders.",
-                    checked = settings.useNativeFolders,
-                    onCheckedChange = { value ->
-                        AppSettingsStore.update { it.copy(useNativeFolders = value) }
                     }
                 )
 

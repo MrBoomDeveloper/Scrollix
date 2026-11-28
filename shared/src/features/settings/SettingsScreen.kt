@@ -4,6 +4,7 @@ import com.mrboomdev.scrollix.data.model.NotificationScope
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.isTwoPaneLayout
+import com.mrboomdev.scrollix.platform.PlatformBackHandler
 import com.mrboomdev.scrollix.platform.files.rememberFilePicker
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon
 import com.mrboomdev.scrollix.ui.icons.backup_icon
@@ -123,7 +124,6 @@ internal val SettingsEntries: List<SettingsEntry> = listOf(
     SettingsEntry(SettingsCategory.ChatList, "Show the \"All\" tab", listOf("tabs", "chips")),
     SettingsEntry(SettingsCategory.ChatList, "Single row filters", listOf("tabs", "folders", "chips")),
     SettingsEntry(SettingsCategory.ChatList, "Merge duplicate chats", listOf("duplicates", "accounts")),
-    SettingsEntry(SettingsCategory.ChatList, "Use Telegram folders", listOf("folders", "filters", "native")),
     SettingsEntry(SettingsCategory.ChatList, "Recent emoji and stickers", listOf("recent")),
     SettingsEntry(SettingsCategory.ChatList, "System emoji", listOf("emoji", "picker")),
     SettingsEntry(SettingsCategory.ChatList, "Choose emoji", listOf("disabled emoji", "hide emoji")),
@@ -281,6 +281,13 @@ internal fun SettingsScreen(
     }
 
     val category = viewModel.openedCategory
+
+    // System back closes the open category before it leaves Settings, the same
+    // way the in-screen arrow does. PlatformBackHandler is Android-only; on
+    // desktop Escape pops the route as before.
+    PlatformBackHandler(enabled = category != null) {
+        viewModel.closeCategory()
+    }
 
     if (category == null) {
         SettingsCategories(

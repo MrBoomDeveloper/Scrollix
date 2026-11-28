@@ -1,38 +1,53 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.DeepLinkHandler
-import com.mrboomdev.scrollix.data.model.Avatar
 import com.mrboomdev.scrollix.data.model.BusinessQuickReply
+import com.mrboomdev.scrollix.data.model.Dialog
 import com.mrboomdev.scrollix.data.model.MessageReactionOption
 import com.mrboomdev.scrollix.data.model.MessageReplyQuote
 import com.mrboomdev.scrollix.data.model.UploadProgressStore
 import com.mrboomdev.scrollix.data.outbox.OutboxManager
+import com.mrboomdev.scrollix.features.dialog.bots.InvoicePaymentDialog
+import com.mrboomdev.scrollix.features.dialog.bots.MainMiniAppDialog
+import com.mrboomdev.scrollix.features.dialog.bots.MiniAppDialog
+import com.mrboomdev.scrollix.features.dialog.bots.sendBusinessQuickReply
+import com.mrboomdev.scrollix.features.dialog.composer.AttachmentReviewDialog
+import com.mrboomdev.scrollix.features.dialog.composer.QuickReplyPickerDialog
+import com.mrboomdev.scrollix.features.dialog.composer.RecordedMediaDialog
+import com.mrboomdev.scrollix.features.dialog.composer.ScheduledMessagesDialog
+import com.mrboomdev.scrollix.features.dialog.composer.VideoTrimSheet
+import com.mrboomdev.scrollix.features.dialog.media.LocationPickerDialog
+import com.mrboomdev.scrollix.features.dialog.message.MessageDetailsDialog
+import com.mrboomdev.scrollix.features.dialog.message.MessageTextSelectionDialog
+import com.mrboomdev.scrollix.features.dialog.message.ReactionListDialog
+import com.mrboomdev.scrollix.features.dialog.viewmodel.DialogScreenViewModel
+import com.mrboomdev.scrollix.features.dialog.viewmodel.appendToComposer
+import com.mrboomdev.scrollix.features.dialog.viewmodel.clearComposer
+import com.mrboomdev.scrollix.features.dialog.viewmodel.deleteMessages
+import com.mrboomdev.scrollix.features.dialog.viewmodel.discardRecording
+import com.mrboomdev.scrollix.features.dialog.viewmodel.forwardMessages
+import com.mrboomdev.scrollix.features.dialog.viewmodel.replaceAttachment
+import com.mrboomdev.scrollix.features.dialog.viewmodel.sendLocation
+import com.mrboomdev.scrollix.features.dialog.viewmodel.sendPoll
+import com.mrboomdev.scrollix.features.dialog.viewmodel.setForwardFolder
+import com.mrboomdev.scrollix.features.dialog.viewmodel.setForwardQuery
+import com.mrboomdev.scrollix.features.dialog.viewmodel.unpinPinnedMessage
+import com.mrboomdev.scrollix.features.dialog.viewmodel.updateInput
+import com.mrboomdev.scrollix.moved
 import com.mrboomdev.scrollix.platform.files.FilePicker
 import com.mrboomdev.scrollix.platform.media.MediaRecordingController
-import com.mrboomdev.scrollix.moved
-import com.mrboomdev.scrollix.ui.components.AvatarImage
-import com.mrboomdev.scrollix.ui.components.SavedMessagesAvatar
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetTarget
 import com.mrboomdev.scrollix.ui.components.photoeditor.PhotoEditorDialog
-import com.mrboomdev.scrollix.ui.icons.close_icon
-import com.mrboomdev.scrollix.ui.icons.search_icon
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,46 +59,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.intl.Locale
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-@Composable
-private fun ForwardOptionRow(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange
-        )
-
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 8.dp)
-        )
-    }
-}
-
-/** A forum target waiting for the topic the forwarded messages land in. */
-private data class ForwardTopicTarget(
-    val accountId: String,
-    val providerDialogId: String,
-    val title: String,
-    val messageIds: LongArray
-)
 
 @Composable
 internal fun DialogChatOverlays(
@@ -94,7 +72,8 @@ internal fun DialogChatOverlays(
     filePicker: FilePicker,
     onSend: () -> Unit
 ) = with(ui) {
-    var forwardTopicTarget by remember { mutableStateOf<ForwardTopicTarget?>(null) }
+    var forwardTopicQueue by remember { mutableStateOf<List<Dialog>>(emptyList()) }
+    var forwardTopicMessageIds by remember { mutableStateOf<LongArray?>(null) }
 
     // The review rows read the same fractions the pending bubble shows.
     val uploadProgress by UploadProgressStore.progress.collectAsState()
@@ -187,157 +166,62 @@ internal fun DialogChatOverlays(
     }
 
     forwardingMessageIds?.let { messageIds ->
-        AlertDialog(
-            onDismissRequest = { forwardingMessageIds = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            title = { Text("Forward to") },
-            confirmButton = {
-                TextButton(onClick = { forwardingMessageIds = null }) {
-                    Text("Cancel")
-                }
-            },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
-                        value = forwardQuery,
-                        onValueChange = { value -> setForwardQuery(value) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        placeholder = { Text("Search chats") },
-                        leadingIcon = {
-                            Icon(imageVector = search_icon, contentDescription = null)
-                        },
-                        trailingIcon = {
-                            if (forwardQuery.isNotEmpty()) {
-                                IconButton(onClick = { setForwardQuery("") }) {
-                                    Icon(
-                                        imageVector = close_icon,
-                                        contentDescription = "Clear search"
-                                    )
-                                }
-                            }
-                        }
-                    )
+        ForwardPicker(
+            messageIds = messageIds,
+            isMobileLayout = isMobileLayout,
+            targets = forwardTargets,
+            folders = forwardFolderOptions,
+            query = forwardQuery,
+            folderKey = forwardFolderKey,
+            supportsOptions = supportsForwardOptions,
+            hideSender = forwardHideSender,
+            removeCaption = forwardRemoveCaption,
+            onQueryChange = ::setForwardQuery,
+            onFolderChange = ::setForwardFolder,
+            onHideSenderChange = { checked -> forwardHideSender = checked },
+            onRemoveCaptionChange = { checked -> forwardRemoveCaption = checked },
+            onDismiss = { forwardingMessageIds = null },
+            onSend = { selected ->
+                forwardingMessageIds = null
 
-                    if (forwardFolderOptions.size > 1) {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(count = forwardFolderOptions.size) { index ->
-                                val (key, label) = forwardFolderOptions[index]
+                val forumTargets = selected.filter { target -> target.isForum }
 
-                                FilterChip(
-                                    selected = forwardFolderKey == key,
-                                    onClick = { setForwardFolder(key) },
-                                    label = { Text(label, maxLines = 1) }
-                                )
-                            }
-                        }
-                    }
+                forwardTopicQueue = forumTargets
+                forwardTopicMessageIds = messageIds.takeIf { forumTargets.isNotEmpty() }
 
-                    // Providers that can re-send content without the forward
-                    // header offer both options; the rest never show them.
-                    if (supportsForwardOptions) {
-                        ForwardOptionRow(
-                            label = "Hide sender",
-                            checked = forwardHideSender,
-                            onCheckedChange = { checked -> forwardHideSender = checked }
-                        )
-
-                        ForwardOptionRow(
-                            label = "Remove caption",
-                            checked = forwardRemoveCaption,
-                            onCheckedChange = { checked -> forwardRemoveCaption = checked }
+                selected
+                    .filterNot { target -> target.isForum }
+                    .forEach { target ->
+                        forwardMessages(
+                            messageIds = messageIds,
+                            targetDialogId = target.providerDialogId
                         )
                     }
-
-                    if (filteredForwardTargets.isEmpty()) {
-                        Text(
-                            modifier = Modifier.padding(vertical = 24.dp),
-                            text = if (forwardQuery.isBlank()) {
-                                "No chats to forward to"
-                            } else {
-                                "No chats match \"$forwardQuery\""
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    } else {
-                        LazyVerticalGrid(
-                            modifier = Modifier.fillMaxWidth(),
-                            columns = GridCells.Adaptive(minSize = 92.dp)
-                        ) {
-                            items(count = filteredForwardTargets.size) { index ->
-                                val target = filteredForwardTargets[index]
-
-                                Column(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            forwardingMessageIds = null
-
-                                            // A forum needs a topic before the
-                                            // forward can name its target.
-                                            if (target.isForum) {
-                                                forwardTopicTarget = ForwardTopicTarget(
-                                                    accountId = target.accountId,
-                                                    providerDialogId = target.providerDialogId,
-                                                    title = target.title,
-                                                    messageIds = messageIds
-                                                )
-                                            } else {
-                                                forwardMessages(
-                                                    messageIds = messageIds,
-                                                    targetDialogId = target.providerDialogId
-                                                )
-                                            }
-                                        }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    if (target.isSavedMessages) {
-                                        SavedMessagesAvatar(size = 56.dp)
-                                    } else {
-                                        AvatarImage(
-                                            avatar = target.avatar ?: Avatar.fromName(target.title),
-                                            size = 56.dp
-                                        )
-                                    }
-
-                                    Text(
-                                        text = target.title,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
         )
     }
 
-    forwardTopicTarget?.let { target ->
+    val nextForwardTopic = forwardTopicQueue.firstOrNull()
+    val forwardTopicIds = forwardTopicMessageIds
+
+    if (nextForwardTopic != null && forwardTopicIds != null) {
         ForwardTopicDialog(
-            accountId = target.accountId,
-            providerDialogId = target.providerDialogId,
-            title = target.title,
-            onDismiss = { forwardTopicTarget = null },
+            accountId = nextForwardTopic.accountId,
+            providerDialogId = nextForwardTopic.providerDialogId,
+            title = nextForwardTopic.title,
+            onDismiss = {
+                forwardTopicQueue = emptyList()
+                forwardTopicMessageIds = null
+            },
             onPick = { topicId ->
-                forwardTopicTarget = null
                 forwardMessages(
-                    messageIds = target.messageIds,
-                    targetDialogId = target.providerDialogId,
+                    messageIds = forwardTopicIds,
+                    targetDialogId = nextForwardTopic.providerDialogId,
                     targetTopicId = topicId
                 )
+
+                forwardTopicQueue = forwardTopicQueue.drop(1)
+                if (forwardTopicQueue.isEmpty()) forwardTopicMessageIds = null
             }
         )
     }

@@ -55,11 +55,6 @@ alongside; performance, accessibility and release work never stop.
 - Deep-link validation and untrusted-input hardening across providers.
 - Threat model and secure-storage documentation.
 
-## Telegram depth
-
-- Push notifications with the app closed. There is no relay in the project, so
-  this stays blocked until one exists; today notifications need a live process.
-
 ## MAX
 
 - Sign-in: complete SMS/QR/token refresh/2FA.
@@ -102,7 +97,6 @@ alongside; performance, accessibility and release work never stop.
 - Share-sheet target for text, images and files.
 - Notification actions (reply, mark read, mute, open) and avatars.
 - App shortcuts for recent chats.
-- Predictive back and per-level back handling.
 - Battery/Doze policy for long-poll and WebSocket providers.
 - Foreground-service policy for long uploads if background limits require it.
 

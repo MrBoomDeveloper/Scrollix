@@ -1,8 +1,8 @@
 package com.mrboomdev.scrollix.features.search
 
 import com.mrboomdev.scrollix.data.model.ChatMessage
-import com.mrboomdev.scrollix.features.dialog.SearchDateFilter
-import com.mrboomdev.scrollix.features.dialog.minTimestamp
+import com.mrboomdev.scrollix.features.dialog.search.SearchDateFilter
+import com.mrboomdev.scrollix.features.dialog.search.minTimestamp
 
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test

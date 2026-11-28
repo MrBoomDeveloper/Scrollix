@@ -13,7 +13,7 @@ import com.mrboomdev.scrollix.data.model.AuthField
 import com.mrboomdev.scrollix.data.model.AuthFieldType
 import com.mrboomdev.scrollix.data.model.AuthState
 import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
+import com.mrboomdev.scrollix.data.phone.formatPhoneNumber
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.generated.BuildConfig
 import com.mrboomdev.scrollix.tdlibDeviceModel

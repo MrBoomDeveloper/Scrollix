@@ -6,9 +6,9 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageMediaKind
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.ui.components.BytesImage
+import com.mrboomdev.scrollix.ui.components.MediaImage
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,12 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @Composable
 internal fun DialogMediaPreview(
@@ -66,40 +63,15 @@ private fun DialogImagePreview(
     session: AccountSession?,
     size: Dp
 ) {
-    var image by remember(media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-    var finished by remember(media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf(false)
-    }
+    val fileId = media.previewFileId ?: media.fileId
+    val uniqueId = media.previewUniqueId ?: media.fileUniqueId
+    val hasRemoteImage = session != null && (fileId != null || uniqueId != null)
 
-    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
-        finished = false
+    var loaded by remember(fileId, uniqueId, session) { mutableStateOf(false) }
+    var missing by remember(fileId, uniqueId, session) { mutableStateOf(false) }
 
-        image = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        if (image == null) {
-            val bytes = session?.loadMediaBytes(
-                fileId = media.previewFileId ?: media.fileId,
-                uniqueId = media.previewUniqueId ?: media.fileUniqueId
-            )
-
-            if (bytes != null) {
-                image = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(bytes)
-                }
-            }
-        }
-
-        finished = true
-    }
-
-    val bitmap = image
-    if (bitmap == null && finished) return
+    if (!hasRemoteImage && media.minithumbnail == null) return
+    if (missing && media.minithumbnail == null) return
 
     Box(
         modifier = Modifier
@@ -108,16 +80,30 @@ private fun DialogImagePreview(
             .background(MaterialTheme.colorScheme.surfaceContainer),
         contentAlignment = Alignment.Center
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
+        media.minithumbnail?.let { bytes ->
+            BytesImage(
+                bytes = bytes,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+
+        if (hasRemoteImage && !missing) {
+            MediaImage(
+                session = session,
+                fileId = fileId,
+                uniqueId = uniqueId,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .alpha(rememberFadeIn(bitmap)),
-                contentScale = ContentScale.Crop
+                    .alpha(if (loaded) rememberFadeIn(uniqueId ?: fileId) else 0f),
+                contentScale = ContentScale.Crop,
+                onSuccess = { loaded = true },
+                onError = { missing = true }
             )
-        } else {
+        }
+
+        if (media.minithumbnail == null && !loaded && !missing) {
             CircularProgressIndicator(
                 modifier = Modifier.size(12.dp),
                 strokeWidth = 1.5.dp

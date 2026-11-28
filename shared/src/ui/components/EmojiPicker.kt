@@ -10,6 +10,7 @@ import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.StickerSession
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.data.storage.EmojiRecentsStore
 import com.mrboomdev.scrollix.features.home.FolderEmojiImage
@@ -19,7 +20,6 @@ import com.mrboomdev.scrollix.features.home.key
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -63,18 +63,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.mrboomdev.scrollix.onSecondaryClick
 
 private val GridSpacing = 2.dp
@@ -107,7 +104,7 @@ internal fun orderedStickerPacks(
 @Composable
 internal fun EmojiPickerDialog(
     isMobile: Boolean,
-    session: AccountSession,
+    session: StickerSession,
     onDismiss: () -> Unit,
     onEmojiSelected: (String) -> Unit,
     onCustomEmojiSelected: (emojiId: Long, fallback: String) -> Unit,
@@ -152,7 +149,7 @@ internal fun EmojiPickerDialog(
 @Composable
 internal fun EmojiPicker(
     modifier: Modifier = Modifier,
-    session: AccountSession,
+    session: StickerSession,
     onEmojiSelected: (String) -> Unit,
     onCustomEmojiSelected: (emojiId: Long, fallback: String) -> Unit,
     onStickerSelected: (MessageMedia) -> Unit,
@@ -160,9 +157,9 @@ internal fun EmojiPicker(
     /** Sessions whose packs are shown alongside this account's own packs. */
     otherSessions: List<AccountSession> = emptyList(),
     /** Importing is only offered where the callback is provided. */
-    onCrossProviderStickerSelected: ((AccountSession, MessageMedia) -> Unit)? = null,
+    onCrossProviderStickerSelected: ((StickerSession, MessageMedia) -> Unit)? = null,
     /** Importing a GIF from another account is only offered where provided. */
-    onCrossProviderAnimationSelected: ((AccountSession, MessageMedia) -> Unit)? = null,
+    onCrossProviderAnimationSelected: ((StickerSession, MessageMedia) -> Unit)? = null,
     /** Renders only the emoji tab, for fields that take no stickers or GIFs. */
     emojiOnly: Boolean = false
 ) {
@@ -239,7 +236,7 @@ internal fun EmojiPicker(
 
 @Composable
 private fun EmojiTab(
-    session: AccountSession,
+    session: StickerSession,
     showRecents: Boolean,
     showSystemEmojis: Boolean,
     disabledEmojis: Set<String>,
@@ -421,7 +418,7 @@ private fun EmojiTab(
 
 /** A saved GIF together with the account it belongs to. */
 internal data class SavedGif(
-    val source: AccountSession,
+    val source: StickerSession,
     val media: MessageMedia
 )
 
@@ -457,7 +454,7 @@ private fun EmojiCell(
 @Composable
 internal fun PickerSticker(
     media: MessageMedia,
-    session: AccountSession,
+    session: StickerSession,
     size: Dp,
     onClick: (() -> Unit)? = null
 ) {
@@ -530,38 +527,16 @@ internal fun PickerSticker(
 @Composable
 internal fun PickerAnimation(
     media: MessageMedia,
-    session: AccountSession,
+    session: StickerSession,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
-    var thumbnail by remember(media.previewFileId, media.minithumbnail, session) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
     var animation by remember(media.fileId, session) {
         mutableStateOf<WebmAnimation?>(null)
     }
+    var posterFailed by remember(media.previewFileId) { mutableStateOf(false) }
 
     val sizePx = with(LocalDensity.current) { 96.dp.roundToPx() }
-
-    LaunchedEffect(media.previewFileId, media.minithumbnail, session) {
-        thumbnail = media.minithumbnail?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-
-        if (thumbnail == null) {
-            val bytes = media.previewFileId?.let { fileId ->
-                session.loadFile(fileId).getOrNull()
-            }
-
-            if (bytes != null) {
-                thumbnail = withContext(Dispatchers.Default) {
-                    decodeImageBitmap(bytes)
-                }
-            }
-        }
-    }
 
     LaunchedEffect(media.fileId, session, sizePx) {
         val fileId = media.fileId
@@ -589,23 +564,34 @@ internal fun PickerAnimation(
         contentAlignment = Alignment.Center
     ) {
         val webm = animation
-        val poster = thumbnail
 
-        when {
-            webm != null && webm.frames.isNotEmpty() -> WebmFrames(
+        if (webm != null && webm.frames.isNotEmpty()) {
+            WebmFrames(
                 animation = webm,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+        } else if (!posterFailed) {
+            media.minithumbnail?.let { thumbnail ->
+                BytesImage(
+                    bytes = thumbnail,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
 
-            poster != null -> Image(
-                bitmap = poster,
+            MediaImage(
+                session = session,
+                fileId = media.previewFileId,
+                uniqueId = media.previewUniqueId,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                onError = { posterFailed = true }
             )
-
-            else -> Text(
+        } else {
+            Text(
                 text = "GIF",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.secondary

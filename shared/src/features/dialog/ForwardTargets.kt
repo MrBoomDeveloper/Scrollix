@@ -1,6 +1,7 @@
 package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.model.DialogKind
 
 
 /**
@@ -23,3 +24,20 @@ internal fun filterForwardTargets(
         tokens.all { token -> title.contains(token) }
     }
 }
+
+/** Target kind a folder page shows; "all" keeps every kind. */
+internal fun matchesForwardFolder(target: Dialog, folderKey: String): Boolean = when (folderKey) {
+    "direct" -> target.kind == DialogKind.Direct || target.kind == DialogKind.Secret
+    "groups" -> target.kind == DialogKind.Group
+    "channels" -> target.kind == DialogKind.Channel
+    "bots" -> target.kind == DialogKind.Bot
+    else -> true
+}
+
+/** Targets of one folder page after the search query is applied. */
+internal fun forwardTargetsForFolder(
+    targets: List<Dialog>,
+    query: String,
+    folderKey: String
+): List<Dialog> = filterForwardTargets(targets, query)
+    .filter { target -> matchesForwardFolder(target, folderKey) }

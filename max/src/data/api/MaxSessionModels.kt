@@ -15,7 +15,7 @@ import com.mrboomdev.scrollix.data.model.MessagePollInfo
 import com.mrboomdev.scrollix.data.model.MessagePollOptionInfo
 import com.mrboomdev.scrollix.data.model.MessageReactionInfo
 import com.mrboomdev.scrollix.data.model.MessageReply
-import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
+import com.mrboomdev.scrollix.data.phone.formatPhoneNumber
 
 internal val MentionUsernameRegex = Regex("""@([A-Za-z0-9_]{2,64})""")
 

@@ -8,7 +8,7 @@ import com.mrboomdev.scrollix.data.model.UserProfileDetails
 import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.features.home.EmojiStatusIcon
 import com.mrboomdev.scrollix.features.home.key
-import com.mrboomdev.scrollix.isWideLayout
+import com.mrboomdev.scrollix.isExpandedLayout
 import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.ConfirmDeleteDialog
 import com.mrboomdev.scrollix.ui.icons.ProviderLogoIcon
@@ -89,7 +89,7 @@ internal fun ProfileScreen(
         )
     }
 ) {
-    val isWide = isWideLayout()
+    val isWide = isExpandedLayout()
     val session = remember(accountId) { ApiManager.session(accountId) }
     val starBalance by session?.starBalance?.collectAsState()
         ?: remember { mutableStateOf(0L) }

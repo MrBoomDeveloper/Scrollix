@@ -1,0 +1,124 @@
+{
+  "version": 2,
+  "skills": {
+    "adaptive": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "jetpack-compose/adaptive/SKILL.md",
+      "computedHash": "b0fc3ff25b9a3e05fab585a6c62418c3cb79ab1e91c4573b88f7944de46f2ee2",
+      "installMode": "copy"
+    },
+    "android-intent-security": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "security/android-intent-security/SKILL.md",
+      "computedHash": "41a3b30d26f74c13b6b0471eb750b7a866244a6bd2774e2af5ccbe1ae5cf385f",
+      "installMode": "copy"
+    },
+    "android-permissions-security": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "security/android-permissions-security/SKILL.md",
+      "computedHash": "eb407bbe35d8afe518f7d20d396f097f483657be22f836618169e24edd0712ed",
+      "installMode": "copy"
+    },
+    "android-profiler": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "profilers/android-profiler/SKILL.md",
+      "computedHash": "8dfcfca81310cb187fe61381d3c6f7933f5eb1915ce06a67707fbbb23f318fe1",
+      "installMode": "copy"
+    },
+    "anr-audit-and-fix": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "performance/anr-audit-and-fix/SKILL.md",
+      "computedHash": "ab13efcb3b7816b3a0bcbe54245383c85973c87173cb60f3087ee31f2619a54e",
+      "installMode": "copy"
+    },
+    "camerax": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "camera/camerax/SKILL.md",
+      "computedHash": "287fb330c1c5997da46df71ea6a0a6813be8a7a860eb5498ce483b4bf151a71f",
+      "installMode": "copy"
+    },
+    "edge-to-edge": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "system/edge-to-edge/SKILL.md",
+      "computedHash": "954c391ab845f97ce160c04c3944d6c6da3c7ad0385970353b314ee2a3aabea2",
+      "installMode": "copy"
+    },
+    "jetpack-compose-performance": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "jetpack-compose/jetpack-compose-performance/SKILL.md",
+      "computedHash": "67cc0dad9d1684821c87d3f41535ef60e54bfebd019714c94374af2dc75c0104",
+      "installMode": "copy"
+    },
+    "kotlin-multiplatform-libraries-expert": {
+      "source": "JetBrains/klibs-io",
+      "commit": "90397b53c8d8c9e6e964e51d5123e7e7676487f8",
+      "sourceType": "github",
+      "skillPath": "skills/kmp-libraries-expert/SKILL.md",
+      "computedHash": "e9b6681343399f55e959732f5a9f46551b4dc7b7891511814378c7728c710298"
+    },
+    "kotlin-tooling-kotlin-toolchain": {
+      "source": "Kotlin/kotlin-agent-skills",
+      "commit": "087f5689c1934135ed58718cdf524525e452b7e9",
+      "sourceType": "github",
+      "skillPath": "skills/kotlin-tooling-kotlin-toolchain/SKILL.md",
+      "computedHash": "4a7a86b17bbc19c0e8d4a1e8060e465ae29cf2fda38e2876237e6fe37d1ba2fe",
+      "installMode": "copy"
+    },
+    "kotlin-tooling-kotlin-toolchain-plugin-authoring": {
+      "source": "Kotlin/kotlin-agent-skills",
+      "commit": "087f5689c1934135ed58718cdf524525e452b7e9",
+      "sourceType": "github",
+      "skillPath": "skills/kotlin-tooling-kotlin-toolchain-plugin-authoring/SKILL.md",
+      "computedHash": "d3c02b1b5ccb8ba437abb609f1e1826206cd42b03bf54e144eba5c7dbf26743b",
+      "installMode": "copy"
+    },
+    "kotlin-tooling-native-build-performance": {
+      "source": "Kotlin/kotlin-agent-skills",
+      "commit": "087f5689c1934135ed58718cdf524525e452b7e9",
+      "sourceType": "github",
+      "skillPath": "skills/kotlin-tooling-native-build-performance/SKILL.md",
+      "computedHash": "1dda3f7c49311cef92e3a16df3d0592649c6ed72d0754c8dc7aa57fd0f8e77c1",
+      "installMode": "copy"
+    },
+    "navigation-3": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "navigation/navigation-3/SKILL.md",
+      "computedHash": "29532dc2b5daea88d61257a215628cecdb2f0d621ecb3e42adb8b760e3733ed8",
+      "installMode": "copy"
+    },
+    "navigation-event": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "navigation/navigation-event/SKILL.md",
+      "computedHash": "40c0d24c4d12f9bd4303830e2f28a46c51ffaf4748ea2b6585e44aa0cd22eea9",
+      "installMode": "copy"
+    },
+    "testing-setup": {
+      "source": "android/skills",
+      "commit": "7f7b21730a605d112ca9f79b6e40105ce7b670ee",
+      "sourceType": "github",
+      "skillPath": "testing/testing-setup/SKILL.md",
+      "computedHash": "26b14d5f03fe974fbc6d00c6965af531d4c65ce72c91a66ec6146d71fec425a7",
+      "installMode": "copy"
+    }
+  }
+}

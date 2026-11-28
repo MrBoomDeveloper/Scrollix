@@ -9,20 +9,22 @@ import com.mrboomdev.scrollix.data.model.NotificationSettings
 import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
-import com.mrboomdev.scrollix.features.dialog.WebAppLinkDialog
+import com.mrboomdev.scrollix.features.dialog.bots.WebAppLinkDialog
+import com.mrboomdev.scrollix.features.explore.ExploreScreen
 import com.mrboomdev.scrollix.features.home.adjacentDialogEntry
 import com.mrboomdev.scrollix.features.home.firstUnreadEntry
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.features.settings.icon
 import com.mrboomdev.scrollix.ui.AdaptiveLayoutSize
 import com.mrboomdev.scrollix.ui.components.AppOverflowMenu
+import com.mrboomdev.scrollix.ui.components.ConfigureCoilImageLoader
 import com.mrboomdev.scrollix.ui.components.MediaViewer
 import com.mrboomdev.scrollix.ui.components.MediaViewerOverlay
-import com.mrboomdev.scrollix.ui.components.appMenuItems
 import com.mrboomdev.scrollix.ui.components.QrScannerDialog
 import com.mrboomdev.scrollix.ui.components.ShortcutCheatSheetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetDialog
 import com.mrboomdev.scrollix.ui.components.StickerSetTarget
+import com.mrboomdev.scrollix.ui.components.appMenuItems
 import com.mrboomdev.scrollix.ui.currentAdaptiveLayoutInfo
 import com.mrboomdev.scrollix.ui.icons.account_circle_icon
 import com.mrboomdev.scrollix.ui.icons.explore_icon
@@ -31,6 +33,7 @@ import com.mrboomdev.scrollix.ui.icons.home_icon_filled
 import com.mrboomdev.scrollix.ui.icons.menu_icon
 import com.mrboomdev.scrollix.ui.icons.search_icon
 import com.mrboomdev.scrollix.ui.navigation.Route
+import com.mrboomdev.scrollix.platform.PlatformBackHandler
 import com.mrboomdev.scrollix.ui.navigation.rememberAppEntryProvider
 import com.mrboomdev.scrollix.ui.notice.AppNotice
 import com.mrboomdev.scrollix.ui.notice.AppNoticeHost
@@ -123,23 +126,40 @@ private data class AppNavTab(
     val onClick: () -> Unit
 )
 
+/** Each bottom-bar tab owns a back stack that survives switching tabs. */
+private enum class AppTab { Home, Explore, Search, Accounts }
+
 @OptIn(ExperimentalSerializationApi::class, ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 @Preview
 @DevelopmentEntryPoint
 fun App() {
+    ConfigureCoilImageLoader()
+
     val layoutInfo = currentAdaptiveLayoutInfo()
     val useRail = layoutInfo.size >= AdaptiveLayoutSize.EXPANDED
     
-    val backStack = rememberNavBackStack(
-        configuration = SavedStateConfiguration {
+    val savedStateConfiguration = remember {
+        SavedStateConfiguration {
             serializersModule = SerializersModule {
                 polymorphic(NavKey::class) {
                     subclassesOfSealed<Route>()
                 }
             }
-        }, Route.Home
-    )
+        }
+    }
+
+    val homeStack = rememberNavBackStack(savedStateConfiguration, Route.Home)
+    val exploreStack = rememberNavBackStack(savedStateConfiguration, Route.Explore)
+    val searchStack = rememberNavBackStack(savedStateConfiguration, Route.Search())
+    val accountsStack = rememberNavBackStack(savedStateConfiguration, Route.Accounts)
+    var currentTab by rememberSaveable { mutableStateOf(AppTab.Home) }
+    val backStack = when (currentTab) {
+        AppTab.Home -> homeStack
+        AppTab.Explore -> exploreStack
+        AppTab.Search -> searchStack
+        AppTab.Accounts -> accountsStack
+    }
     
     LaunchedEffect(Unit) {
         ApiManager.init()
@@ -192,8 +212,10 @@ fun App() {
             return@LaunchedEffect
         }
 
-        if (backStack.none { route -> route is Route.Onboarding }) {
-            backStack += Route.Onboarding
+        currentTab = AppTab.Home
+
+        if (homeStack.none { route -> route is Route.Onboarding }) {
+            homeStack += Route.Onboarding
         }
     }
 
@@ -279,7 +301,8 @@ fun App() {
 
         ChatOpenHandler.consume()
         selectedDialog.value = null
-        backStack += Route.Dialog(
+        currentTab = AppTab.Home
+        homeStack += Route.Dialog(
             accountId = request.accountId,
             providerDialogId = request.providerDialogId
         )
@@ -363,7 +386,8 @@ fun App() {
         when (target) {
             is TelegramLinkTarget.Dialog -> {
                 selectedDialog.value = null
-                backStack += Route.Dialog(
+                currentTab = AppTab.Home
+                homeStack += Route.Dialog(
                     accountId = accountId,
                     providerDialogId = target.providerDialogId,
                     messageId = target.messageId
@@ -416,7 +440,8 @@ fun App() {
             }
 
             backStack.size > 1 -> backStack.removeAt(backStack.lastIndex)
-            else -> selectedDialog.value = null
+            selectedDialog.value != null -> selectedDialog.value = null
+            currentTab != AppTab.Home -> currentTab = AppTab.Home
         }
     }
 
@@ -434,8 +459,10 @@ fun App() {
 
         when (request.shortcut) {
             AppShortcut.Search -> {
-                if (backStack.lastOrNull() != Route.Search()) {
-                    backStack.add(Route.Search())
+                currentTab = AppTab.Search
+
+                if (searchStack.lastOrNull() != Route.Search()) {
+                    searchStack.add(Route.Search())
                 }
             }
 
@@ -481,12 +508,13 @@ fun App() {
 
                     // Replace the open conversation instead of stacking one
                     // history entry per key press.
-                    if (backStack.lastOrNull() is Route.Dialog) {
-                        backStack.removeLastOrNull()
+                    if (homeStack.lastOrNull() is Route.Dialog) {
+                        homeStack.removeLastOrNull()
                     }
 
                     selectedDialog.value = null
-                    backStack.add(route)
+                    currentTab = AppTab.Home
+                    homeStack.add(route)
                 }
             }
         }
@@ -500,57 +528,41 @@ fun App() {
         currentRoute !is Route.Login
     }
     
-    val tabs = remember(currentRoute) {
-        val isHomeTab = currentRoute is Route.Home || currentRoute is Route.Dialog
-        
+    val tabs = remember(currentTab) {
         listOf(
             AppNavTab(
-                isActive = isHomeTab,
-                icon = if(isHomeTab) home_icon_filled else home_icon,
+                isActive = currentTab == AppTab.Home,
+                icon = if(currentTab == AppTab.Home) home_icon_filled else home_icon,
                 title = "Home",
                 onClick = {
-                    if (!isRecording) {
-                        // Keep the wide-layout chat selection when switching
-                        // back from Search/other tabs, so the right pane does
-                        // not go blank just because the Home tab was tapped.
-                        backStack.clearExcept {
-                            it is Route.Home
-                        }
-                    }
+                    if (!isRecording) currentTab = AppTab.Home
                 }
             ),
 
             AppNavTab(
-                isActive = false,
+                isActive = currentTab == AppTab.Explore,
                 icon = explore_icon,
                 title = "Explore",
                 onClick = {
-
+                    if (!isRecording) currentTab = AppTab.Explore
                 }
             ),
 
             AppNavTab(
-                isActive = currentRoute is Route.Search,
+                isActive = currentTab == AppTab.Search,
                 icon = search_icon,
                 title = "Search",
                 onClick = {
-                    if (!isRecording && backStack.lastOrNull() != Route.Search()) {
-                        backStack.add(Route.Search())
-                    }
+                    if (!isRecording) currentTab = AppTab.Search
                 }
             ),
 
             AppNavTab(
-                isActive = currentRoute is Route.Accounts ||
-                        currentRoute is Route.AccountManage ||
-                        currentRoute is Route.OwnProfile ||
-                        currentRoute is Route.Login,
+                isActive = currentTab == AppTab.Accounts,
                 icon = account_circle_icon,
                 title = "Accounts",
                 onClick = {
-                    if (!isRecording && backStack.lastOrNull() != Route.Accounts) {
-                        backStack.add(Route.Accounts)
-                    }
+                    if (!isRecording) currentTab = AppTab.Accounts
                 }
             )
         )
@@ -654,6 +666,20 @@ fun App() {
                     }
 
                     Column(Modifier.fillMaxSize()) {
+                        // Android back on a tab root returns to Home instead of
+                        // leaving the app; NavDisplay owns deeper pops.
+                        PlatformBackHandler(
+                            enabled = backStack.size == 1 &&
+                                !isRecording &&
+                                (currentTab != AppTab.Home || selectedDialog.value != null)
+                        ) {
+                            if (selectedDialog.value != null) {
+                                selectedDialog.value = null
+                            } else {
+                                currentTab = AppTab.Home
+                            }
+                        }
+
                         NavDisplay(
                             modifier = Modifier.weight(1f),
                             backStack = backStack,

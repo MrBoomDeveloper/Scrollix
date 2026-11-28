@@ -4,13 +4,13 @@ import com.mrboomdev.scrollix.data.model.CustomEmojiAsset
 import com.mrboomdev.scrollix.data.model.DialogFolderEmoji
 import com.mrboomdev.scrollix.data.model.DialogFolderEmojiFormat
 import com.mrboomdev.scrollix.data.provider.AccountSession
-import com.mrboomdev.scrollix.features.dialog.customEmojiModel
-import com.mrboomdev.scrollix.ui.components.decodeImageBitmap
+import com.mrboomdev.scrollix.features.dialog.message.customEmojiModel
+import com.mrboomdev.scrollix.ui.components.BytesImage
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -26,14 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * Fades freshly loaded content in instead of letting it pop into the layout
@@ -98,30 +94,26 @@ internal fun StaticFolderEmoji(
         DialogFolderEmojiFormat.Webp -> emoji.data ?: emoji.thumbnail
         else -> emoji.thumbnail
     }
-    val image by produceState<ImageBitmap?>(
-        initialValue = null,
-        bytes
+
+    Box(
+        modifier = contentModifier ?: Modifier.size(size),
+        contentAlignment = Alignment.Center
     ) {
-        value = bytes?.let { data ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(data)
-            }
+        if (showFallback) {
+            FolderEmojiFallback(emoji, size, color)
         }
-    }
 
-    val bitmap = image
-
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap,
-            contentDescription = null,
-            modifier = (contentModifier ?: Modifier.size(size))
-                .alpha(rememberFadeIn(bitmap)),
-            contentScale = ContentScale.Fit,
-            colorFilter = colorFilter
-        )
-    } else if (showFallback) {
-        FolderEmojiFallback(emoji, size, color)
+        if (bytes != null) {
+            BytesImage(
+                bytes = bytes,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(rememberFadeIn(bytes)),
+                contentScale = ContentScale.Fit,
+                colorFilter = colorFilter
+            )
+        }
     }
 }
 

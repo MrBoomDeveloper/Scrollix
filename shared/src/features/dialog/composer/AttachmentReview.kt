@@ -1,0 +1,625 @@
+package com.mrboomdev.scrollix.features.dialog.composer
+
+import com.mrboomdev.scrollix.data.model.CustomEmojiSpan
+import com.mrboomdev.scrollix.data.model.Dialog
+import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.storage.readFileBytes
+import com.mrboomdev.scrollix.features.dialog.MaxAlbumAttachments
+import com.mrboomdev.scrollix.features.dialog.message.CustomEmojiMessageText
+import com.mrboomdev.scrollix.platform.files.PickedFile
+import com.mrboomdev.scrollix.ui.components.BytesImage
+import com.mrboomdev.scrollix.ui.components.EmojiPickerDialog
+import com.mrboomdev.scrollix.ui.icons.close_icon
+import com.mrboomdev.scrollix.ui.icons.mood_icon
+import com.mrboomdev.scrollix.ui.icons.view_list_icon
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AttachmentReviewDialog(
+    attachments: List<PendingAttachment>,
+    caption: String,
+    captionCustomEmojis: List<CustomEmojiSpan> = emptyList(),
+    captionEmojiData: Map<Long, ByteArray> = emptyMap(),
+    captionEmojiAdaptive: Set<Long> = emptySet(),
+    isSending: Boolean,
+    /** Live upload fraction per attachment path. */
+    uploadProgress: Map<String, Float> = emptyMap(),
+    /** The send of these rows was paused from this sheet. */
+    sendPaused: Boolean = false,
+    /** A permanent failure of this send; the rows stay for a retry. */
+    sendError: String? = null,
+    /** Whether photos of this send are compressed by the provider. */
+    compressPhotos: Boolean = true,
+    onCompressPhotosChange: ((Boolean) -> Unit)? = null,
+    isMobile: Boolean,
+    session: AccountSession?,
+    onCaptionChange: (String) -> Unit,
+    onInsertEmoji: (fallback: String, emojiId: Long?) -> Unit,
+    onAddImages: () -> Unit,
+    onAddFiles: () -> Unit,
+    /** Moves an attachment in the album; the order is the order it is sent. */
+    onMove: (from: Int, to: Int) -> Unit,
+    /** Opens the photo editor for a row; null hides the action. */
+    onEditImage: ((Int) -> Unit)? = null,
+    /** Opens the video trimmer for a row; null hides the action. */
+    onTrimVideo: ((Int) -> Unit)? = null,
+    /** Pauses the in-flight send; null hides the action. */
+    onPauseSend: (() -> Unit)? = null,
+    /** Continues a paused send; null hides the action. */
+    onResumeSend: (() -> Unit)? = null,
+    onRemove: (Int) -> Unit,
+    onDiscard: () -> Unit,
+    onSend: () -> Unit,
+    /** Opens the schedule picker; null hides the option. */
+    onSchedule: (() -> Unit)? = null,
+    /** Sends without a notification; null hides the option. */
+    onSendSilently: (() -> Unit)? = null
+) {
+    var showEmojiPicker by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    val content: @Composable () -> Unit = {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+                    Text(
+                        text = "Send ${attachments.size} " +
+                            if (attachments.size == 1) "attachment" else "attachments",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    if (sendError != null) {
+                        Text(
+                            text = sendError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    // The rows belong to an outbox entry once sending starts,
+                    // so reordering or removing them would desync the album.
+                    val isBusy = isSending || sendPaused || sendError != null
+
+                    if (attachments.any { row -> row.asPhoto } && onCompressPhotosChange != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = "Compress photos",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+
+                                Text(
+                                    text = if (compressPhotos) {
+                                        "The provider re-encodes photos to save traffic."
+                                    } else {
+                                        "Photos are sent as files at their original quality."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+
+                            Switch(
+                                checked = compressPhotos,
+                                enabled = !isBusy,
+                                onCheckedChange = onCompressPhotosChange
+                            )
+                        }
+                    }
+
+                    // The album order is fixed by dragging a row, which is
+                    // also the order the attachments are sent in. The library
+                    // owns the gesture and auto-scroll; the arrows that used
+                    // to do this are gone.
+                    val listState = rememberLazyListState()
+                    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+                        if (!isBusy) {
+                            onMove(from.index, to.index)
+                        }
+                    }
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        itemsIndexed(
+                            items = attachments,
+                            key = { _, attachment -> attachment.file.path }
+                        ) { index, attachment ->
+                            ReorderableItem(
+                                state = reorderState,
+                                key = attachment.file.path
+                            ) { isDragging ->
+                                AttachmentReviewRow(
+                                    modifier = Modifier.background(
+                                        if (isDragging) {
+                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                        } else {
+                                            Color.Transparent
+                                        }
+                                    ),
+                                    index = index,
+                                    attachment = attachment,
+                                    isSending = isSending,
+                                    uploadProgress = uploadProgress[attachment.file.path],
+                                    isPaused = sendPaused,
+                                    isFailed = sendError != null,
+                                    compressPhotos = compressPhotos,
+                                    dragHandleModifier = Modifier.longPressDraggableHandle(
+                                        enabled = !isBusy
+                                    ),
+                                    onEditImage = onEditImage?.let { edit ->
+                                        { edit(index) }
+                                    },
+                                    onTrimVideo = onTrimVideo?.let { trim ->
+                                        { trim(index) }
+                                    },
+                                    onRemove = { onRemove(index) }
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        CaptionField(
+                            modifier = Modifier.weight(1f),
+                            caption = caption,
+                            customEmojis = captionCustomEmojis,
+                            emojiData = captionEmojiData,
+                            adaptiveEmojis = captionEmojiAdaptive,
+                            onCaptionChange = onCaptionChange
+                        )
+
+                        IconButton(
+                            enabled = session != null,
+                            onClick = {
+                                // The picker replaces the keyboard instead of
+                                // sharing the screen with it.
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                                showEmojiPicker = true
+                            }
+                        ) {
+                            Icon(
+                                imageVector = mood_icon,
+                                contentDescription = "Insert emoji"
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                enabled = !isBusy &&
+                                    attachments.size < MaxAlbumAttachments,
+                                onClick = onAddImages
+                            ) {
+                                Text("Add photos")
+                            }
+
+                            TextButton(
+                                enabled = !isBusy &&
+                                    attachments.size < MaxAlbumAttachments,
+                                onClick = onAddFiles
+                            ) {
+                                Text("Add files")
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                enabled = !isSending,
+                                onClick = onDiscard
+                            ) {
+                                Text("Discard")
+                            }
+
+                            if (isSending && onPauseSend != null) {
+                                TextButton(onClick = onPauseSend) {
+                                    Text("Pause")
+                                }
+                            } else if (sendPaused && onResumeSend != null) {
+                                TextButton(onClick = onResumeSend) {
+                                    Text("Resume")
+                                }
+                            }
+
+                            SendButton(
+                                enabled = !isSending,
+                                isSending = isSending,
+                                onSend = onSend,
+                                onSchedule = onSchedule,
+                                onSendSilently = onSendSilently
+                            )
+                        }
+                    }
+        }
+    }
+
+    if (isMobile) {
+        val sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { value -> value != SheetValue.Hidden }
+        )
+
+        // The review sheet blocks back/drag dismissal: the only ways out are
+        // Send and Discard, matching the desktop modal.
+        ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            onDismissRequest = {},
+            sheetState = sheetState
+        ) {
+            content()
+        }
+    } else {
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.62f))
+                    // Taps outside the card are swallowed, not treated as dismiss.
+                    .clickable {},
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer
+                ) {
+                    content()
+                }
+            }
+        }
+    }
+
+    if (showEmojiPicker && session != null) {
+        EmojiPickerDialog(
+            isMobile = isMobile,
+            session = session,
+            // An attachment caption is plain text: stickers and GIFs cannot
+            // be inserted into it, so only the emoji tab belongs here.
+            emojiOnly = true,
+            onDismiss = { showEmojiPicker = false },
+            onEmojiSelected = { emoji ->
+                onInsertEmoji(emoji, null)
+                showEmojiPicker = false
+            },
+            onCustomEmojiSelected = { emojiId, fallback ->
+                onInsertEmoji(fallback, emojiId)
+                showEmojiPicker = false
+            }
+        )
+    }
+}
+
+/**
+ * The caption field. Custom emoji are drawn by an overlay, exactly like the
+ * composer, so a caption shows the same stickers before it is sent.
+ */
+@Composable
+private fun CaptionField(
+    caption: String,
+    customEmojis: List<CustomEmojiSpan>,
+    emojiData: Map<Long, ByteArray>,
+    adaptiveEmojis: Set<Long>,
+    onCaptionChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // The caret and selection are local: the caption itself lives in the
+    // shared composer state, which the emoji picker also appends to.
+    var value by remember {
+        mutableStateOf(TextFieldValue(caption, TextRange(caption.length)))
+    }
+
+    LaunchedEffect(caption) {
+        if (value.text != caption) {
+            value = TextFieldValue(caption, TextRange(caption.length))
+        }
+    }
+
+    BasicTextField(
+        modifier = modifier,
+        value = value,
+        onValueChange = { updated ->
+            value = updated
+            onCaptionChange(updated.text)
+        },
+        maxLines = 4,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+        // With custom emoji present the overlay draws the caption, so the
+        // field keeps only the caret and selection.
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = if (customEmojis.isEmpty()) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                Color.Transparent
+            }
+        ),
+        decorationBox = { innerTextField ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                if (customEmojis.isNotEmpty()) {
+                    CustomEmojiMessageText(
+                        modifier = Modifier.fillMaxWidth(),
+                        text = caption,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        emojis = customEmojis,
+                        data = emojiData,
+                        adaptiveEmojis = adaptiveEmojis
+                    )
+                }
+
+                innerTextField()
+
+                if (caption.isEmpty()) {
+                    Text(
+                        text = "Caption (optional)",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+        }
+    )
+}
+
+/**
+ * One attachment in the review list: its thumbnail (or file type), the album
+ * position and a drag handle. Dragging the handle moves the row along the
+ * single vertical axis, which is the album order.
+ */
+@Composable
+private fun AttachmentReviewRow(
+    index: Int,
+    attachment: PendingAttachment,
+    isSending: Boolean,
+    uploadProgress: Float? = null,
+    isPaused: Boolean = false,
+    isFailed: Boolean = false,
+    compressPhotos: Boolean = true,
+    dragHandleModifier: Modifier,
+    modifier: Modifier = Modifier,
+    onEditImage: (() -> Unit)? = null,
+    onTrimVideo: (() -> Unit)? = null,
+    onRemove: () -> Unit
+) {
+    val isImage = attachment.asPhoto ||
+        attachment.file.mimeType?.startsWith("image/") == true
+    val isVideo = attachment.file.mimeType?.startsWith("video/") == true
+    var preview by remember(attachment.file.path) { mutableStateOf<ByteArray?>(null) }
+
+    LaunchedEffect(attachment.file.path, isImage) {
+        if (!isImage) {
+            preview = null
+            return@LaunchedEffect
+        }
+
+        preview = withContext(Dispatchers.IO) {
+            readFileBytes(attachment.file.path)
+        }
+    }
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center
+        ) {
+            val image = preview
+
+            if (image != null) {
+                BytesImage(
+                    bytes = image,
+                    contentDescription = attachment.file.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Text(
+                    text = attachment.file.extensionLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+
+            // The number is the position in the album, which is also the
+            // order the attachments are sent.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(2.dp)
+                    .size(16.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "${index + 1}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = attachment.file.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val status = when {
+                isFailed -> "Not sent"
+                isPaused -> "Paused"
+                uploadProgress != null -> "Uploading ${(uploadProgress * 100).toInt()}%"
+                isSending -> "Uploading"
+                else -> null
+            }
+
+            val kindLabel = when {
+                !attachment.asPhoto -> "File"
+                compressPhotos -> "Photo"
+                else -> "Photo · sent as file"
+            }
+
+            Text(
+                text = listOfNotNull(kindLabel, status).joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isFailed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.secondary
+                }
+            )
+        }
+
+        val isLocked = isSending || isPaused || isFailed
+
+        if (isImage && !isLocked && onEditImage != null) {
+            TextButton(onClick = onEditImage) {
+                Text("Edit")
+            }
+        }
+
+        if (isVideo && !isLocked && onTrimVideo != null) {
+            TextButton(onClick = onTrimVideo) {
+                Text("Trim")
+            }
+        }
+
+        // Holding the handle drags the row; the rest of it stays tappable.
+        Icon(
+            modifier = Modifier
+                .size(20.dp)
+                .then(dragHandleModifier),
+            imageVector = view_list_icon,
+            tint = MaterialTheme.colorScheme.secondary,
+            contentDescription = "Drag to reorder"
+        )
+
+        IconButton(
+            enabled = !isSending && !isPaused && !isFailed,
+            onClick = onRemove
+        ) {
+            Icon(
+                imageVector = close_icon,
+                contentDescription = "Remove attachment"
+            )
+        }
+    }
+}
+
+internal fun PickedFile.extensionLabel(): String {
+    val extension = name.substringAfterLast('.', "")
+        .takeIf { it.isNotBlank() && it.length <= 5 }
+        ?: return "FILE"
+
+    return extension.uppercase()
+}
+
+internal data class PendingAttachment(
+    val file: PickedFile,
+    val asPhoto: Boolean
+)

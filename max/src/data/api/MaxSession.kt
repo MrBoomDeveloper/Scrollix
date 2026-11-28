@@ -95,7 +95,7 @@ import com.mrboomdev.scrollix.data.provider.AccountSession
 import com.mrboomdev.scrollix.data.provider.MessageHistoryController
 import com.mrboomdev.scrollix.data.provider.MessagePage
 import com.mrboomdev.scrollix.data.provider.MessagePageLoader
-import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
+import com.mrboomdev.scrollix.data.phone.formatPhoneNumber
 import com.mrboomdev.scrollix.data.max.network.uploadMaxFile
 import com.mrboomdev.scrollix.data.max.network.uploadMaxRaw
 import com.mrboomdev.scrollix.data.storage.CacheStore

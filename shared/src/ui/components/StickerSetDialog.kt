@@ -7,7 +7,7 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.MessageStickerFormat
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.model.StickerSetInfo
-import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.StickerSession
 import com.mrboomdev.scrollix.features.home.FolderEmojiImage
 
 import androidx.compose.foundation.background
@@ -68,7 +68,7 @@ internal sealed interface StickerSetTarget {
 @Composable
 internal fun StickerSetDialog(
     target: StickerSetTarget,
-    session: AccountSession,
+    session: StickerSession,
     onDismiss: () -> Unit
 ) {
     var info by remember(target) { mutableStateOf<StickerSetInfo?>(null) }
@@ -275,7 +275,7 @@ internal fun StickerSetDialog(
 @Composable
 private fun StickerSetCell(
     media: MessageMedia,
-    session: AccountSession
+    session: StickerSession
 ) {
     var data by remember(media.fileId) { mutableStateOf<ByteArray?>(null) }
 

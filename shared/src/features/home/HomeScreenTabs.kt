@@ -1,13 +1,7 @@
 package com.mrboomdev.scrollix.features.home
 
 import com.mrboomdev.scrollix.data.model.AccountDialogEntry
-import com.mrboomdev.scrollix.data.model.AccountDialogFolder
-import com.mrboomdev.scrollix.data.model.AccountRecord
-import com.mrboomdev.scrollix.data.model.Avatar
-import com.mrboomdev.scrollix.data.model.DialogFolder
 import com.mrboomdev.scrollix.data.model.DialogKind
-import com.mrboomdev.scrollix.features.settings.icon
-import com.mrboomdev.scrollix.ui.components.AvatarImage
 import com.mrboomdev.scrollix.ui.components.EmptyState
 import com.mrboomdev.scrollix.ui.components.SkeletonList
 import com.mrboomdev.scrollix.ui.icons.chat_bubble_icon
@@ -36,13 +30,11 @@ import androidx.compose.ui.unit.dp
 
 internal fun HomePage.orderKey(): String = when (this) {
     HomePage.All -> "all"
-    is HomePage.Folder -> "folder:$key"
     is HomePage.Tab -> "tab:$index"
 }
 
-internal fun HomePage.chipTitle(folders: List<AccountDialogFolder>): String = when (this) {
+internal fun HomePage.chipTitle(): String = when (this) {
     HomePage.All -> "All"
-    is HomePage.Folder -> folders.firstOrNull { it.key == key }?.folder?.name ?: key
     is HomePage.Tab -> when (index) {
         TAB_DIRECT -> "DM"
         TAB_GROUPS -> "Groups"
@@ -55,7 +47,6 @@ internal fun HomePage.chipTitle(folders: List<AccountDialogFolder>): String = wh
 @Composable
 internal fun DialogList(
     entries: List<AccountDialogEntry>,
-    folderId: Int?,
     mergeDuplicates: Boolean = false,
     isDialogsLoading: Boolean,
     hasAccounts: Boolean,
@@ -95,7 +86,6 @@ internal fun DialogList(
                 DialogItem(
                     entry = entry,
                     isSelected = isSelected,
-                    folderId = folderId,
                     showSavedMessagesAccountBadge = showSavedMessagesAccountBadge,
                     onClick = { onOpenDialog(entry) }
                 )
@@ -141,35 +131,15 @@ internal fun DialogList(
 
 internal sealed interface HomePage {
     data object All : HomePage
-    data class Folder(val key: String) : HomePage
     data class Tab(val index: Int) : HomePage
 }
 
-/** Entries and active folder id shown by one pager page. */
+/** Entries shown by one pager page. */
 internal fun entriesForPage(
     page: HomePage?,
-    entries: List<AccountDialogEntry>,
-    folders: List<AccountDialogFolder>,
-    isUsingNativeFolders: Boolean
-): Pair<List<AccountDialogEntry>, Int?> {
+    entries: List<AccountDialogEntry>
+): List<AccountDialogEntry> {
     return when (page) {
-        is HomePage.Folder -> {
-            val folder = folders.firstOrNull { folder -> folder.key == page.key }
-
-            if (folder == null) {
-                entries to null
-            } else {
-                val folderId = folder.folder.id
-
-                entries
-                    .filter { entry ->
-                        entry.account.id == folder.account.id &&
-                            folderId in entry.dialog.folderIds
-                    }
-                    .let { filtered -> sortDialogs(filtered, folderId) } to folderId
-            }
-        }
-
         is HomePage.Tab -> entries
             .filter { entry ->
                 when (page.index) {
@@ -182,9 +152,9 @@ internal fun entriesForPage(
                     else -> true
                 }
             }
-            .let { filtered -> sortDialogs(filtered, null) } to null
+            .let(::sortDialogs)
 
-        HomePage.All, null -> sortDialogs(entries, null) to null
+        HomePage.All, null -> sortDialogs(entries)
     }
 }
 
@@ -234,57 +204,6 @@ internal fun HomeTab(
                 imageVector = icon,
                 contentDescription = null
             )
-        }
-    )
-}
-
-@Composable
-internal fun NativeFolderTab(
-    modifier: Modifier = Modifier,
-    selected: Boolean,
-    folder: DialogFolder,
-    account: AccountRecord,
-    unreadCount: Int,
-    showAccountIndicator: Boolean,
-    onClick: () -> Unit
-) {
-    FilterChip(
-        modifier = modifier,
-        selected = selected,
-        onClick = onClick,
-
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primary,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
-        ),
-
-        label = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FolderNameText(
-                    folder = folder,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                if (unreadCount > 0) {
-                    UnreadCountBadge(
-                        count = unreadCount,
-                        selected = selected
-                    )
-                }
-
-                if (showAccountIndicator) {
-                    AvatarImage(
-                        avatar = account.avatar
-                            ?: Avatar.fromName(account.displayName),
-                        size = 14.dp
-                    )
-                }
-            }
         }
     )
 }

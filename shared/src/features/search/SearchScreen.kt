@@ -10,7 +10,7 @@ import com.mrboomdev.scrollix.data.model.PostSearchQuota
 import com.mrboomdev.scrollix.data.model.PublicChatSearchKind
 import com.mrboomdev.scrollix.data.storage.DeviceDownloadedFile
 import com.mrboomdev.scrollix.features.dialog.DialogScreen
-import com.mrboomdev.scrollix.features.dialog.DialogSearchFilter
+import com.mrboomdev.scrollix.features.dialog.search.DialogSearchFilter
 import com.mrboomdev.scrollix.features.home.key
 import com.mrboomdev.scrollix.isTwoPaneLayout
 import com.mrboomdev.scrollix.ui.icons.arrow_back_icon

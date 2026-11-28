@@ -114,13 +114,12 @@ import com.mrboomdev.scrollix.data.provider.TelegramLinkTarget
 import com.mrboomdev.scrollix.data.storage.CacheStore
 import com.mrboomdev.scrollix.data.storage.PlatformStorage
 import com.mrboomdev.scrollix.data.storage.currentTimeMillis
-import com.mrboomdev.scrollix.data.storage.formatPhoneNumber
+import com.mrboomdev.scrollix.data.phone.formatPhoneNumber
 import com.mrboomdev.scrollix.data.storage.formatTime
 import com.mrboomdev.scrollix.data.storage.readFileBytes
 import com.mrboomdev.scrollix.generated.BuildConfig
 import com.mrboomdev.scrollix.tdlibDeviceModel
 import com.mrboomdev.scrollix.tdlibSystemVersion
-import com.mrboomdev.scrollix.toJsonStringByReflection
 
 internal const val TypingStatusTimeoutMillis = 5_000L
 internal const val MaxPendingLiveMessages = 100

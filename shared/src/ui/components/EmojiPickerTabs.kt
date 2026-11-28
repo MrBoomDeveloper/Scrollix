@@ -4,13 +4,13 @@ import com.mrboomdev.scrollix.data.model.MessageMedia
 import com.mrboomdev.scrollix.data.model.StickerPack
 import com.mrboomdev.scrollix.data.model.StickerPackKind
 import com.mrboomdev.scrollix.data.provider.AccountSession
+import com.mrboomdev.scrollix.data.provider.StickerSession
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
 import com.mrboomdev.scrollix.features.home.key
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,27 +52,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.mrboomdev.scrollix.onSecondaryClick
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun StickerTab(
-    session: AccountSession,
+    session: StickerSession,
     showRecents: Boolean,
     onStickerSelected: (MessageMedia) -> Unit,
     otherSessions: List<AccountSession>,
-    onCrossProviderStickerSelected: ((AccountSession, MessageMedia) -> Unit)?
+    onCrossProviderStickerSelected: ((StickerSession, MessageMedia) -> Unit)?
 ) {
     val settings by AppSettingsStore.state.collectAsState()
     var recents by remember(session) { mutableStateOf<List<MessageMedia>>(emptyList()) }
@@ -396,13 +393,13 @@ internal fun StickerTab(
 
 @Composable
 internal fun GifTab(
-    session: AccountSession,
+    session: StickerSession,
     otherSessions: List<AccountSession>,
     onAnimationSelected: (MessageMedia) -> Unit,
-    onCrossProviderAnimationSelected: ((AccountSession, MessageMedia) -> Unit)?
+    onCrossProviderAnimationSelected: ((StickerSession, MessageMedia) -> Unit)?
 ) {
     val sources = remember(session, otherSessions) {
-        (listOf(session) + otherSessions).distinctBy { it.accountId }
+        (listOf<StickerSession>(session) + otherSessions).distinctBy { it.accountId }
     }
 
     var gifs by remember(sources) { mutableStateOf<List<SavedGif>>(emptyList()) }
@@ -506,7 +503,7 @@ internal fun GifTab(
 internal fun PackJumpRow(
     packs: List<StickerPack>,
     featured: (StickerPack) -> MessageMedia?,
-    session: AccountSession,
+    session: StickerSession,
     onPackClick: (StickerPack) -> Unit
 ) {
     if (packs.isEmpty()) return
@@ -548,7 +545,7 @@ internal fun PackJumpRow(
 internal fun PackSectionHeader(
     pack: StickerPack,
     featured: MessageMedia?,
-    session: AccountSession
+    session: StickerSession
 ) {
     Row(
         modifier = Modifier
@@ -579,33 +576,22 @@ internal fun PackSectionHeader(
 internal fun PackFeaturedSticker(
     pack: StickerPack,
     featured: MessageMedia?,
-    session: AccountSession,
+    session: StickerSession,
     size: Dp
 ) {
     val thumbnailFileId = pack.thumbnailFileId
-    var data by remember(thumbnailFileId, session) { mutableStateOf<ByteArray?>(null) }
-    var bitmap by remember(thumbnailFileId, session) { mutableStateOf<ImageBitmap?>(null) }
-
-    LaunchedEffect(thumbnailFileId, session) {
-        data = thumbnailFileId?.let { fileId ->
-            session.loadFile(fileId).getOrNull()
-        }
-        bitmap = data?.let { bytes ->
-            withContext(Dispatchers.Default) {
-                decodeImageBitmap(bytes)
-            }
-        }
-    }
 
     Box(modifier = Modifier.size(size), contentAlignment = Alignment.Center) {
         Crossfade(
-            targetState = bitmap,
+            targetState = thumbnailFileId,
             animationSpec = tween(160),
             label = "pack-featured"
-        ) { image ->
+        ) { fileId ->
             when {
-                image != null -> Image(
-                    bitmap = image,
+                fileId != null -> MediaImage(
+                    session = session,
+                    fileId = fileId,
+                    uniqueId = null,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit

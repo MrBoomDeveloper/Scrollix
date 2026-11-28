@@ -2,6 +2,7 @@ package com.mrboomdev.scrollix.features.dialog
 
 import com.mrboomdev.scrollix.data.model.ChatMessage
 import com.mrboomdev.scrollix.data.storage.AppSettingsStore
+import com.mrboomdev.scrollix.features.dialog.viewmodel.DialogScreenViewModel
 
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch

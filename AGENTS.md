@@ -1,26 +1,26 @@
 # AGENTS.md
 
-## Keeping this file lean
-
-This is an instruction sheet, not documentation or a changelog.
-
-- Put in: commands to run, constraints that are not obvious from the code, and
-  invariants a change can silently break.
-- Leave out: changelogs, "what changed" notes, feature walkthroughs, restated
-  code, session notes (dates, coordinates, machine details), versions that
-  churn, and anything an agent learns by reading the file it is about to edit.
-- When a rule stops being true, replace or delete it — do not append a
-  correction. If a fact belongs to the code, put it in a comment or a test
-  instead of here.
+Instruction sheet, not documentation or a changelog. Keep only commands,
+non-obvious constraints, and invariants a change can silently break. If a fact
+belongs to the code, put it in a comment or a test instead.
 
 ## Project
 
 Scrollix is a Telegram client built with Kotlin Multiplatform and Compose
 Multiplatform: one shared Compose UI for Android and desktop JVM.
 
-Builds use the **Kotlin Toolchain** (Amper-style `module.yaml`), not Gradle.
-Do not add Gradle files. Dependencies and build settings go into the relevant
+Builds use the **Kotlin Toolchain** (Amper-style `module.yaml`), not Gradle. Do
+not add Gradle files. Dependencies and build settings go into the relevant
 module's `module.yaml`; version aliases live in `libs.versions.toml`.
+
+## Skills
+
+`.agents/skills/` holds Android/Compose/Kotlin Toolchain skills: adaptive UI,
+Compose performance, Navigation 3, testing setup, security, profilers, CameraX,
+and KMP library discovery via klibs.io.
+Before working in those areas, load the matching skill with the `skill` tool.
+The skills are the source of truth for their topics — do not copy their
+guidance into this file.
 
 ## Quick start
 
@@ -38,32 +38,24 @@ interaction or layout changes.
 
 ## Repository layout
 
-| Path | Purpose |
-| --- | --- |
-| `project.yaml` | Root module and plugin list |
-| `androidApp/` | Android application (`minSdk` 30, `compileSdk`/`targetSdk` 37) |
-| `desktopApp/` | Desktop JVM entry point |
-| `shared/` | Kotlin Multiplatform UI and app-shell library |
-| `shared/schemas/` | Exported Room schemas used by migration tests; commit them |
-| `provider/` | `AccountSession` contract and shared models |
-| `contract/` | `AccountSessionContract` suite and in-memory test storage |
-| `telegram/`, `max/`, `vk/` | Provider integrations |
-| `build-config/` | Plugin that generates `BuildConfig` from `local.properties` |
-| `scripts/` | Release scripts |
-| `build/`, `dist/` | Generated build output and release artifacts |
-| `tdlib_files/` | Local TDLib artifact (gitignored) |
-
 - `shared/src/` is common code; `shared/src@android/` and `shared/src@jvm/`
   hold `actual`s for storage, media, file picking, QR camera and the desktop
   context menu.
 - Tests live in `shared/test/` and `shared/test@<platform>/`.
-- Resources are accessed through `com.mrboomdev.scrollix.resources.Res`.
-- `AccountSession.kt` is the UI-facing contract: screens depend on it, never on
-  TDLib. `ApiManager.kt` owns account/session lifecycle and must not reference a
-  concrete provider. Provider entry points register through
+- `provider/` holds `AccountSession` and shared models; `contract/` holds
+  `AccountSessionContract` and in-memory test storage; `telegram/`, `max/`,
+  `vk/` are provider integrations; `build-config/` generates `BuildConfig`.
+- `shared/schemas/` holds exported Room schemas used by migration tests; commit
+  them. `tdlib_files/` is the local TDLib artifact (gitignored).
+- `AccountSession` is composed of capability interfaces; pass the narrowest
+  one a component needs. `ApiManager` owns account/session lifecycle and must
+  not reference a concrete provider. Providers register through
   `<Provider>Integration.init()`.
 - `shared/src/features/` holds screens, `shared/src/ui/` reusable components,
-  theme, icons and navigation.
+  theme, icons and navigation. `features/dialog/` is split into `composer/`,
+  `message/`, `media/`, `bots/`, `search/` and `viewmodel/`; a new dialog file
+  belongs in the matching subpackage.
+- Resources are accessed through `com.mrboomdev.scrollix.resources.Res`.
 
 ## Conventions
 
@@ -85,24 +77,22 @@ interaction or layout changes.
   including rows of pickers that own server-side data. Removing an item from an
   unsent attachment list is the one exception: nothing is stored yet.
 
-### Libraries over reinvention
+## Libraries
 
 Check <https://klibs.io> before hand-rolling a layout helper, gesture, codec or
 similar utility. Adopt a library only when it supports Android + JVM, is
 maintained, uses Apache-2.0/MIT/BSD and has no large native payload. Keep the
-call site small and add a pinned alias to `libs.versions.toml`.
-
-Already used: Compose Multiplatform, Navigation 3, Material 3 adaptive,
-Room/SQLite, FileKit, qrose, Haze, compottie/Lottie, OkHttp, alpha-video/JavaCV,
-KCEF, Human-Readable, kotlinx-datetime, kotlinx-serialization, Reorderable.
+call site small and add a pinned alias to `libs.versions.toml`. Provider images
+go through `MediaImage` (`ui/components/CoilImage.kt`); do not decode images
+manually for plain UI.
 
 Deliberately hand-rolled — do not "fix" these: `GifEncoder` (no maintained KMP
 encoder), `EmojiCatalog` (mixes system and provider emoji), `gunzip`
-(`java.util.zip` on both targets), Material icon `ImageVector`s (avoid
-`material-icons-extended`; generate from Material Symbols), location tile math
-(one OSM tile, no map SDK), folder chip dragging (wrapping `FlowRow`, not a lazy
-list), `PlatformBackHandler` (Android delegates to `BackHandler`; desktop is
-empty because Escape arrives through `BackNavigation`).
+(`java.util.zip` on both targets),Material icon `ImageVector`s (generate from Material Symbols), location tile math
+(one OSM tile, no map SDK), `PlatformBackHandler` (Android delegates to
+`NavigationBackHandler`; desktop is empty because Escape arrives through
+`BackNavigation`), fullscreen photo zoom/pan (`clampZoomOffset` is tested;
+Telephoto publishes only an Android `aar`).
 
 ## Configuration
 
@@ -125,14 +115,9 @@ accepted licenses.
 
 ```sh
 ./kotlin test -m shared
-SCROLLIX_UPDATE_GOLDENS=1 ./kotlin test -m shared   # intended visual changes only
 ```
 
-- Tests use `kotlin.test`; pure logic goes in `shared/test`, platform behavior
-  in `shared/test@<platform>`.
-- Golden tests render real Compose components. PNGs live under
-  `shared/test@jvm/ui/golden/`, mismatches land in `build/golden-actual/`. Keep
-  fixtures deterministic; never golden-test animated or network content.
+- Tests use `kotlin.test`.
 - Every provider session passes `contract/`'s `AccountSessionContract` through
   its own subclass (`telegram/test@jvm`, `max/test`, `vk/test`); do not
   duplicate the suite. Telegram's lives in `test@jvm` because the Android
@@ -153,8 +138,6 @@ adb shell input swipe <x1> <y1> <x2> <y2> <duration_ms>
 
 ## Feature invariants
 
-Keep these when changing related code.
-
 **Media & cache**
 
 - Cached media is keyed by TDLib's durable remote unique id and hex-encoded
@@ -166,14 +149,13 @@ Keep these when changing related code.
   are never evicted. "Keep media" chats protect only media referenced by their
   cached messages; protected files still count toward the limit.
 - Live location uses `InputMessageLiveLocation`, never a fake period on
-  `InputMessageLocation`; stopping edits it with `location = null`. Use one OSM
-  tile per card, no bulk downloads.
+  `InputMessageLocation`; stopping edits it with `location = null`. One OSM tile
+  per card, no bulk downloads.
 - The location picker opens on the current position: GPS/network on Android
-  (the permission is requested on first use and a denial closes the picker),
-  an IP approximation on desktop. With location off it offers the system
-  switch and retries once the app is resumed. There are no coordinate fields;
-  the pin is dragged instead, and `isLocationSupported()` hides the whole
-  entry on a device that cannot produce a location.
+  (permission on first use, denial closes the picker), IP approximation on
+  desktop. Location off offers the system switch and retries on resume. No
+  coordinate fields; the pin is dragged, and `isLocationSupported()` hides the
+  whole entry when the device cannot produce a location.
 - `VideoPlayer` owns playback UI. Android uses `MediaPlayer` + `TextureView`,
   desktop `FFmpegFrameGrabber` + `createVoicePlayer`. Never pre-decode whole
   files.
@@ -186,8 +168,7 @@ Keep these when changing related code.
 - `supportsMarkAllRead` gates the bulk action; one failing chat must not stop
   the rest.
 - Last-seen privacy is server-side (`UserPrivacySettingShowStatus`). Writing
-  replaces the base rule and keeps per-user/per-chat exceptions in front of it;
-  never rewrite the whole list as one rule.
+  replaces the base rule and keeps per-user/per-chat exceptions in front of it.
 - Auto-delete reads `loadMessageAutoDeleteTime` before writing and is gated by
   `supportsMessageAutoDelete`.
 - Data saver is local: `AppSettings.dataSaving` plus `DataUsageStore`
@@ -198,8 +179,7 @@ Keep these when changing related code.
 - Persisted JSON is versioned: incompatible changes bump the version, add a
   pure migration, and test it against a legacy file. Older files decode through
   defaults; a newer version is never rewritten.
-- Room schemas are committed under `shared/schemas/`. Bump
-  `CacheDatabaseVersion` only with an explicit migration and a vN→vN+1 test;
+- Bump `CacheDatabaseVersion` only with an explicit migration and a vN→vN+1 test;
   cached payload compatibility is part of the schema. `migrateCachedMessage`
   upgrades rows on read.
 - Backup restore uses `previewSettingsBackup`, refuses a newer
@@ -233,6 +213,10 @@ Keep these when changing related code.
   dismiss and no usable composer underneath. Holding Send offers the same
   schedule/silent menu as the composer. Rows reorder by album position, and
   the caption field renders custom emoji like the composer.
+- Forwarding targets are multi-select: a tap only toggles its ring and nothing
+  is forwarded until Send. Phones show the picker as a bottom sheet with a
+  folder pager; the folder pages are Scrollix's built-in tabs, never provider
+  folders.
 - `MessageTextFormat` is the single rich-text model with UTF-16 offsets. Every
   edit calls `adjustFormatting`; Markdown/clipboard HTML is converted by
   `RichPaste.kt` only for multi-character insertions; "Plain text" drops ranges.
@@ -273,10 +257,11 @@ Keep these when changing related code.
 - A settings row needs `settingsAnchor(title)` (or `SettingsRowGroup`) and a
   matching `SettingsEntry`; that is all search needs. The open section is
   `rememberSaveable`. Accounts and the queue are `Route.Accounts`, not settings.
-- `reduceMotion` disables decorative animation only (for example the slide-in
-  of a just-sent message); functional feedback stays. Do not reintroduce Compose
-  shared-element transitions between screens: they were removed because they
-  looked wrong.
+- Each bottom-bar tab owns its own `NavBackStack`; switching tabs must not
+  clear or merge another tab's history. Back on a non-Home tab root selects
+  Home; global chat opens (deep links, notifications, keyboard) target Home.
+- `reduceMotion` disables decorative animation only; functional feedback stays.
+  Do not reintroduce Compose shared-element transitions between screens.
 
 **Settings surfaces**
 
@@ -294,8 +279,8 @@ Keep these when changing related code.
   app, callback, copy text, user, disabled); a callback answer is shown as a
   notice, or as an alert when the bot asks for one. Never drop an answer.
 - The reply keyboard belongs to the chat, not to a message: the newest message
-  carrying markup wins, and `ReplyMarkupRemoveKeyboard` must hide it. A
-  text button sends its label immediately; request buttons open the matching
+  carrying markup wins, and `ReplyMarkupRemoveKeyboard` must hide it. A text
+  button sends its label immediately; request buttons open the matching
   composer.
 - Bot commands come from `loadBotCommands` and only open when the draft starts
   with `/`; ephemeral commands stay hidden until typed.
